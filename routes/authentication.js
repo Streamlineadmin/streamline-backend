@@ -1,6 +1,6 @@
 const express = require('express');
 const authenticationController = require('../controller/authentication.controller');
-
+const checkAuthMiddleware = require('../middleware/check-auth')
 const router = express.Router();
 
 router.post('/signup', authenticationController.signUp);

@@ -3,15 +3,15 @@ const path = require('path');
 
 const storage = multer.diskStorage({
     destination: function(req, file, cb) {
-        cb(null, '.uploads');
+        cb(null, './uploads');
     },
     filename: function(req, file, cb) {
-        cb(null, new DataTransfer().getTime() + path.extname(file.originalname));
+        cb(null, new Date().getTime() + path.extname(file.originalname));
     }
 });
 
 const fileFilter = (req, file, cb) => {
-    if(file.mimeType === 'image/jpeg' || file.mimeType === 'image/png') {
+    if(file.mimetype === 'image/jpeg' || file.mimetype === 'image/png') {
         cb(null, true);
     } else {
         cb(new Error('Invalid file type'), false);
