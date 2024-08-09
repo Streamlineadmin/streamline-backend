@@ -8,6 +8,12 @@ const imageRoute = require('./routes/images');
 const blogRoute = require('./routes/blogs');
 
 const app = express();
+// Define the CORS options
+const corsOptions = {
+    credentials: true,
+    origin: ['http://localhost:3000', 'https://snycit.com', 'http://snycit.com/'] // Whitelist the domains you want to allow
+};
+app.use(cors(corsOptions)); // Use the cors middleware with your options
 
 // Apply body-parser middleware to handle JSON request bodies
 app.use(bodyParser.json());
