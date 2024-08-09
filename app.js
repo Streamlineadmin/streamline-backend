@@ -3,22 +3,32 @@ const bodyParser = require('body-parser');
 const path = require('path');
 const cors = require('cors');
 
-
 const authenticationRoute = require('./routes/authentication');
 const imageRoute = require('./routes/images');
 const blogRoute = require('./routes/blogs');
 
 const app = express();
 
-
 // Apply body-parser middleware to handle JSON request bodies
 app.use(bodyParser.json());
+
 // Define the CORS options
 const corsOptions = {
-    credentials: true,
-    origin: true // Whitelist the domains you want to allow
+    origin: (origin, callback) => {
+        // Adjust this array to include the domains you want to allow
+        const whitelist = ['http://snycit.com/', 'https://snycit.com/', 'http://localhost:3000'];
+        
+        if (!origin || whitelist.indexOf(origin) !== -1) {
+            callback(null, true);
+        } else {
+            callback(new Error('Not allowed by CORS'));
+        }
+    },
+    credentials: true, // Allow credentials (e.g., cookies, authorization headers)
 };
-app.use(cors(corsOptions)); // Use the cors middleware with your options
+
+// Use the cors middleware with your options
+app.use(cors(corsOptions));
 
 // Define route for the root URL
 app.get('/', (req, res) => {
@@ -26,10 +36,9 @@ app.get('/', (req, res) => {
     //res.send("Welcome to EaseMargin APIs !");
 });
 
-
-
 // Use authentication routes for `/authentication` path
 app.use('/authentication', authenticationRoute);
 app.use('/images', imageRoute);
 app.use('/blogs', blogRoute);
+
 module.exports = app;
