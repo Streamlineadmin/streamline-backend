@@ -16,7 +16,7 @@ app.use(bodyParser.json());
 // Define the CORS options
 const corsOptions = {
     credentials: true,
-    origin: ['http://localhost:3000', 'https://snycit.com', 'http://snycit.com/'] // Whitelist the domains you want to allow
+    origin: true // Whitelist the domains you want to allow
 };
 app.use(cors(corsOptions)); // Use the cors middleware with your options
 
