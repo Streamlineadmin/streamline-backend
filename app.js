@@ -1,6 +1,7 @@
 const express = require('express');
 const bodyParser = require('body-parser');
 const path = require('path');
+const cors = require('cors');
 
 
 const authenticationRoute = require('./routes/authentication');
@@ -8,15 +9,16 @@ const imageRoute = require('./routes/images');
 const blogRoute = require('./routes/blogs');
 
 const app = express();
+
+
+// Apply body-parser middleware to handle JSON request bodies
+app.use(bodyParser.json());
 // Define the CORS options
 const corsOptions = {
     credentials: true,
     origin: ['http://localhost:3000', 'https://snycit.com', 'http://snycit.com/'] // Whitelist the domains you want to allow
 };
 app.use(cors(corsOptions)); // Use the cors middleware with your options
-
-// Apply body-parser middleware to handle JSON request bodies
-app.use(bodyParser.json());
 
 // Define route for the root URL
 app.get('/', (req, res) => {
