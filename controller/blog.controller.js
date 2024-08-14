@@ -36,9 +36,7 @@ function getblogsById(req, res) {
 function getblogs(req, res) {
     models.Blogs.findAll().then(result => {
         if (!result || result.length === 0) {
-            return res.status(404).json({
-                message: "No blogs found"
-            });
+            return res.status(200).json([]);
         }
         res.status(200).json(result);
     })
