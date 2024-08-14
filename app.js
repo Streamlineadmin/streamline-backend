@@ -6,6 +6,7 @@ const cors = require('cors');
 const authenticationRoute = require('./routes/authentication');
 const imageRoute = require('./routes/images');
 const blogRoute = require('./routes/blogs');
+const teamRoute = require('./routes/teams');
 
 const app = express();
 
@@ -40,5 +41,6 @@ app.get('/', (req, res) => {
 app.use('/authentication', authenticationRoute);
 app.use('/images', imageRoute);
 app.use('/blogs', blogRoute);
+app.use('/teams', teamRoute);
 
 module.exports = app;

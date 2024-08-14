@@ -1,16 +1,17 @@
 const models = require('../models');
 
-function addBlog(req, res) {
-    const blog = {
-        title: req.body.title,
-        content: req.body.content,
-        imageURL: req.body.imageURL,
-        userId: req.body.userId
+function addTeam(req, res) {
+    const team = {
+        companyId: req.body.companyId,
+        name: req.body.name,
+        description: req.body.description,
+        ip_address: req.body.ip_address,
+        status: 1
     }
 
-    models.Blogs.create(blog).then(result => {
+    models.Teams.create(team).then(result => {
         res.status(201).json({
-            message: "Blog added successfully",
+            message: "Team added successfully",
             post: result
         });
     }).catch(error => {
@@ -21,10 +22,10 @@ function addBlog(req, res) {
     });
 }
 
-function getblogsById(req, res) {
+function getTeamsById(req, res) {
     const id = req.params.id;
 
-    models.Blogs.findByPk(id).then(result => {
+    models.Teams.findByPk(id).then(result => {
         res.status(200).json(result);
     }).catch(error => {
         res.status(500).json({
@@ -33,11 +34,15 @@ function getblogsById(req, res) {
     });
 }
 
-function getblogs(req, res) {
-    models.Blogs.findAll().then(result => {
+function getTeams(req, res) {
+    models.Teams.findAll({
+        where: {
+            companyId: req.body.companyId
+        }
+    }).then(result => {
         if (!result || result.length === 0) {
             return res.status(404).json({
-                message: "No blogs found"
+                message: "No teams found"
             });
         }
         res.status(200).json(result);
@@ -52,7 +57,7 @@ function getblogs(req, res) {
 
 
 module.exports = {
-    addBlog: addBlog,
-    getblogsById : getblogsById,
-    getblogs: getblogs
+    addTeam: addTeam,
+    getTeamsById : getTeamsById,
+    getTeams: getTeams
 }
