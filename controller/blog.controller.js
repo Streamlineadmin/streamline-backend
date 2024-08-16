@@ -3,6 +3,8 @@ const models = require('../models');
 function addBlog(req, res) {
     const blog = {
         title: req.body.title,
+        shortDesc: req.body.shortDesc,
+        author: req.body.author,
         content: req.body.content,
         imageURL: req.body.imageURL,
         userId: req.body.userId
