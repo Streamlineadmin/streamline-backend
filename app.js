@@ -7,6 +7,7 @@ const authenticationRoute = require('./routes/authentication');
 const imageRoute = require('./routes/images');
 const blogRoute = require('./routes/blogs');
 const teamRoute = require('./routes/teams');
+const userRoute = require('./routes/users');
 
 const app = express();
 
@@ -42,5 +43,6 @@ app.use('/authentication', authenticationRoute);
 app.use('/images', imageRoute);
 app.use('/blogs', blogRoute);
 app.use('/teams', teamRoute);
+app.use('/users', userRoute);
 
 module.exports = app;
