@@ -18,7 +18,7 @@ app.use(bodyParser.json());
 const corsOptions = {
     origin: (origin, callback) => {
         // Adjust this array to include the domains you want to allow
-        const whitelist = ['0.0.0.0/0'];
+        const whitelist = '*';
         
         if (!origin || whitelist.indexOf(origin) !== -1) {
             callback(null, true);
