@@ -1,4 +1,6 @@
 const models = require('../models');
+const bcryptjs = require('bcryptjs');
+const jwt = require('jsonwebtoken');
 
 function addUser(req, res) {
     models.Users.findOne({where: {email: req.body.email}}).then(result => {
@@ -22,8 +24,6 @@ function addUser(req, res) {
                         ip_address: req.body.ip_address,
                         status: 1
                     }
-
-                    console.log(client);
                 
                     models.Users.create(client).then(result => {
                         res.status(201).json({
