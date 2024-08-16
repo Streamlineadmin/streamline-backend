@@ -50,7 +50,8 @@ function login(req, res) {
                 if(result) {
                     const token = jwt.sign({
                         email: user.email,
-                        userId: user.id
+                        userId: user.id,
+                        companyId: user.companyId
                     }, 'secret', function(err, token) {
                         res.status(200).json({
                             message: "Authentication successful.",
