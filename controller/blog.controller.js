@@ -38,6 +38,7 @@ function getblogs(req, res) {
         if (!result || result.length === 0) {
             return res.status(200).json([]);
         }
+        console.log(res.status(200).json(result));
         res.status(200).json(result);
     })
     .catch(error => {

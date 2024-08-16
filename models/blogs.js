@@ -16,12 +16,19 @@ module.exports = (sequelize, DataTypes) => {
   Blogs.init({
     title: DataTypes.STRING,
     content: DataTypes.TEXT,
-    shortDesc: DataTypes.Text,
     imageURL: DataTypes.STRING,
     userId: DataTypes.INTEGER,
-    author: DataTypes.STRING,
     ip_address: DataTypes.STRING,
-    status: DataTypes.INTEGER
+    status: DataTypes.INTEGER,
+    // New attributes
+    shortDesc: {
+      type: DataTypes.TEXT, // or DataTypes.TEXT if needed
+      allowNull: true // Adjust as needed
+    },
+    author: {
+      type: DataTypes.STRING, // or DataTypes.TEXT if needed
+      allowNull: false // Adjust as needed
+    }
   }, {
     sequelize,
     modelName: 'Blogs',
