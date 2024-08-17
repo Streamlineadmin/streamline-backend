@@ -18,7 +18,7 @@ app.use(bodyParser.json());
 const corsOptions = {
     origin: (origin, callback) => {
         // Adjust this array to include the domains you want to allow
-        const whitelist = '*';
+        const whitelist = ['http://localhost:3000', 'https://testui.easemargin.com/'];
         
         if (!origin || whitelist.indexOf(origin) !== -1) {
             callback(null, true);
