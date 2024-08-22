@@ -113,5 +113,7 @@ function getblogs(req, res) {
 module.exports = {
     addBlog: addBlog,
     getblogsById : getblogsById,
-    getblogs: getblogs
+    getblogs: getblogs,
+    editBlog: editBlog,
+    deleteBlog: deleteBlog
 }
