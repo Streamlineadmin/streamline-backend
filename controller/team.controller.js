@@ -77,8 +77,6 @@ function deleteTeam(req, res) {
         });
 }
 
-
-
 function getTeamsById(req, res) {
     const id = req.params.id;
 
