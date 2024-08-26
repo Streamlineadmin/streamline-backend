@@ -9,7 +9,7 @@ function addStore(req, res) {
     status: 1,
   };
 
-  models.Stores.create(store)
+  models.Store.create(store)
     .then((result) => {
       res.status(201).json({
         message: "Store added successfully",
@@ -35,7 +35,7 @@ function editStore(req, res) {
     status: req.body.status || 1, // Optional, defaults to 1 if not provided
   };
 
-  models.Stores.update(updatedStoreData, { where: { id: storeId } })
+  models.Store.update(updatedStoreData, { where: { id: storeId } })
     .then((result) => {
       if (result[0] > 0) {
         res.status(200).json({
@@ -59,7 +59,7 @@ function editStore(req, res) {
 function deleteStore(req, res) {
   const storeId = req.body.storeId; // Assuming the store ID is passed as a URL parameter
 
-  models.Stores.destroy({ where: { id: storeId } })
+  models.Store.destroy({ where: { id: storeId } })
     .then((result) => {
       if (result) {
         res.status(200).json({
@@ -82,7 +82,7 @@ function deleteStore(req, res) {
 function getStoresById(req, res) {
   const id = req.params.id;
 
-  models.Stores.findByPk(id)
+  models.Store.findByPk(id)
     .then((result) => {
       res.status(200).json(result);
     })
@@ -94,7 +94,7 @@ function getStoresById(req, res) {
 }
 
 function getStores(req, res) {
-  models.Stores.findAll({
+  models.Store.findAll({
     where: {
       companyId: req.body.companyId,
     },
@@ -108,7 +108,7 @@ function getStores(req, res) {
     .catch((error) => {
       console.error("Error fetching stores:", error);
       res.status(500).json({
-        message: "Something went wrong, please try again later!",
+        message: "Something went wrong, please try again later! its wrong",
       });
     });
 }
