@@ -8,6 +8,7 @@ const imageRoute = require('./routes/images');
 const blogRoute = require('./routes/blogs');
 const teamRoute = require('./routes/teams');
 const userRoute = require('./routes/users');
+const storeRoute = require('./routes/stores');
 
 const app = express();
 
@@ -35,6 +36,6 @@ app.use('/images', imageRoute);
 app.use('/blogs', blogRoute);
 app.use('/teams', teamRoute);
 app.use('/users', userRoute);
-app.use('/stores', userRoute);
+app.use('/stores', storeRoute);
 
 module.exports = app;
