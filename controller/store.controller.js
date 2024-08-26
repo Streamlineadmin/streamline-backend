@@ -3,9 +3,14 @@ const models = require("../models");
 function addStore(req, res) {
   const store = {
     companyId: req.body.companyId,
-    name: req.body.name,
-    description: req.body.description,
+    storeName: req.body.storeName, 
     ip_address: req.body.ip_address,
+    addressLine1: req.body.addressLine1,
+    addressLine2: req.body.addressLine2,
+    pinCode: req.body.pinCode,
+    city: req.body.city,
+    state: req.body.state,
+    country: req.body.country,
     status: 1,
   };
 
@@ -29,10 +34,15 @@ function editStore(req, res) {
 
   const updatedStoreData = {
     companyId: req.body.companyId,
-    name: req.body.name,
-    description: req.body.description,
+    storeName: req.body.storeName, 
     ip_address: req.body.ip_address,
-    status: req.body.status || 1, // Optional, defaults to 1 if not provided
+    addressLine1: req.body.addressLine1,
+    addressLine2: req.body.addressLine2,
+    pinCode: req.body.pinCode,
+    city: req.body.city,
+    state: req.body.state,
+    country: req.body.country,
+    status: req.body.status || 1, 
   };
 
   models.Store.update(updatedStoreData, { where: { id: storeId } })
