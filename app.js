@@ -35,5 +35,6 @@ app.use('/images', imageRoute);
 app.use('/blogs', blogRoute);
 app.use('/teams', teamRoute);
 app.use('/users', userRoute);
+app.use('/stores', userRoute);
 
 module.exports = app;
