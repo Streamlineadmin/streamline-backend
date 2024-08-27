@@ -8,6 +8,7 @@ function addStore(req, res) {
     addressLineOne: req.body.addressLineOne,
     addressLineTwo: req.body.addressLineTwo,
     pincode: req.body.pinCode,
+    storeType: req.body.storeType,
     city: req.body.city,
     state: req.body.state,
     country: req.body.country,
@@ -42,6 +43,7 @@ function editStore(req, res) {
     city: req.body.city,
     state: req.body.state,
     country: req.body.country,
+    storeType: req.body.storeType,
     status: req.body.status || 1, 
   };
 
