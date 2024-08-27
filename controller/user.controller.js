@@ -3,14 +3,14 @@ const bcryptjs = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 
 function addUser(req, res) {
-    models.Users.findOne({where: {email: req.body.email}}).then(result => {
-        if(result) {
+    models.Users.findOne({ where: { email: req.body.email } }).then(result => {
+        if (result) {
             res.status(409).json({
                 message: "Email already exists !",
             });
         } else {
-            bcryptjs.genSalt(10, function(err, salt) {
-                bcryptjs.hash(req.body.password, salt, function(err, hashed) {
+            bcryptjs.genSalt(10, function (err, salt) {
+                bcryptjs.hash(req.body.password, salt, function (err, hashed) {
                     console.log(hashed);
                     const client = {
                         name: req.body.name,
@@ -24,7 +24,7 @@ function addUser(req, res) {
                         ip_address: req.body.ip_address,
                         status: 1
                     }
-                
+
                     models.Users.create(client).then(result => {
                         res.status(201).json({
                             message: "User created successfully",
@@ -70,6 +70,60 @@ function addUser(req, res) {
     });
 }
 
+function editUser(req, res) {
+    const userId = req.body.userId;
+
+    const updatedUserData = {
+        name: req.body.name,
+        email: req.body.email,
+        contactNo: req.body.contactNo,
+        role: req.body.role,
+    };
+
+    models.Users.update(updatedUserData, { where: { id: userId } })
+        .then(result => {
+            if (result[0] > 0) {
+                res.status(200).json({
+                    message: "User updated successfully",
+                    post: updatedBlogData
+                });
+            } else {
+                res.status(404).json({
+                    message: "Blog not found"
+                });
+            }
+        })
+        .catch(error => {
+            res.status(500).json({
+                message: "Something went wrong, please try again later!",
+                error: error
+            });
+        });
+}
+
+function deleteUser(req, res) {
+    const userId = req.body.userId;  // Assuming the blog ID is passed as a URL parameter
+
+    models.Users.destroy({ where: { id: userId } })
+        .then(result => {
+            if (result) {
+                res.status(200).json({
+                    message: "User deleted successfully"
+                });
+            } else {
+                res.status(200).json({
+                    message: "Blog not found"
+                });
+            }
+        })
+        .catch(error => {
+            res.status(500).json({
+                message: "Something went wrong, please try again later!",
+                error: error
+            });
+        });
+}
+
 function getUsers(req, res) {
     models.Users.findAll({
         where: {
@@ -81,16 +135,18 @@ function getUsers(req, res) {
         }
         res.status(200).json(result);
     })
-    .catch(error => {
-        console.error("Error fetching blogs:", error);
-        res.status(500).json({
-            message: "Something went wrong, please try again later!"
+        .catch(error => {
+            console.error("Error fetching blogs:", error);
+            res.status(500).json({
+                message: "Something went wrong, please try again later!"
+            });
         });
-    });
 }
 
 
 module.exports = {
     addUser: addUser,
-    getUsers: getUsers
+    getUsers: getUsers,
+    editUser: editUser,
+    deleteUser: deleteUser
 }
