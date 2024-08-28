@@ -30,7 +30,7 @@ function addAddress(req, res) {
 }
 
 function editAddress(req, res) {
-  const storeId = req.body.storeId;
+  const addressId = req.body.addressId;
 
   const updatedStoreData = {
     companyId: req.body.companyId,
@@ -45,7 +45,7 @@ function editAddress(req, res) {
     status: req.body.status || 1, 
   };
 
-  models.Addresses.update(updatedStoreData, { where: { id: storeId } })
+  models.Addresses.update(updatedStoreData, { where: { id: addressId } })
     .then((result) => {
       if (result[0] > 0) {
         res.status(200).json({
