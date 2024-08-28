@@ -7,7 +7,7 @@ function addAddress(req, res) {
     addressLineOne: req.body.addressLineOne,
     addressLineTwo: req.body.addressLineTwo,
     pincode: req.body.pinCode,
-    storeType: req.body.storeType,
+    addressType: req.body.addressType,
     city: req.body.city,
     state: req.body.state,
     country: req.body.country,
@@ -41,7 +41,7 @@ function editAddress(req, res) {
     city: req.body.city,
     state: req.body.state,
     country: req.body.country,
-    storeType: req.body.storeType,
+    addressType: req.body.addressType,
     status: req.body.status || 1, 
   };
 
