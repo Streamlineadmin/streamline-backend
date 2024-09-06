@@ -56,8 +56,8 @@ function editUser(req, res) {
                     post: updatedBlogData
                 });
             } else {
-                res.status(404).json({
-                    message: "Blog not found"
+                res.status(200).json({
+                    message: "User not found"
                 });
             }
         })
