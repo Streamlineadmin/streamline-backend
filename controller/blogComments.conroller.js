@@ -5,7 +5,7 @@ function addBlogComments(req, res) {
     blogId: req.body.blogId,
     fullName: req.body.fullName,
     userEmail: req.body.userEmail,
-    comment: req.body.comment,
+    comments: req.body.comments,
     ip_address: req.body.ip_address,
     status: 0,
   };
@@ -59,7 +59,7 @@ function approveBlogComments(req, res) {
         res.status(200).json({
           message: "Comment approved successfully",
           post: {
-            commentId: commenntId,
+            commentId: commentId,
             status: 1
           }
         });
