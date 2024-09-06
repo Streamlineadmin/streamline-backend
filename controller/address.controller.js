@@ -32,6 +32,7 @@ function addAddress(req, res) {
 function editAddress(req, res) {
   const addressId = req.body.addressId;
 
+  // updatedAddressData
   const updatedStoreData = {
     companyId: req.body.companyId,
     ip_address: req.body.ip_address,
