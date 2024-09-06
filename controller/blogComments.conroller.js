@@ -1,23 +1,20 @@
 const models = require("../models");
 
-function addAddress(req, res) {
+function addBlogComments(req, res) {
   const store = {
-    companyId: req.body.companyId,
+    // companyId: req.body.companyId,
     ip_address: req.body.ip_address,
-    addressLineOne: req.body.addressLineOne,
-    addressLineTwo: req.body.addressLineTwo,
-    pincode: req.body.pinCode,
-    addressType: req.body.addressType,
-    city: req.body.city,
-    state: req.body.state,
-    country: req.body.country,
-    status: 1,
+    fullName: req.body.fullName,
+    userEmail: req.body.userEmail,
+    userComment: req.body.userComment,
+    blogId:req.body.blogId,
+    status: 0,
   };
 
-  models.Addresses.create(store)
+  models.Comments.create(store)
     .then((result) => {
       res.status(201).json({
-        message: "Address added successfully",
+        message: "Comment added successfully",
         post: result,
       });
     })
@@ -29,29 +26,25 @@ function addAddress(req, res) {
     });
 }
 
-function editAddress(req, res) {
-  const addressId = req.body.addressId;
+// not requiree 
+function editBlogComment(req, res) {
+  const commentId = req.body.commentId;
 
-  // updatedAddressData
-  const updatedStoreData = {
+  const updatedCommentData = {
     companyId: req.body.companyId,
     ip_address: req.body.ip_address,
-    addressLineOne: req.body.addressLineOne,
-    addressLineTwo: req.body.addressLineTwo,
-    pincode: req.body.pinCode,
-    city: req.body.city,
-    state: req.body.state,
-    country: req.body.country,
-    addressType: req.body.addressType,
-    status: req.body.status || 1, 
+    userName: req.body.userName,
+    userEmail: req.body.userEmail,
+    userComment: req.body.userComment,
+    status: req.body.status || 1,
   };
 
-  models.Addresses.update(updatedStoreData, { where: { id: addressId } })
+  models.Comments.update(updatedCommentData, { where: { id: commentId } })
     .then((result) => {
       if (result[0] > 0) {
         res.status(200).json({
-          message: "Address updated successfully",
-          post: updatedStoreData,
+          message: "Comment updated successfully",
+          post: updatedCommentData,
         });
       } else {
         res.status(200).json({
@@ -67,14 +60,14 @@ function editAddress(req, res) {
     });
 }
 
-function deleteAddress(req, res) {
-  const storeId = req.body.storeId; // Assuming the store ID is passed as a URL parameter
+function deleteBlogComment(req, res) {
+  const commentId = req.body.commentId; 
 
-  models.Addresses.destroy({ where: { id: storeId } })
+  models.Comments.destroy({ where: { id: commentId } })
     .then((result) => {
       if (result) {
         res.status(200).json({
-          message: "Address deleted successfully",
+          message: "Comment deleted successfully",
         });
       } else {
         res.status(200).json({
@@ -90,10 +83,12 @@ function deleteAddress(req, res) {
     });
 }
 
-function getAddressById(req, res) {
+// not requ 
+function getBlogCommentById(req, res) {
+  // which id?
   const id = req.params.id;
 
-  models.Addresses.findByPk(id)
+  models.Comments.findByPk(id)
     .then((result) => {
       res.status(200).json(result);
     })
@@ -104,10 +99,10 @@ function getAddressById(req, res) {
     });
 }
 
-function getAddresses(req, res) {
-  models.Addresses.findAll({
+function getBlogComments(req, res) {
+  models.Comments.findAll({
     where: {
-      companyId: req.body.companyId,
+      blogId: req.body.blogId,
     },
   })
     .then((result) => {
@@ -117,7 +112,7 @@ function getAddresses(req, res) {
       res.status(200).json(result);
     })
     .catch((error) => {
-      console.error("Error fetching stores:", error);
+      console.error("Error fetching comments:", error);
       res.status(500).json({
         message: "Something went wrong, please try again later! its wrong",
       });
@@ -125,9 +120,9 @@ function getAddresses(req, res) {
 }
 
 module.exports = {
-  addAddress: addAddress,
-  getAddressById: getAddressById,
-  getAddresses: getAddresses,
-  editAddress: editAddress,
-  deleteAddress: deleteAddress,
+  addBlogComments: addBlogComments,
+  getBlogComments: getBlogComments,
+  getBlogCommentById: getBlogCommentById,
+  editBlogComment: editBlogComment,
+  deleteBlogComment: deleteBlogComment,
 };
