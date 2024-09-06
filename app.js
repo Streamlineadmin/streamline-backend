@@ -40,6 +40,6 @@ app.use('/teams', teamRoute);
 app.use('/users', userRoute);
 app.use('/stores', storeRoute);
 app.use('/address', addressRoute);
-app.use('/blogComments', blogCommentsRoute)
+app.use('/blogComments', blogCommentsRoute);
 
 module.exports = app;
