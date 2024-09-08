@@ -11,6 +11,7 @@ const userRoute = require('./routes/users');
 const storeRoute = require('./routes/stores');
 const addressRoute = require('./routes/address');
 const blogCommentsRoute = require('./routes/blogComments');
+const itemsRoute = require('./routes/items');
 
 const app = express();
 
@@ -41,5 +42,6 @@ app.use('/users', userRoute);
 app.use('/stores', storeRoute);
 app.use('/address', addressRoute);
 app.use('/blogComments', blogCommentsRoute);
+app.use('/items', itemsRoute);
 
 module.exports = app;
