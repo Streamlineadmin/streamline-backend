@@ -46,6 +46,26 @@ function getApprovedBlogComments(req, res) {
     });
 }
 
+function getApprovedComments(req, res) {
+  models.Comments.findAll({
+    where: {
+      status: 1
+    },
+  })
+    .then((result) => {
+      if (!result || result.length === 0) {
+        return res.status(200).json([]);
+      }
+      res.status(200).json(result);
+    })
+    .catch((error) => {
+      console.error("Error fetching blog comments:", error);
+      res.status(500).json({
+        message: "Something went wrong, please try again later!",
+      });
+    });
+}
+
 function approveBlogComments(req, res) {
   const commentId = req.body.commentId;
 
@@ -124,5 +144,6 @@ module.exports = {
   getApprovedBlogComments: getApprovedBlogComments,
   getCommentstoApprove: getCommentstoApprove,
   deleteBlogComment: deleteBlogComment,
-  approveBlogComments: approveBlogComments
+  approveBlogComments: approveBlogComments,
+  getApprovedComments: getApprovedComments
 };
