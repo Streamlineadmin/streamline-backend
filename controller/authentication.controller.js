@@ -49,6 +49,7 @@ function login(req, res) {
             bcryptjs.compare(req.body.password, user.password, function(err, result) {
                 if(result) {
                     const token = jwt.sign({
+                        username: user.username,
                         email: user.email,
                         userId: user.id,
                         companyId: user.companyId
