@@ -54,7 +54,7 @@ function editItem(req, res) {
             if (result[0] > 0) {
                 res.status(200).json({
                     message: "Item updated successfully",
-                    post: updatedTeamData
+                    post: updatedItemData
                 });
             } else {
                 res.status(200).json({
