@@ -2,6 +2,7 @@ const models = require('../models');
 
 function addItem(req, res) {
     const itemData = {
+        itemId: req.body.itemId,
         itemName: req.body.itemName,
         itemType: req.body.itemType,
         category: req.body.category,
@@ -34,6 +35,7 @@ function editItem(req, res) {
     const itemId = req.body.itemId;
 
     const updatedItemData = {
+        itemId: req.body.itemId,
         itemName: req.body.itemName,
         itemType: req.body.itemType,
         category: req.body.category,

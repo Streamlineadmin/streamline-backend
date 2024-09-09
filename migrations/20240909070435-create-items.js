@@ -45,6 +45,9 @@ module.exports = {
       companyId: {
         type: Sequelize.INTEGER
       },
+      itemId: {
+        type: Sequelize.INTEGER
+      },
       status: {
         type: Sequelize.INTEGER
       },
