@@ -32,7 +32,7 @@ function addItem(req, res) {
 }
 
 function editItem(req, res) {
-    const itemId = req.body.itemId;
+    const id = req.body.id;
 
     const updatedItemData = {
         itemId: req.body.itemId,
@@ -49,7 +49,7 @@ function editItem(req, res) {
         description: req.body.description,
     };
 
-    models.Items.update(updatedItemData, { where: { id: itemId } })
+    models.Items.update(updatedItemData, { where: { id: id } })
         .then(result => {
             if (result[0] > 0) {
                 res.status(200).json({
