@@ -12,6 +12,7 @@ const storeRoute = require('./routes/stores');
 const addressRoute = require('./routes/address');
 const blogCommentsRoute = require('./routes/blogComments');
 const itemsRoute = require('./routes/items');
+const buyerSupplierRoute = require('./routes/buyerSupplier');
 
 const app = express();
 
@@ -43,5 +44,6 @@ app.use('/stores', storeRoute);
 app.use('/address', addressRoute);
 app.use('/blogComments', blogCommentsRoute);
 app.use('/items', itemsRoute);
+app.use('buyerSupplier', buyerSupplierRoute);
 
 module.exports = app;
