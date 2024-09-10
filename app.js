@@ -44,6 +44,6 @@ app.use('/stores', storeRoute);
 app.use('/address', addressRoute);
 app.use('/blogComments', blogCommentsRoute);
 app.use('/items', itemsRoute);
-app.use('buyerSupplier', buyerSupplierRoute);
+app.use('/buyerSupplier', buyerSupplierRoute);
 
 module.exports = app;
