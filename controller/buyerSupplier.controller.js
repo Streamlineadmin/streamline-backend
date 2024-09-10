@@ -11,6 +11,7 @@ function addBuyerSupplier(req, res) {
         companyType: req.body.companyType,
         GSTNumber: req.body.gstNumber,
         GSTType: req.body.gstType,
+        ip_address: req.body.ip_address,
         status: 1
     }
 
@@ -24,9 +25,10 @@ function addBuyerSupplier(req, res) {
                 country: elem.country,
                 pincode: elem.pincode,
                 state: elem.state,
+                ip_address: req.body.ip_address,
                 status: 1
             }
-            models.BuyerSupplierAddress.create(buyerSupplierData);
+            models.BuyerSupplierAddress.create(addressData);
         })
         res.status(200).json({
             message: "Buyer/Supplier added successfully",
