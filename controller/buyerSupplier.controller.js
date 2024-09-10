@@ -18,6 +18,7 @@ function addBuyerSupplier(req, res) {
     models.BuyerSupplier.create(buyerSupplierData).then(result => {
         req.body.addresses.map((elem) => {
             let addressData = {
+                buyerSupplierId: result.id,
                 addressLineOne: elem.addressLine1,
                 addressLineTwo: elem.addressLine2,
                 addressType: elem.addressType,
