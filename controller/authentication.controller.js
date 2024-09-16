@@ -52,7 +52,8 @@ function login(req, res) {
                         username: user.username,
                         email: user.email,
                         userId: user.id,
-                        companyId: user.companyId
+                        companyId: user.companyId,
+                        companyName: user.companyName
                     }, 'secret', function(err, token) {
                         res.status(200).json({
                             message: "Authentication successful.",
