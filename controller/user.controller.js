@@ -1,9 +1,10 @@
 const models = require('../models');
 const bcryptjs = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const { Op } = require('sequelize');
 
 function addUser(req, res) {
-    models.Users.findOne({ where: { email: req.body.email } }).then(result => {
+    models.Users.findOne({ where: { email: req.body.email, username: req.body.username } }).then(result => {
         if (result) {
             res.status(409).json({
                 message: "Email already exists !",
@@ -95,7 +96,10 @@ function deleteUser(req, res) {
 function getUsers(req, res) {
     models.Users.findAll({
         where: {
-            companyId: req.body.companyId
+            companyId: req.body.companyId,
+            role: {
+                [Op.notIn]: [1, 2]  // Exclude roles 1 and 2
+            }
         }
     }).then(result => {
         if (!result || result.length === 0) {
