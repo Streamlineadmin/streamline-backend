@@ -4,40 +4,55 @@ const jwt = require('jsonwebtoken');
 const { Op } = require('sequelize');
 
 function addUser(req, res) {
-    models.Users.findOne({ where: { email: req.body.email, username: req.body.username } }).then(result => {
-        if (result) {
-            res.status(409).json({
-                message: "Email already exists !",
+    // Check for email and username separately
+    models.Users.findOne({ where: { email: req.body.email } }).then(emailResult => {
+        if (emailResult) {
+            return res.status(409).json({
+                message: "Email already exists!",
             });
         } else {
-            const client = {
-                name: req.body.name,
-                email: req.body.email,
-                contactNo: req.body.contactNo,
-                username: req.body.username,
-                role: req.body.role,
-                companyName: req.body.companyName,
-                companyId: req.body.companyId,
-                ip_address: req.body.ip_address,
-                status: 1
-            }
+            models.Users.findOne({ where: { username: req.body.username } }).then(usernameResult => {
+                if (usernameResult) {
+                    return res.status(409).json({
+                        message: "Username already exists!",
+                    });
+                } else {
+                    // Create the user
+                    const client = {
+                        name: req.body.name,
+                        email: req.body.email,
+                        contactNo: req.body.contactNo,
+                        username: req.body.username,
+                        role: req.body.role,
+                        companyName: req.body.companyName,
+                        companyId: req.body.companyId,
+                        ip_address: req.body.ip_address,
+                        status: 1
+                    };
 
-            models.Users.create(client).then(result => {
-                res.status(201).json({
-                    message: "User created successfully",
-                });
+                    models.Users.create(client).then(result => {
+                        res.status(201).json({
+                            message: "User created successfully",
+                        });
+                    }).catch(error => {
+                        res.status(500).json({
+                            message: "Something went wrong! Please try again later.",
+                        });
+                    });
+                }
             }).catch(error => {
                 res.status(500).json({
-                    message: "Something went wrong!, Please try again later",
+                    message: "Something went wrong! Please try again later.",
                 });
             });
         }
     }).catch(error => {
         res.status(500).json({
-            message: "Something went wrong!, Please try again later",
+            message: "Something went wrong! Please try again later.",
         });
     });
 }
+
 
 function editUser(req, res) {
     const userId = req.body.userId;

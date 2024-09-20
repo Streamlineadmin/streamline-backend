@@ -1,19 +1,34 @@
 const models = require('../models');
 
 function addTeam(req, res) {
-    const team = {
-        companyId: req.body.companyId,
-        name: req.body.name,
-        description: req.body.description,
-        ip_address: req.body.ip_address,
-        status: 1
-    }
+    // Check if team name already exists for the given company
+    models.Teams.findOne({ where: { name: req.body.name, companyId: req.body.companyId } }).then(teamResult => {
+        if (teamResult) {
+            return res.status(409).json({
+                message: "Team already exists!",
+            });
+        } else {
+            // Team does not exist, proceed to create
+            const team = {
+                companyId: req.body.companyId,
+                name: req.body.name,
+                description: req.body.description,
+                ip_address: req.body.ip_address,
+                status: 1
+            };
 
-    models.Teams.create(team).then(result => {
-        res.status(201).json({
-            message: "Team added successfully",
-            post: result
-        });
+            models.Teams.create(team).then(result => {
+                res.status(201).json({
+                    message: "Team added successfully",
+                    post: result
+                });
+            }).catch(error => {
+                res.status(500).json({
+                    message: "Something went wrong, please try again later!",
+                    error: error
+                });
+            });
+        }
     }).catch(error => {
         res.status(500).json({
             message: "Something went wrong, please try again later!",
@@ -21,6 +36,7 @@ function addTeam(req, res) {
         });
     });
 }
+
 
 function editTeam(req, res) {
     const teamId = req.body.teamId;
