@@ -21,6 +21,7 @@ module.exports = (sequelize, DataTypes) => {
     HSNCode: DataTypes.STRING,
     price: DataTypes.INTEGER,
     taxType: DataTypes.INTEGER,
+    tax: DataTypes.Integer,
     currentStock: DataTypes.INTEGER,
     minStock: DataTypes.INTEGER,
     maxStock: DataTypes.INTEGER,
