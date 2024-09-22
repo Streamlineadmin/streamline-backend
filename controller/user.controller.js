@@ -25,7 +25,7 @@ function addUser(req, res) {
         }
         if (contactNoResult) {
             return res.status(409).json({
-                message: "This contact number blongs to someone else!",
+                message: "This contact number belongs to someone else!",
             });
         }
 

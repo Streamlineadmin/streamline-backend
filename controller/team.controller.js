@@ -37,38 +37,56 @@ function addTeam(req, res) {
     });
 }
 
-
 function editTeam(req, res) {
     const teamId = req.body.teamId;
-
+    const companyId = req.body.companyId;
     const updatedTeamData = {
-        companyId: req.body.companyId,
+        companyId,
         name: req.body.name,
         description: req.body.description,
         ip_address: req.body.ip_address,
-        status: req.body.status || 1  // Optional, defaults to 1 if not provided
+        status: req.body.status || 1  // Defaults to 1 if not provided
     };
 
-    models.Teams.update(updatedTeamData, { where: { id: teamId } })
-        .then(result => {
-            if (result[0] > 0) {
-                res.status(200).json({
-                    message: "Team updated successfully",
-                    post: updatedTeamData
-                });
-            } else {
-                res.status(200).json({
-                    message: "Team not found"
-                });
-            }
-        })
-        .catch(error => {
-            res.status(500).json({
-                message: "Something went wrong, please try again later!",
-                error: error
+    // Check if the team name already exists for the given company but exclude the current team
+    models.Teams.findOne({
+        where: { name: req.body.name, companyId, id: { [models.Sequelize.Op.ne]: teamId } }
+    }).then(existingTeam => {
+        if (existingTeam) {
+            // If a team with the same name already exists for the company
+            return res.status(409).json({
+                message: "Team name already exists for this company!",
             });
+        } else {
+            // Proceed with the update
+            models.Teams.update(updatedTeamData, { where: { id: teamId } })
+                .then(result => {
+                    if (result[0] > 0) {
+                        res.status(200).json({
+                            message: "Team updated successfully",
+                            post: updatedTeamData
+                        });
+                    } else {
+                        res.status(404).json({
+                            message: "Team not found"
+                        });
+                    }
+                })
+                .catch(error => {
+                    res.status(500).json({
+                        message: "Something went wrong, please try again later!",
+                        error: error.message || error
+                    });
+                });
+        }
+    }).catch(error => {
+        res.status(500).json({
+            message: "Something went wrong, please try again later!",
+            error: error.message || error
         });
+    });
 }
+
 
 function deleteTeam(req, res) {
     const teamId = req.body.teamId;  // Assuming the team ID is passed as a URL parameter
