@@ -1,33 +1,53 @@
 const models = require("../models");
 
 function addAddress(req, res) {
-  const store = {
-    companyId: req.body.companyId,
-    ip_address: req.body.ip_address,
-    addressLineOne: req.body.addressLineOne,
-    addressLineTwo: req.body.addressLineTwo,
-    pincode: req.body.pinCode,
-    addressType: req.body.addressType,
-    city: req.body.city,
-    state: req.body.state,
-    country: req.body.country,
+  const { addressType, companyId, ip_address, addressLineOne, addressLineTwo, pinCode, city, state, country } = req.body;
+
+  // Define the common data for both addresses
+  const baseAddress = {
+    companyId,
+    ip_address,
+    addressLineOne,
+    addressLineTwo,
+    pincode: pinCode,
+    city,
+    state,
+    country,
     status: 1,
   };
 
-  models.Addresses.create(store)
-    .then((result) => {
+  // Prepare an array for storing the promises of address creation
+  const addressPromises = [];
+
+  // Check for addressType and insert accordingly
+  if (addressType.includes(1)) {
+    // Create delivery address
+    const deliveryAddress = { ...baseAddress, addressType: 1 }; // Delivery Address
+    addressPromises.push(models.Addresses.create(deliveryAddress));
+  }
+
+  if (addressType.includes(2)) {
+    // Create billing address
+    const billingAddress = { ...baseAddress, addressType: 2 }; // Billing Address
+    addressPromises.push(models.Addresses.create(billingAddress));
+  }
+
+  // Execute all the insertions
+  Promise.all(addressPromises)
+    .then((results) => {
       res.status(201).json({
-        message: "Address added successfully",
-        post: result,
+        message: "Address(es) added successfully",
+        posts: results,
       });
     })
     .catch((error) => {
       res.status(500).json({
         message: "Something went wrong, please try again later!",
-        error: error,
+        error: error.message || error,
       });
     });
 }
+
 
 function editAddress(req, res) {
   const addressId = req.body.addressId;
@@ -43,7 +63,7 @@ function editAddress(req, res) {
     state: req.body.state,
     country: req.body.country,
     addressType: req.body.addressType,
-    status: req.body.status || 1, 
+    status: req.body.status || 1,
   };
 
   models.Addresses.update(updatedStoreData, { where: { id: addressId } })
