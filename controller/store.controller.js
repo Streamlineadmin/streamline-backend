@@ -1,33 +1,47 @@
 const models = require("../models");
 
 function addStore(req, res) {
-  const store = {
-    companyId: req.body.companyId,
-    name: req.body.storeName, 
-    ip_address: req.body.ip_address,
-    addressLineOne: req.body.addressLineOne,
-    addressLineTwo: req.body.addressLineTwo,
-    pincode: req.body.pinCode,
-    storeType: req.body.storeType,
-    city: req.body.city,
-    state: req.body.state,
-    country: req.body.country,
-    status: 1,
-  };
+  // Check if team name already exists for the given company
+  models.Store.findOne({ where: { name: req.body.storeName, companyId: req.body.companyId } }).then(storeResult => {
+    if (storeResult) {
+      return res.status(409).json({
+        message: "Store name already exists!",
+      });
+    } else {
+      const store = {
+        companyId: req.body.companyId,
+        name: req.body.storeName,
+        ip_address: req.body.ip_address,
+        addressLineOne: req.body.addressLineOne,
+        addressLineTwo: req.body.addressLineTwo,
+        pincode: req.body.pinCode,
+        storeType: req.body.storeType,
+        city: req.body.city,
+        state: req.body.state,
+        country: req.body.country,
+        status: 1,
+      };
 
-  models.Store.create(store)
-    .then((result) => {
-      res.status(201).json({
-        message: "Store added successfully",
-        post: result,
-      });
-    })
-    .catch((error) => {
-      res.status(500).json({
-        message: "Something went wrong, please try again later!",
-        error: error,
-      });
+      models.Store.create(store)
+        .then((result) => {
+          res.status(201).json({
+            message: "Store added successfully",
+            post: result,
+          });
+        })
+        .catch((error) => {
+          res.status(500).json({
+            message: "Something went wrong, please try again later!",
+            error: error,
+          });
+        });
+    }
+  }).catch(error => {
+    res.status(500).json({
+      message: "Something went wrong, please try again later!",
+      error: error
     });
+  });
 }
 
 function editStore(req, res) {
@@ -44,7 +58,7 @@ function editStore(req, res) {
     state: req.body.state,
     country: req.body.country,
     storeType: req.body.storeType,
-    status: req.body.status || 1, 
+    status: req.body.status || 1,
   };
 
   models.Store.update(updatedStoreData, { where: { id: storeId } })
