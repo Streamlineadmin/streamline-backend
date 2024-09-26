@@ -11,7 +11,7 @@ function addDocumentSeries(req, res) {
         } else {
             // Document series not exist, proceed to create
             const series = {
-                DocType: req.body.DocType,
+                DocType: req.body.docType,
                 seriesName: req.body.seriesName,
                 prefix: req.body.series,
                 number: req.body.number,
@@ -42,7 +42,7 @@ function addDocumentSeries(req, res) {
 }
 
 function editDocumentSeries(req, res) {
-    const DocType = req.body.DocType;
+    const DocType = req.body.docType;
     const seriesName= req.body.seriesName;
     const prefix= req.body.prefix;
     const number= req.body.number;
