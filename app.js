@@ -13,6 +13,7 @@ const addressRoute = require('./routes/address');
 const blogCommentsRoute = require('./routes/blogComments');
 const itemsRoute = require('./routes/items');
 const buyerSupplierRoute = require('./routes/buyerSupplier');
+const documentSeriesRoute = require('./routes/documentSeries');
 
 const app = express();
 
@@ -45,5 +46,6 @@ app.use('/address', addressRoute);
 app.use('/blogComments', blogCommentsRoute);
 app.use('/items', itemsRoute);
 app.use('/buyerSupplier', buyerSupplierRoute);
+app.use('/documentSeries', documentSeriesRoute);
 
 module.exports = app;
