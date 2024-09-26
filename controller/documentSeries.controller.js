@@ -61,7 +61,7 @@ function editDocumentSeries(req, res) {
 
     // Check if the team name already exists for the given company but exclude the current team
     models.DocumentSeries.findOne({
-        where: { DocType: req.body.DocType, seriesName: req.body.seriesName, companyId, id: { [models.Sequelize.Op.ne]: req.body.id } }
+        where: { DocType: req.body.docType, seriesName: req.body.seriesName, companyId, id: { [models.Sequelize.Op.ne]: req.body.id } }
     }).then(existingSeries => {
         if (existingSeries) {
             // If a series with the same name already exists for the company
