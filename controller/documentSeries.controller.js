@@ -70,7 +70,7 @@ function editDocumentSeries(req, res) {
             });
         } else {
             // Proceed with the update
-            models.DocumentSeries.update(updatedDocumentSeriesData, { where: { id: id } })
+            models.DocumentSeries.update(updatedDocumentSeriesData, { where: { id: req.body.id } })
                 .then(result => {
                     if (result[0] > 0) {
                         res.status(200).json({
