@@ -14,6 +14,7 @@ const blogCommentsRoute = require('./routes/blogComments');
 const itemsRoute = require('./routes/items');
 const buyerSupplierRoute = require('./routes/buyerSupplier');
 const documentSeriesRoute = require('./routes/documentSeries');
+const accountDetailsRoute = require('./routes/accountDetails');
 
 const app = express();
 
@@ -47,5 +48,6 @@ app.use('/blogComments', blogCommentsRoute);
 app.use('/items', itemsRoute);
 app.use('/buyerSupplier', buyerSupplierRoute);
 app.use('/documentSeries', documentSeriesRoute);
+app.use('/accountDetails', accountDetailsRoute);
 
 module.exports = app;
