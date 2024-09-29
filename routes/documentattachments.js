@@ -1,4 +1,4 @@
-const express = require("express"); 
+const express = require("express");
 
 const quotationAttachmentsController = require("../controller/documentattachments.controller");
 
@@ -21,5 +21,9 @@ router.post(
   quotationAttachmentsController.deleteDocumentAttachments
 );
 
-module.exports = router;
+// Test route
+router.get("/test", (req, res) => {
+  res.status(200).json({ message: "Test route working!" });
+});
 
+module.exports = router;

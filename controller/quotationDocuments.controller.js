@@ -2,6 +2,7 @@ const models = require("../models");
 
 function addQuotationDocuments(req, res) {
   // check if documents name already exists for the given company
+  console.log("Request received:", req.body);
   models.QuotationDocuments.findOne({
     where: {
       documentType: req.body.documentType,
@@ -17,34 +18,7 @@ function addQuotationDocuments(req, res) {
       } else {
         // Document not exist, proceed to create
         const documents = {
-          documentType: req.body.documentType,
-          documentNumber: req.body.documentNumber,
-          buyerName: req.body.buyerName,
-          buyerBillingAddress: req.body.buyerBillingAddress,
-          buyerDeliveryAddress: req.body.buyerDeliveryAddress,
-          buyerContactNumber: req.body.buyerContactNumber,
-          buyerEmail: req.body.buyerEmail,
-          supplierName: req.body.supplierName,
-          supplierBillingAddress: req.body.supplierBillingAddress,
-          supplierDeliverAddress: req.body.supplierDeliverAddress,
-          supplierContactNo: req.body.supplierContactNo,
-          supplierEmail: req.body.supplierEmail,
-          documentDate: req.body.documentDate,
-          ammendment: req.body.ammendment,
-          deliveryDate: req.body.deliveryDate,
-          paymentTerm: req.body.paymentTerm,
-          store: req.body.store,
-          enquiryNumber: req.body.enquiryNumber,
-          enquiryDate: req.body.enquiryDate,
-          logisticDetails: req.body.logisticDetails,
-          additionalDetails: req.body.additionalDetails,
-          signature: req.body.signature,
-          companyId: req.body.companyId,
-          createdBy: req.body.createdBy,
-          status: req.body.status,
-          ip_address: req.body.ip_address,
-          createdAt: req.body.createdAt,
-          updatedAt: req.body.updatedAt,
+         
         };
 
         models.QuotationDocuments.create(documents)

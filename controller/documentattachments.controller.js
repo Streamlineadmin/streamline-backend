@@ -2,6 +2,7 @@ const models = require("../models");
 
 function addDocumentAttachments(req, res) {
   // Check if items already exists for the given company
+  // console.log("Request received:", req.body);
   models.DocumentAttachments.findOne({
     where: {
       documentNumber: req.body.documentNumber,

@@ -1,34 +1,35 @@
 const models = require("../models");
 
 function addDocumentItems(req, res) {
+  console.log("Request received:", req.body);
   // Check if items already exists for the given company
   models.DocumentItems.findOne({
     where: {
       documentNumber: req.body.documentNumber,
       itemId: req.body.itemId,
-      itemName: req.body.itemName,
-      HSN: req.body.HSN,
-      UOM: req.body.UOM,
-      quantity: req.body.quantity,
-      price: req.body.price,
-      discountOne: req.body.discountOne,
-      discountTwo: req.body.discountTwo,
-      totalDiscount: req.body.totalDiscount,
-      taxType: req.body.taxType,
-      tax: req.body.tax,
-      totalTax: req.body.totalTax,
-      totalBeforeTax: req.body.totalBeforeTax,
-      totalAfterTax: req.body.totalAfterTax,
+      // itemName: req.body.itemName,
+      // HSN: req.body.HSN,
+      // UOM: req.body.UOM,
+      // quantity: req.body.quantity,
+      // price: req.body.price,
+      // discountOne: req.body.discountOne,
+      // discountTwo: req.body.discountTwo,
+      // totalDiscount: req.body.totalDiscount,
+      // taxType: req.body.taxType,
+      // tax: req.body.tax,
+      // totalTax: req.body.totalTax,
+      // totalBeforeTax: req.body.totalBeforeTax,
+      // totalAfterTax: req.body.totalAfterTax,
     },
   })
-    .then((itemValues) => {
-      if (itemValues) {
+    .then((existingItem) => {
+      if (existingItem) {
         return res.status(409).json({
           message: "item already exists!",
         });
       } else {
         // Account number does not exist, proceed to create
-        const items = {
+        const newItem = {
           documentNumber: req.body.documentNumber,
           itemId: req.body.itemId,
           itemName: req.body.itemName,
@@ -73,8 +74,8 @@ function addDocumentItems(req, res) {
 
 function editDocumentItems(req, res) {
   const itemId = req.body.itemId;
-  const documentNumber = req.body.documentNumber;
-  const companyId = req.body.companyId;
+  // const documentNumber = req.body.documentNumber;
+  // const companyId = req.body.companyId;
   const updatedItemData = {
     documentNumber: req.body.documentNumber,
     itemId: req.body.itemId,
@@ -99,20 +100,20 @@ function editDocumentItems(req, res) {
     where: {
       documentNumber: req.body.documentNumber,
       itemId: req.body.itemId,
-      itemName: req.body.itemName,
-      HSN: req.body.HSN,
-      UOM: req.body.UOM,
-      quantity: req.body.quantity,
-      price: req.body.price,
-      discountOne: req.body.discountOne,
-      discountTwo: req.body.discountTwo,
-      totalDiscount: req.body.totalDiscount,
-      taxType: req.body.taxType,
-      tax: req.body.tax,
-      totalTax: req.body.totalTax,
-      totalBeforeTax: req.body.totalBeforeTax,
-      totalAfterTax: req.body.totalAfterTax,
-      id: { [models.Sequelize.Op.ne]: id },
+      id: { [models.Sequelize.Op.ne]: req.body.id },
+      // itemName: req.body.itemName,
+      // HSN: req.body.HSN,
+      // UOM: req.body.UOM,
+      // quantity: req.body.quantity,
+      // price: req.body.price,
+      // discountOne: req.body.discountOne,
+      // discountTwo: req.body.discountTwo,
+      // totalDiscount: req.body.totalDiscount,
+      // taxType: req.body.taxType,
+      // tax: req.body.tax,
+      // totalTax: req.body.totalTax,
+      // totalBeforeTax: req.body.totalBeforeTax,
+      // totalAfterTax: req.body.totalAfterTax,
     },
   })
     .then((existingItemsDetails) => {
@@ -123,7 +124,9 @@ function editDocumentItems(req, res) {
         });
       } else {
         // Proceed with the update
-        models.DocumentItems.update(updatedItemData, { where: { id: id } })
+        models.DocumentItems.update(updatedItemData, {
+          where: { id: req.body.id },
+        })
           .then((result) => {
             if (result[0] > 0) {
               res.status(200).json({
@@ -153,7 +156,7 @@ function editDocumentItems(req, res) {
 }
 
 function deleteDocumentItems(req, res) {
-  const itemId = req.body.itemId;
+  const id = req.body.id; 
 
   models.DocumentItems.destroy({ where: { id: id } })
     .then((result) => {

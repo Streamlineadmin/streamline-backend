@@ -17,6 +17,7 @@ const documentSeriesRoute = require("./routes/documentSeries");
 const accountDetailsRoute = require("./routes/accountDetails");
 const quotationDocumentsRoute = require("./routes/quotationDocuments");
 const quotationItemsRoute = require("./routes/quotationItems");
+const documentattachmentsRoute = require("./routes/documentattachments");
 
 const app = express();
 
@@ -53,5 +54,6 @@ app.use("/documentSeries", documentSeriesRoute);
 app.use("/accountDetails", accountDetailsRoute);
 app.use("/quotationDocuments", quotationDocumentsRoute);
 app.use("./quotationItems", quotationItemsRoute);
+app.use("/documentattachments", documentattachmentsRoute);
 
 module.exports = app;
