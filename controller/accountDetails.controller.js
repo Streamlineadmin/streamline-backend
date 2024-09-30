@@ -64,7 +64,7 @@ function editAccountDetails(req, res) {
     };
 
     // Check if the account number  already exists for the given company but exclude the current account details
-    models.Teams.findOne({
+    models.AccountDetails.findOne({
         where: { accountNumber: req.body.accountNumber, companyId: companyId, id: { [models.Sequelize.Op.ne]: id } }
     }).then(existingAccountDetails => {
         if (existingAccountDetails) {
