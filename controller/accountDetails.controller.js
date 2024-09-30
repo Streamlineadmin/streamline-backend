@@ -2,7 +2,7 @@ const models = require('../models');
 
 function addAccountDetails(req, res) {
     // Check if account number already exists for the given company
-    models.AccountDetails.findOne({ where: { name: req.body.accountNumber, companyId: req.body.companyId } }).then(result => {
+    models.AccountDetails.findOne({ where: { accountNumber: req.body.accountNumber, companyId: req.body.companyId } }).then(result => {
         if (result) {
             return res.status(409).json({
                 message: "Account number already exists!",
