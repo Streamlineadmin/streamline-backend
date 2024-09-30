@@ -1,9 +1,9 @@
 const models = require('../models');
 
 function addAccountDetails(req, res) {
-    // Check if team name already exists for the given company
-    models.AccountDetails.findOne({ where: { name: req.body.accountNumber, companyId: req.body.companyId } }).then(teamResult => {
-        if (teamResult) {
+    // Check if account number already exists for the given company
+    models.AccountDetails.findOne({ where: { name: req.body.accountNumber, companyId: req.body.companyId } }).then(result => {
+        if (result) {
             return res.status(409).json({
                 message: "Account number already exists!",
             });
@@ -46,7 +46,7 @@ function addAccountDetails(req, res) {
 
 function editAccountDetails(req, res) {
     const id = req.body.id;
-    const accountNumner = req.body.accountNumber;
+    const accountNumber = req.body.accountNumber;
     const companyId = req.body.companyId;
     const updatedAccountData = {
         bankName: req.body.bankName,
