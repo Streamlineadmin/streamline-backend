@@ -15,6 +15,7 @@ const itemsRoute = require('./routes/items');
 const buyerSupplierRoute = require('./routes/buyerSupplier');
 const documentSeriesRoute = require('./routes/documentSeries');
 const accountDetailsRoute = require('./routes/accountDetails');
+const documentsRoute = require('./routes/documents');
 
 const app = express();
 
@@ -49,5 +50,6 @@ app.use('/items', itemsRoute);
 app.use('/buyerSupplier', buyerSupplierRoute);
 app.use('/documentSeries', documentSeriesRoute);
 app.use('/accountDetails', accountDetailsRoute);
+app.use('/documents', documentsRoute);
 
 module.exports = app;
