@@ -22,13 +22,24 @@ function getDocuments(req, res) {
 function getDocumentById(req, res) {
     const documentNumber = req.body.documentNumber;
 
-    models.Documents.findByPk(documentNumber).then(result => {
-        res.status(200).json(result);
-    }).catch(error => {
+    models.Documents.findOne({
+        where: { documentNumber: documentNumber }
+    })
+    .then(result => {
+        if (result) {
+            res.status(200).json(result);
+        } else {
+            res.status(404).json({
+                message: "Document not found"
+            });
+        }
+    })
+    .catch(error => {
         res.status(500).json({
-            message: "something went wrong, please try again later!"
+            message: "Something went wrong, please try again later!"
         });
     });
+    
 }
 
 
