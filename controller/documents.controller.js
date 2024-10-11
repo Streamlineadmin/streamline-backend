@@ -46,7 +46,8 @@ function createDocument(req, res) {
         billDate = null,
         returnRecieveDate = null,
         creditNoteNumber = null,
-        creditNotedate = null
+        creditNotedate = null,
+        items = [] // Add items array to request body
     } = req.body;
 
     // Create the document with provided fields (including null values)
@@ -97,8 +98,31 @@ function createDocument(req, res) {
         creditNoteNumber,
         creditNotedate
     })
-    .then(result => {
-        res.status(201).json(result); // Return created document with a 201 status
+    .then(document => {
+        // After successfully creating the document, insert data into DocumentItems
+        const documentItems = items.map(item => ({
+            documentNumber: document.documentNumber, // Use the created document's number
+            itemId: item.itemId,
+            itemName: item.itemName,
+            HSN: item.HSN,
+            UOM: item.UOM,
+            quantity: item.quantity,
+            price: item.price,
+            discountOne: item.discountOne,
+            discountTwo: item.discountTwo,
+            totalDiscount: item.totalDiscount,
+            taxType: item.taxType,
+            tax: item.tax,
+            totalTax: item.totalTax,
+            totalBeforeTax: item.totalBeforeTax,
+            totalAfterTax: item.totalAfterTax
+        }));
+
+        // Bulk create DocumentItems
+        return models.DocumentItems.bulkCreate(documentItems);
+    })
+    .then(() => {
+        res.status(201).json({ message: "Document and items created successfully!" }); // Return success message
     })
     .catch(error => {
         console.error("Error adding document:", error);
@@ -107,6 +131,7 @@ function createDocument(req, res) {
         });
     });
 }
+
 
 
 
