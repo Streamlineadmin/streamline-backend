@@ -20,7 +20,7 @@ function getDocuments(req, res) {
 }
 
 function getDocumentById(req, res) {
-    const documentNumber = req.params.documentNumber;
+    const documentNumber = req.body.documentNumber;
 
     models.Documents.findByPk(documentNumber).then(result => {
         res.status(200).json(result);
