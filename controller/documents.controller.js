@@ -147,8 +147,6 @@ function createDocument(req, res) {
     });
 }
 
-
-
 function getDocuments(req, res) {
     models.Documents.findAll({
         where: {
@@ -164,16 +162,24 @@ function getDocuments(req, res) {
         const documentNumbers = documents.map(doc => doc.documentNumber);
 
         // Fetch DocumentItems based on the documentNumbers
-        return models.DocumentItems.findAll({
-            where: {
-                documentNumber: documentNumbers
-            }
-        }).then(items => {
-            // Format the result to include items in the documents
+        return Promise.all([
+            models.DocumentItems.findAll({
+                where: {
+                    documentNumber: documentNumbers
+                }
+            }),
+            models.DocumentAdditionalCharges.findAll({
+                where: {
+                    documentNumber: documentNumbers
+                }
+            })
+        ]).then(([items, additionalCharges]) => {
+            // Format the result to include items and additional charges in the documents
             const formattedResult = documents.map(document => {
                 return {
                     ...document.toJSON(),
-                    items: items.filter(item => item.documentNumber === document.documentNumber) || [] // Match items with documentNumber
+                    items: items.filter(item => item.documentNumber === document.documentNumber) || [], // Match items with documentNumber
+                    additionalCharges: additionalCharges.filter(charge => charge.documentNumber === document.documentNumber) || [] // Match additional charges
                 };
             });
 
@@ -188,6 +194,7 @@ function getDocuments(req, res) {
         });
     });
 }
+
 
 
 function getDocumentById(req, res) {
