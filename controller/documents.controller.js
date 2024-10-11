@@ -47,7 +47,8 @@ function createDocument(req, res) {
         returnRecieveDate = null,
         creditNoteNumber = null,
         creditNotedate = null,
-        items = [] // Add items array to request body
+        items = [], // Add items array to request body
+        additionalCharges = [] // Add additional charges array to request body
     } = req.body;
 
     // Create the document with provided fields (including null values)
@@ -119,10 +120,24 @@ function createDocument(req, res) {
         }));
 
         // Bulk create DocumentItems
-        return models.DocumentItems.bulkCreate(documentItems);
+        return models.DocumentItems.bulkCreate(documentItems).then(() => {
+            // After inserting DocumentItems, insert additional charges
+            const additionalChargesData = additionalCharges.map(charge => ({
+                documentNumber: document.documentNumber,
+                chargingFor: charge.chargingFor,
+                price: charge.price,
+                tax: charge.tax,
+                total: charge.total,
+                status: charge.status,
+                ip_address: charge.ip_address
+            }));
+
+            // Bulk create DocumentAdditionalCharges
+            return models.DocumentAdditionalCharges.bulkCreate(additionalChargesData);
+        });
     })
     .then(() => {
-        res.status(201).json({ message: "Document and items created successfully!" }); // Return success message
+        res.status(201).json({ message: "Document, items, and additional charges created successfully!" });
     })
     .catch(error => {
         console.error("Error adding document:", error);
@@ -131,6 +146,7 @@ function createDocument(req, res) {
         });
     });
 }
+
 
 
 function getDocuments(req, res) {
