@@ -132,28 +132,38 @@ function createDocument(req, res) {
     });
 }
 
+
 function getDocuments(req, res) {
     models.Documents.findAll({
         where: {
             companyId: req.body.companyId
-        },
-        include: [{
-            model: models.DocumentItems, // Include DocumentItems model
-            as: 'items', // This should match the alias defined in your models
-            required: false // Include documents even if they have no items
-        }]
+        }
     })
-    .then(result => {
-        // Map through the result to ensure items is always an array
-        const formattedResult = result.map(document => {
-            return {
-                ...document.toJSON(),
-                items: document.items || [] // Set items to an empty array if null
-            };
-        });
+    .then(documents => {
+        if (!documents || documents.length === 0) {
+            return res.status(200).json([]);
+        }
 
-        // Return the formatted result
-        res.status(200).json(formattedResult);
+        // Extract document numbers
+        const documentNumbers = documents.map(doc => doc.documentNumber);
+
+        // Fetch DocumentItems based on the documentNumbers
+        return models.DocumentItems.findAll({
+            where: {
+                documentNumber: documentNumbers
+            }
+        }).then(items => {
+            // Format the result to include items in the documents
+            const formattedResult = documents.map(document => {
+                return {
+                    ...document.toJSON(),
+                    items: items.filter(item => item.documentNumber === document.documentNumber) || [] // Match items with documentNumber
+                };
+            });
+
+            // Return the formatted result
+            res.status(200).json(formattedResult);
+        });
     })
     .catch(error => {
         console.error("Error fetching documents:", error);
