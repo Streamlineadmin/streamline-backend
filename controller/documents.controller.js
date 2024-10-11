@@ -47,8 +47,10 @@ function createDocument(req, res) {
         returnRecieveDate = null,
         creditNoteNumber = null,
         creditNotedate = null,
-        items = [], // Add items array to request body
-        additionalCharges = [] // Add additional charges array to request body
+        items = [],
+        additionalCharges = [],
+        bankDetails = {}, // Add bank details object to request body
+        termsCondition = null // Add terms condition to request body
     } = req.body;
 
     // Create the document with provided fields (including null values)
@@ -102,7 +104,7 @@ function createDocument(req, res) {
     .then(document => {
         // After successfully creating the document, insert data into DocumentItems
         const documentItems = items.map(item => ({
-            documentNumber: document.documentNumber, // Use the created document's number
+            documentNumber: document.documentNumber,
             itemId: item.itemId,
             itemName: item.itemName,
             HSN: item.HSN,
@@ -133,11 +135,34 @@ function createDocument(req, res) {
             }));
 
             // Bulk create DocumentAdditionalCharges
-            return models.DocumentAdditionalCharges.bulkCreate(additionalChargesData);
+            return models.DocumentAdditionalCharges.bulkCreate(additionalChargesData).then(() => {
+                // After inserting additional charges, insert bank details
+                const bankDetailsData = {
+                    documentNumber: document.documentNumber,
+                    bankName: bankDetails.bankName,
+                    accountName: bankDetails.accountName,
+                    accountNumber: bankDetails.accountNumber,
+                    branch: bankDetails.branch,
+                    IFSCCode: bankDetails.IFSCCode,
+                    MICRCode: bankDetails.MICRCode,
+                    address: bankDetails.address,
+                    SWIFTCode: bankDetails.SWIFTCode,
+                    status: bankDetails.status,
+                    ip_address: bankDetails.ip_address
+                };
+
+                return models.DocumentBankDetails.create(bankDetailsData).then(() => {
+                    // Update CompanyTermsCondition
+                    return models.CompanyTermsCondition.update(
+                        { termsCondition },
+                        { where: { companyId } }
+                    );
+                });
+            });
         });
     })
     .then(() => {
-        res.status(201).json({ message: "Document, items, and additional charges created successfully!" });
+        res.status(201).json({ message: "Document, items, additional charges, bank details, and terms condition updated successfully!" });
     })
     .catch(error => {
         console.error("Error adding document:", error);
@@ -146,6 +171,7 @@ function createDocument(req, res) {
         });
     });
 }
+
 
 function getDocuments(req, res) {
     models.Documents.findAll({
@@ -161,7 +187,7 @@ function getDocuments(req, res) {
         // Extract document numbers
         const documentNumbers = documents.map(doc => doc.documentNumber);
 
-        // Fetch DocumentItems based on the documentNumbers
+        // Fetch DocumentItems, DocumentAdditionalCharges, and DocumentBankDetails based on the documentNumbers
         return Promise.all([
             models.DocumentItems.findAll({
                 where: {
@@ -172,14 +198,26 @@ function getDocuments(req, res) {
                 where: {
                     documentNumber: documentNumbers
                 }
+            }),
+            models.DocumentBankDetails.findAll({
+                where: {
+                    documentNumber: documentNumbers
+                }
+            }),
+            models.CompanyTermsCondition.findAll({
+                where: {
+                    companyId: req.body.companyId // Fetch terms conditions based on companyId
+                }
             })
-        ]).then(([items, additionalCharges]) => {
-            // Format the result to include items and additional charges in the documents
+        ]).then(([items, additionalCharges, bankDetails, termsConditions]) => {
+            // Format the result to include items, additional charges, bank details, and terms conditions in the documents
             const formattedResult = documents.map(document => {
                 return {
                     ...document.toJSON(),
-                    items: items.filter(item => item.documentNumber === document.documentNumber) || [], // Match items with documentNumber
-                    additionalCharges: additionalCharges.filter(charge => charge.documentNumber === document.documentNumber) || [] // Match additional charges
+                    items: items.filter(item => item.documentNumber === document.documentNumber) || [],
+                    additionalCharges: additionalCharges.filter(charge => charge.documentNumber === document.documentNumber) || [],
+                    bankDetails: bankDetails.filter(bank => bank.documentNumber === document.documentNumber) || [],
+                    termsCondition: termsConditions.length > 0 ? termsConditions[0].termsCondition : null // Assuming only one terms condition per company
                 };
             });
 
@@ -195,9 +233,56 @@ function getDocuments(req, res) {
     });
 }
 
-
-
 function getDocumentById(req, res) {
+    const documentNumber = req.body.documentNumber;
+    const companyId = req.body.companyId; // Assuming companyId is also passed in the request body
+
+    // Fetch the document by documentNumber
+    models.Documents.findOne({
+        where: { documentNumber: documentNumber }
+    })
+    .then(document => {
+        if (!document) {
+            return res.status(404).json({
+                message: "Document not found"
+            });
+        }
+
+        // Fetch associated data based on documentNumber and companyId
+        return Promise.all([
+            models.DocumentItems.findAll({
+                where: { documentNumber: documentNumber }
+            }),
+            models.DocumentAdditionalCharges.findAll({
+                where: { documentNumber: documentNumber }
+            }),
+            models.DocumentBankDetails.findAll({
+                where: { documentNumber: documentNumber }
+            }),
+            models.CompanyTermsCondition.findOne({
+                where: { companyId: companyId }
+            })
+        ]).then(([items, additionalCharges, bankDetails, termsCondition]) => {
+            // Format the response to include all relevant data
+            const response = {
+                ...document.toJSON(), // Include the main document data
+                items: items || [], // Include document items
+                additionalCharges: additionalCharges || [], // Include additional charges
+                bankDetails: bankDetails || [], // Include bank details
+                termsCondition: termsCondition ? termsCondition.termsCondition : null // Include terms condition if available
+            };
+
+            res.status(200).json(response);
+        });
+    })
+    .catch(error => {
+        console.error("Error fetching document:", error);
+        res.status(500).json({
+            message: "Something went wrong, please try again later!"
+        });
+    });
+}
+
     const documentNumber = req.body.documentNumber;
 
     models.Documents.findOne({
@@ -217,8 +302,7 @@ function getDocumentById(req, res) {
             message: "Something went wrong, please try again later!"
         });
     });
-    
-}
+
 
 
 module.exports = {
