@@ -19,7 +19,20 @@ function getDocuments(req, res) {
         });
 }
 
+function getDocumentById(req, res) {
+    const documentNumber = req.params.documentNumber;
+
+    models.Documents.findByPk(documentNumber).then(result => {
+        res.status(200).json(result);
+    }).catch(error => {
+        res.status(500).json({
+            message: "something went wrong, please try again later!"
+        });
+    });
+}
+
 
 module.exports = {
     getDocuments: getDocuments,
+    getDocumentById: getDocumentById
 }
