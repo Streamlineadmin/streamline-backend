@@ -132,27 +132,37 @@ function createDocument(req, res) {
     });
 }
 
-
-
-
 function getDocuments(req, res) {
     models.Documents.findAll({
         where: {
             companyId: req.body.companyId
-        }
-    }).then(result => {
-        if (!result || result.length === 0) {
-            return res.status(200).json([]);
-        }
-        res.status(200).json(result);
+        },
+        include: [{
+            model: models.DocumentItems, // Include DocumentItems model
+            as: 'items', // This should match the alias defined in your models
+            required: false // Include documents even if they have no items
+        }]
     })
-        .catch(error => {
-            console.error("Error fetching documents:", error);
-            res.status(500).json({
-                message: "Something went wrong, please try again later!"
-            });
+    .then(result => {
+        // Map through the result to ensure items is always an array
+        const formattedResult = result.map(document => {
+            return {
+                ...document.toJSON(),
+                items: document.items || [] // Set items to an empty array if null
+            };
         });
+
+        // Return the formatted result
+        res.status(200).json(formattedResult);
+    })
+    .catch(error => {
+        console.error("Error fetching documents:", error);
+        res.status(500).json({
+            message: "Something went wrong, please try again later!"
+        });
+    });
 }
+
 
 function getDocumentById(req, res) {
     const documentNumber = req.body.documentNumber;
