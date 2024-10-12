@@ -16,6 +16,7 @@ const buyerSupplierRoute = require('./routes/buyerSupplier');
 const documentSeriesRoute = require('./routes/documentSeries');
 const accountDetailsRoute = require('./routes/accountDetails');
 const documentsRoute = require('./routes/documents');
+const notificationRoute = require('./routes/notifications');
 
 const app = express();
 
@@ -51,5 +52,6 @@ app.use('/buyerSupplier', buyerSupplierRoute);
 app.use('/documentSeries', documentSeriesRoute);
 app.use('/accountDetails', accountDetailsRoute);
 app.use('/documents', documentsRoute);
+app.use('/notification', notificationRoute);
 
 module.exports = app;
