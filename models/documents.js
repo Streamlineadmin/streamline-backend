@@ -1,7 +1,5 @@
 'use strict';
-const {
-  Model
-} = require('sequelize');
+const { Model } = require('sequelize');
 module.exports = (sequelize, DataTypes) => {
   class Documents extends Model {
     /**
@@ -13,6 +11,7 @@ module.exports = (sequelize, DataTypes) => {
       // define association here
     }
   }
+
   Documents.init({
     documentType: DataTypes.STRING,
     documentNumber: DataTypes.STRING,
@@ -39,10 +38,32 @@ module.exports = (sequelize, DataTypes) => {
     companyId: DataTypes.INTEGER,
     createdBy: DataTypes.INTEGER,
     status: DataTypes.INTEGER,
-    ip_address: DataTypes.STRING
+    ip_address: DataTypes.STRING,
+
+    // Newly added fields
+    paymentDate: DataTypes.DATE,
+    POCName: DataTypes.STRING,
+    POCNumber: DataTypes.STRING,
+    POCDate: DataTypes.DATE,
+    OCNumber: DataTypes.STRING,
+    OCDate: DataTypes.DATE,
+    transporterName: DataTypes.STRING,
+    TGNumber: DataTypes.STRING,
+    TDNumber: DataTypes.STRING,
+    TDDate: DataTypes.DATE,
+    VehicleNumber: DataTypes.STRING,
+    replyDate: DataTypes.DATE,
+    Attention: DataTypes.STRING,
+    invoiceNumber: DataTypes.STRING,
+    invoiceDate: DataTypes.DATE,
+    billDate: DataTypes.DATE,
+    returnRecieveDate: DataTypes.DATE,
+    creditNoteNumber: DataTypes.STRING,
+    creditNotedate: DataTypes.DATE
   }, {
     sequelize,
     modelName: 'Documents',
   });
+
   return Documents;
 };

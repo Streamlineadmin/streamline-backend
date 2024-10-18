@@ -144,10 +144,70 @@ function getAddresses(req, res) {
     });
 }
 
+async function setDefaultAddress(req, res) {
+  const { companyId, addressId } = req.body;
+
+  try {
+    // Find the address using addressId and companyId
+    const address = await models.Addresses.findOne({
+      where: { id: addressId, companyId }
+    });
+
+    // If the address doesn't exist, return an error
+    if (!address) {
+      return res.status(404).json({ message: "Address not found!" });
+    }
+
+    const { addressType } = address; // Extract the addressType (1 for delivery, 2 for billing)
+
+    // Start a transaction to ensure atomicity (optional but recommended)
+    const transaction = await models.sequelize.transaction();
+
+    try {
+      // Set all addresses of the same type and company as normal (status: 1)
+      await models.Addresses.update(
+        { status: 1 }, // Non-default (normal)
+        { 
+          where: { companyId, addressType, status: 0 }, // Update only default addresses of this type
+          transaction
+        }
+      );
+
+      // Set the selected address as default (status: 0)
+      await models.Addresses.update(
+        { status: 0 }, // Default
+        { where: { id: addressId }, transaction }
+      );
+
+      // Commit the transaction
+      await transaction.commit();
+
+      // Success response
+      res.status(200).json({
+        message: `Address with ID ${addressId} has been set as default for ${addressType === 1 ? 'Delivery' : 'Billing'}.`
+      });
+
+    } catch (error) {
+      // If something goes wrong, roll back the transaction
+      await transaction.rollback();
+      throw error;
+    }
+
+  } catch (error) {
+    // Catch any errors and send a failure response
+    res.status(500).json({
+      message: "Something went wrong while setting the default address.",
+      error: error.message || error
+    });
+  }
+}
+
+
 module.exports = {
   addAddress: addAddress,
   getAddressById: getAddressById,
   getAddresses: getAddresses,
   editAddress: editAddress,
   deleteAddress: deleteAddress,
+  setDefaultAddress: setDefaultAddress
 };

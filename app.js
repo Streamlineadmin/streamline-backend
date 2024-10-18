@@ -3,21 +3,20 @@ const bodyParser = require("body-parser");
 const path = require("path");
 const cors = require("cors");
 
-const authenticationRoute = require("./routes/authentication");
-const imageRoute = require("./routes/images");
-const blogRoute = require("./routes/blogs");
-const teamRoute = require("./routes/teams");
-const userRoute = require("./routes/users");
-const storeRoute = require("./routes/stores");
-const addressRoute = require("./routes/address");
-const blogCommentsRoute = require("./routes/blogComments");
-const itemsRoute = require("./routes/items");
-const buyerSupplierRoute = require("./routes/buyerSupplier");
-const documentSeriesRoute = require("./routes/documentSeries");
-const accountDetailsRoute = require("./routes/accountDetails");
-const quotationDocumentsRoute = require("./routes/quotationDocuments");
-const quotationItemsRoute = require("./routes/quotationItems");
-const documentattachmentsRoute = require("./routes/documentattachments");
+const authenticationRoute = require('./routes/authentication');
+const imageRoute = require('./routes/images');
+const blogRoute = require('./routes/blogs');
+const teamRoute = require('./routes/teams');
+const userRoute = require('./routes/users');
+const storeRoute = require('./routes/stores');
+const addressRoute = require('./routes/address');
+const blogCommentsRoute = require('./routes/blogComments');
+const itemsRoute = require('./routes/items');
+const buyerSupplierRoute = require('./routes/buyerSupplier');
+const documentSeriesRoute = require('./routes/documentSeries');
+const accountDetailsRoute = require('./routes/accountDetails');
+const documentsRoute = require('./routes/documents');
+const notificationRoute = require('./routes/notifications');
 
 const app = express();
 
@@ -40,20 +39,19 @@ app.get("/", (req, res) => {
 });
 
 // Use authentication routes for `/authentication` path
-app.use("/authentication", authenticationRoute);
-app.use("/images", imageRoute);
-app.use("/blogs", blogRoute);
-app.use("/teams", teamRoute);
-app.use("/users", userRoute);
-app.use("/stores", storeRoute);
-app.use("/address", addressRoute);
-app.use("/blogComments", blogCommentsRoute);
-app.use("/items", itemsRoute);
-app.use("/buyerSupplier", buyerSupplierRoute);
-app.use("/documentSeries", documentSeriesRoute);
-app.use("/accountDetails", accountDetailsRoute);
-app.use("/quotationDocuments", quotationDocumentsRoute);
-app.use("./quotationItems", quotationItemsRoute);
-app.use("/documentattachments", documentattachmentsRoute);
+app.use('/authentication', authenticationRoute);
+app.use('/images', imageRoute);
+app.use('/blogs', blogRoute);
+app.use('/teams', teamRoute);
+app.use('/users', userRoute);
+app.use('/stores', storeRoute);
+app.use('/address', addressRoute);
+app.use('/blogComments', blogCommentsRoute);
+app.use('/items', itemsRoute);
+app.use('/buyerSupplier', buyerSupplierRoute);
+app.use('/documentSeries', documentSeriesRoute);
+app.use('/accountDetails', accountDetailsRoute);
+app.use('/documents', documentsRoute);
+app.use('/notification', notificationRoute);
 
 module.exports = app;
