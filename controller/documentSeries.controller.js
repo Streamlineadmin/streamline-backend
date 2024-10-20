@@ -17,7 +17,7 @@ function addDocumentSeries(req, res) {
                 number: req.body.number,
                 companyId: req.body.companyId,
                 default: req.body.default,
-                nextNumber: (req.body.number+1),
+                nextNumber: (req.body.nextNumber),
                 status: 0,
                 ip_address: req.body.ip_address,
                 createdBy: req.body.userId
