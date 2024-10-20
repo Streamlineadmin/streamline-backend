@@ -16,7 +16,9 @@ function addDocumentSeries(req, res) {
                 prefix: req.body.series,
                 number: req.body.number,
                 companyId: req.body.companyId,
-                status: 1,
+                default: req.body.default,
+                nextNumber: (req.body.number+1),
+                status: 0,
                 ip_address: req.body.ip_address,
                 createdBy: req.body.userId
             };
@@ -54,7 +56,7 @@ function editDocumentSeries(req, res) {
         prefix,
         number,
         companyId,
-        status: req.body.status || 1,
+        status: req.body.status || 0,
         ip_address: req.body.ip_address,
         createdBy: req.body.createdBy
     };

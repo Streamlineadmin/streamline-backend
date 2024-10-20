@@ -1,8 +1,8 @@
 function upload(req, res) {
-    if(req.file.filename) {
+    if (req.file && req.file.filename) {
         res.status(201).json({
-            message: "Image uploaded successfully",
-            url: req.file.filename
+            message: "File uploaded successfully",
+            url: req.file.filename // Returns the file name or path
         });
     } else {
         res.status(500).json({
@@ -13,4 +13,4 @@ function upload(req, res) {
 
 module.exports = {
     upload: upload
-}
+};

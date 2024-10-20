@@ -17,6 +17,7 @@ const documentSeriesRoute = require('./routes/documentSeries');
 const accountDetailsRoute = require('./routes/accountDetails');
 const documentsRoute = require('./routes/documents');
 const notificationRoute = require('./routes/notifications');
+const botRoute = require('./routes/bot');
 
 const app = express();
 
@@ -53,5 +54,6 @@ app.use('/documentSeries', documentSeriesRoute);
 app.use('/accountDetails', accountDetailsRoute);
 app.use('/documents', documentsRoute);
 app.use('/notification', notificationRoute);
+app.use('/bot', botRoute);
 
 module.exports = app;
