@@ -45,9 +45,9 @@ function addDocumentSeries(req, res) {
 
 function editDocumentSeries(req, res) {
     const DocType = req.body.docType;
-    const seriesName= req.body.seriesName;
-    const prefix= req.body.prefix;
-    const number= req.body.number;
+    const seriesName = req.body.seriesName;
+    const prefix = req.body.prefix;
+    const number = req.body.number;
     const companyId = req.body.companyId;
 
     const updatedDocumentSeriesData = {
@@ -92,6 +92,45 @@ function editDocumentSeries(req, res) {
                     });
                 });
         }
+    }).catch(error => {
+        res.status(500).json({
+            message: "Something went wrong, please try again later!",
+            error: error.message || error
+        });
+    });
+}
+
+function updateLastDocumentNumber(req, res) {
+    const id = req.body.seriesId;
+    const nextNumber = req.body.nextNumber;
+    const companyId = req.body.companyId;
+
+    const updatedDocumentSeriesData = { nextNumber };
+
+    // Check if the team name already exists for the given company but exclude the current team
+    models.DocumentSeries.findOne({
+        where: { companyId, id: { [models.Sequelize.Op.ne]: id } }
+    }).then(existingSeries => {
+        // Proceed with the update
+        models.DocumentSeries.update(updatedDocumentSeriesData, { where: { id: id } })
+            .then(result => {
+                if (result[0] > 0) {
+                    res.status(200).json({
+                        message: "Next number updated successfully",
+                        post: updatedDocumentSeriesData
+                    });
+                } else {
+                    res.status(404).json({
+                        message: "Document series not found"
+                    });
+                }
+            })
+            .catch(error => {
+                res.status(500).json({
+                    message: "Something went wrong, please try again later!",
+                    error: error.message || error
+                });
+            });
     }).catch(error => {
         res.status(500).json({
             message: "Something went wrong, please try again later!",
@@ -148,5 +187,6 @@ module.exports = {
     addDocumentSeries: addDocumentSeries,
     getDocumentSeries: getDocumentSeries,
     editDocumentSeries: editDocumentSeries,
-    deleteDocumentSeries: deleteDocumentSeries
+    deleteDocumentSeries: deleteDocumentSeries,
+    updateLastDocumentNumber: updateLastDocumentNumber
 }

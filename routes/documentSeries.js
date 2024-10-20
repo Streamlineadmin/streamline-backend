@@ -6,6 +6,7 @@ const router = express.Router();
 router.post('/addDocumentSeries', documentSeriesController.addDocumentSeries);
 router.post('/editDocumentSeries', documentSeriesController.editDocumentSeries);
 router.post('/deleteDocumentSeries', documentSeriesController.deleteDocumentSeries);
+router.post('/updateLastDocumentNumber', documentSeriesController.updateLastDocumentNumber);
 router.post('/', documentSeriesController.getDocumentSeries);
 
 module.exports = router;
