@@ -59,14 +59,22 @@ function addUser(req, res) {
 
 function editUser(req, res) {
     const userId = req.body.userId;
-    const { name, email, contactNo, role, username } = req.body;
-
-    const updatedUserData = {
-        name,
-        email,
+    const { companyName,
         contactNo,
-        role,
+        email,
         username,
+        name,
+        role,
+        website } = req.body;
+        
+    const updatedUserData = {
+        companyName,
+        contactNo,
+        email,
+        username,
+        name,
+        role,
+        website
     };
 
     // Check if email, username, or contactNo exists for another user (exclude current user)
