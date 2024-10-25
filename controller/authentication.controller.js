@@ -34,12 +34,12 @@ function signUp(req, res) {
                 bcryptjs.hash(req.body.password, salt, function (err, hashed) {
                     const client = {
                         companyName: req.body.companyName,
+                        businessType: req.body.businessType,
+                        industryType: req.body.industryType,
                         email: req.body.email,
                         username: req.body.username,
                         password: hashed,
                         contactNo: req.body.contactNo,
-                        website: req.body.website,
-                        address: req.body.address
                     };
 
                     models.Users.create(client)
