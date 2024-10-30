@@ -38,6 +38,8 @@ app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, '/index.html'));
     //res.send("Welcome to EaseMargin APIs !");
 });
+// Serve files from the 'uploads' folder
+app.use('/uploads', express.static('uploads'));
 
 // Use authentication routes for `/authentication` path
 app.use('/authentication', authenticationRoute);
