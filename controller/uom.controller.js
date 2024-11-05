@@ -115,22 +115,33 @@ function deleteUOM(req, res) {
 function getUOMs(req, res) {
     models.UOM.findAll({
         where: {
-            companyId: req.body.companyId,
             status: 0
-        }
-    }).then(result => {
+        },
+        include: [
+            {
+                model: models.Company,
+                where: {
+                    id: req.body.companyId,
+                    status: 1
+                },
+                attributes: [] // Exclude company fields from response if not needed
+            }
+        ]
+    })
+    .then(result => {
         if (!result || result.length === 0) {
             return res.status(200).json([]);
         }
         res.status(200).json(result);
     })
-        .catch(error => {
-            console.error("Error fetching blogs:", error);
-            res.status(500).json({
-                message: "Something went wrong, please try again later!"
-            });
+    .catch(error => {
+        console.error("Error fetching UOMs:", error);
+        res.status(500).json({
+            message: "Something went wrong, please try again later!"
         });
+    });
 }
+
 
 
 module.exports = {
