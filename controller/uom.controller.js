@@ -118,8 +118,8 @@ function getUOMs(req, res) {
     models.UOM.findAll({
         where: {
             [Sequelize.Op.or]: [
-                { companyId: { [Sequelize.Op.ne]: null }, status: 1 }, // companyId has a value and status is 1
-                { companyId: null, status: 0 }                        // companyId is null and status is 0
+                { companyId: req.body.companyId, status: 1 }, // companyId matches req.body.companyId and status is 1
+                { companyId: null, status: 0 }                // companyId is null and status is 0
             ]
         }
     })
@@ -137,6 +137,7 @@ function getUOMs(req, res) {
         });
     });
 }
+
 
 
 
