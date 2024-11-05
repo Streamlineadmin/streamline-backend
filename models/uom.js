@@ -14,7 +14,7 @@ module.exports = (sequelize, DataTypes) => {
     }
   }
   UOM.init({
-    copmanyId: DataTypes.INTEGER,
+    companyId: DataTypes.INTEGER,
     name: DataTypes.STRING,
     code: DataTypes.STRING,
     ip_address: DataTypes.STRING,
