@@ -18,6 +18,8 @@ const accountDetailsRoute = require('./routes/accountDetails');
 const documentsRoute = require('./routes/documents');
 const notificationRoute = require('./routes/notifications');
 const botRoute = require('./routes/bot');
+const uomRoute = require('./routes/uom');
+const uom = require('./models/uom');
 
 const app = express();
 
@@ -56,5 +58,6 @@ app.use('/accountDetails', accountDetailsRoute);
 app.use('/documents', documentsRoute);
 app.use('/notification', notificationRoute);
 app.use('/bot', botRoute);
+app.use('/uom', uomRoute);
 
 module.exports = app;
