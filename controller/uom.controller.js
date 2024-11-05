@@ -1,5 +1,7 @@
 const models = require('../models');
 const uom = require('../models/uom');
+const { Sequelize } = require('sequelize');
+
 
 function addUOM(req, res) {
     // Check if team name already exists for the given company
@@ -115,18 +117,12 @@ function deleteUOM(req, res) {
 function getUOMs(req, res) {
     models.UOM.findAll({
         where: {
-            status: 0
-        },
-        include: [
-            {
-                model: models.Company,
-                where: {
-                    id: req.body.companyId,
-                    status: 1
-                },
-                attributes: [] // Exclude company fields from response if not needed
-            }
-        ]
+            status: 0,
+            [Sequelize.Op.or]: [
+                { companyId: null },
+                { companyId: req.body.companyId, status: 1 }
+            ]
+        }
     })
     .then(result => {
         if (!result || result.length === 0) {
@@ -137,10 +133,12 @@ function getUOMs(req, res) {
     .catch(error => {
         console.error("Error fetching UOMs:", error);
         res.status(500).json({
-            message: "Something went wrong, please try again later!"
+            message: "Something went wrong, please try again later!",
+            error: error.message
         });
     });
 }
+
 
 
 
