@@ -117,10 +117,9 @@ function deleteUOM(req, res) {
 function getUOMs(req, res) {
     models.UOM.findAll({
         where: {
-            status: 0,
             [Sequelize.Op.or]: [
-                { companyId: null },
-                { companyId: req.body.companyId, status: 1 }
+                { companyId: { [Sequelize.Op.ne]: null }, status: 1 }, // companyId has a value and status is 1
+                { companyId: null, status: 0 }                        // companyId is null and status is 0
             ]
         }
     })
@@ -138,6 +137,7 @@ function getUOMs(req, res) {
         });
     });
 }
+
 
 
 
