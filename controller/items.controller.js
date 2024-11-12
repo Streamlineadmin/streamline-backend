@@ -1,4 +1,5 @@
-const models = require('../models');
+const { sequelize, models } = require('../models');
+
 
 function addItem(req, res) {
     const { itemId, itemName, companyId } = req.body;
