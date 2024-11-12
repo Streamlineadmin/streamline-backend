@@ -22,6 +22,7 @@ module.exports = (sequelize, DataTypes) => {
     price: DataTypes.INTEGER,
     taxType: DataTypes.INTEGER,
     tax: DataTypes.FLOAT,
+    storeId: DataTypes.INTEGER,
     currentStock: DataTypes.INTEGER,
     minStock: DataTypes.INTEGER,
     maxStock: DataTypes.INTEGER,

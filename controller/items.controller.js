@@ -171,20 +171,27 @@ function getItems(req, res) {
     models.Items.findAll({
         where: {
             companyId: req.body.companyId
-        }
-    }).then(result => {
+        },
+        include: [{
+            model: models.Stores,
+            as: 'store', // Adjust the alias if you've defined it differently in your associations
+            attributes: ['name'] // Only retrieve the `name` field from `Stores`
+        }]
+    })
+    .then(result => {
         if (!result || result.length === 0) {
             return res.status(200).json([]);
         }
         res.status(200).json(result);
     })
-        .catch(error => {
-            console.error("Error fetching blogs:", error);
-            res.status(500).json({
-                message: "Something went wrong, please try again later!"
-            });
+    .catch(error => {
+        console.error("Error fetching items:", error);
+        res.status(500).json({
+            message: "Something went wrong, please try again later!"
         });
+    });
 }
+
 
 
 module.exports = {
