@@ -1,5 +1,4 @@
-const { sequelize, models } = require('../models');
-
+const models = require('../models');
 
 function addItem(req, res) {
     const { itemId, itemName, companyId } = req.body;
@@ -172,31 +171,20 @@ function getItems(req, res) {
     models.Items.findAll({
         where: {
             companyId: req.body.companyId
-        },
-        include: [{
-            model: models.Stores,
-            as: 'store',
-            attributes: ['name'],
-            required: false, // This allows the join even if `storeId` is just a column
-            where: {
-                id: sequelize.col('Items.storeId') // Match `Stores.id` with `Items.storeId`
-            }
-        }]
-    })
-    .then(result => {
+        }
+    }).then(result => {
         if (!result || result.length === 0) {
             return res.status(200).json([]);
         }
         res.status(200).json(result);
     })
-    .catch(error => {
-        console.error("Error fetching items:", error);
-        res.status(500).json({
-            message: "Something went wrong, please try again later!"
+        .catch(error => {
+            console.error("Error fetching blogs:", error);
+            res.status(500).json({
+                message: "Something went wrong, please try again later!"
+            });
         });
-    });
 }
-
 
 
 module.exports = {
