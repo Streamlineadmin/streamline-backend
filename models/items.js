@@ -36,3 +36,9 @@ module.exports = (sequelize, DataTypes) => {
   });
   return Items;
 };
+
+// In Items model file
+models.Items.belongsTo(models.Stores, {
+  foreignKey: 'storeId',
+  as: 'store' // This alias should match what you use in your `include` statement
+});
