@@ -174,8 +174,12 @@ function getItems(req, res) {
         },
         include: [{
             model: models.Stores,
-            as: 'store', // Adjust the alias if you've defined it differently in your associations
-            attributes: ['name'] // Only retrieve the `name` field from `Stores`
+            as: 'store',
+            attributes: ['name'],
+            required: false, // This allows the join even if `storeId` is just a column
+            where: {
+                id: sequelize.col('Items.storeId') // Match `Stores.id` with `Items.storeId`
+            }
         }]
     })
     .then(result => {
