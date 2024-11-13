@@ -266,8 +266,6 @@ async function getStoresByItem(req, res) {
 }
 
 
-
-
 module.exports = {
   addStore: addStore,
   getStoresById: getStoresById,

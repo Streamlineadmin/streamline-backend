@@ -185,24 +185,50 @@ function deleteItem(req, res) {
         });
 }
 
-function getItems(req, res) {
-    models.Items.findAll({
+async function getItems(req, res) {
+    const { companyId } = req.body;
+  
+    try {
+      // Step 1: Retrieve all items for the given company
+      const items = await models.Items.findAll({
+        where: { companyId: companyId }
+      });
+  
+      if (!items || items.length === 0) {
+        return res.status(200).json([]);
+      }
+  
+      // Step 2: Retrieve store IDs associated with each item
+      const itemIds = items.map(item => item.id);
+      const storeItems = await models.StoreItem.findAll({
         where: {
-            companyId: req.body.companyId
-        }
-    }).then(result => {
-        if (!result || result.length === 0) {
-            return res.status(200).json([]);
-        }
-        res.status(200).json(result);
-    })
-        .catch(error => {
-            console.error("Error fetching blogs:", error);
-            res.status(500).json({
-                message: "Something went wrong, please try again later!"
-            });
-        });
-}
+          itemId: itemIds
+        },
+        attributes: ['itemId', 'storeId']
+      });
+  
+      // Step 3: Structure the response to include store IDs for each item
+      const itemsWithStores = items.map(item => {
+        const associatedStores = storeItems
+          .filter(storeItem => storeItem.itemId === item.id)
+          .map(storeItem => storeItem.storeId);
+  
+        return {
+          ...item.toJSON(),
+          storeIds: associatedStores // Include associated store IDs for each item
+        };
+      });
+  
+      // Send the structured response
+      res.status(200).json(itemsWithStores);
+    } catch (error) {
+      console.error("Error fetching items:", error);
+      res.status(500).json({
+        message: "Something went wrong, please try again later!"
+      });
+    }
+  }
+  
 
 
 module.exports = {
