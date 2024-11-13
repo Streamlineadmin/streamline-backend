@@ -8,4 +8,5 @@ router.post("/editStore", storeController.editStore);
 router.post("/deleteStore", storeController.deleteStore);
 router.get("/:id", storeController.getStoresById);
 router.post("/", storeController.getStores);
+router.post("/getStoresByItem", storeController.getStoresByItem);
 module.exports = router;

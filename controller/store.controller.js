@@ -206,6 +206,55 @@ async function getStores(req, res) {
   }
 }
 
+async function getStoresByItem(req, res) {
+  const { itemId } = req.body;
+
+  // Step 1: Check if itemId is provided
+  if (!itemId) {
+    return res.status(400).json({
+      message: 'itemId is required in the request body',
+    });
+  }
+
+  try {
+    // Step 2: Find all StoreItems that have the given itemId
+    const storeItems = await models.StoreItems.findAll({
+      where: {
+        itemId: itemId,
+      },
+      include: [
+        {
+          model: Store,
+          attributes: ['id', 'name'], // You can modify to include other store attributes
+        },
+      ],
+    });
+
+    // Check if any store was found
+    if (storeItems.length === 0) {
+      return res.status(404).json({
+        message: `No stores found with itemId ${itemId}`,
+      });
+    }
+
+    // Step 3: Structure the response
+    const storesWithItemDetails = storeItems.map((storeItem) => ({
+      storeId: storeItem.Store.id,
+      storeName: storeItem.Store.name,
+      quantity: storeItem.quantity,
+    }));
+
+    res.status(200).json(storesWithItemDetails);
+  } catch (error) {
+    // Catch and log any errors that happen during the process
+    console.error('Error fetching stores with itemId:', error);
+    res.status(500).json({
+      message: 'Something went wrong, please try again later!',
+      error: error.message, // Include the error message for debugging
+    });
+  }
+}
+
 
 
 module.exports = {
@@ -214,4 +263,5 @@ module.exports = {
   getStores: getStores,
   editStore: editStore,
   deleteStore: deleteStore,
+  getStoresByItem: getStoresByItem
 };
