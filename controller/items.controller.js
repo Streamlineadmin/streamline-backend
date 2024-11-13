@@ -36,7 +36,6 @@ function addItem(req, res) {
                     price: req.body.price,
                     taxType: req.body.taxType,
                     tax: req.body.tax,
-                    storeId: req.body.storeId,
                     currentStock: req.body.currentStock,
                     minStock: req.body.minStock,
                     maxStock: req.body.maxStock,
@@ -47,10 +46,30 @@ function addItem(req, res) {
 
                 models.Items.create(itemData)
                     .then(result => {
-                        res.status(201).json({
-                            message: "Item added successfully",
-                            post: result
-                        });
+                        const newItemId = result.id; // Use the primary key generated for the new item
+
+                        // Add entry to StoresItem table
+                        const storeItemData = {
+                            storeId: req.body.storeId,     // storeId from req.body.store
+                            itemId: newItemId,  // Use the generated item ID
+                            quantity: req.body.currentStock,        // Default quantity; adjust if needed
+                            addedBy: req.body.userId,
+                            status: 1
+                        };
+
+                        models.StoresItem.create(storeItemData)
+                            .then(() => {
+                                res.status(201).json({
+                                    message: "Item added successfully and associated with the store",
+                                    item: result
+                                });
+                            })
+                            .catch(storeError => {
+                                res.status(500).json({
+                                    message: "Item created, but failed to add to StoresItem.",
+                                    error: storeError
+                                });
+                            });
                     })
                     .catch(error => {
                         res.status(500).json({
@@ -107,7 +126,6 @@ function editItem(req, res) {
                     price: req.body.price,
                     taxType: req.body.taxType,
                     tax: req.body.tax,
-                    storeId: req.body.storeId,
                     currentStock: req.body.currentStock,
                     minStock: req.body.minStock,
                     maxStock: req.body.maxStock,
