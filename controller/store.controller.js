@@ -143,25 +143,44 @@ function getStoresById(req, res) {
     });
 }
 
-function getStores(req, res) {
-  models.Store.findAll({
-    where: {
-      companyId: req.body.companyId,
-    },
-  })
-    .then((result) => {
-      if (!result || result.length === 0) {
-        return res.status(200).json([]);
-      }
-      res.status(200).json(result);
-    })
-    .catch((error) => {
-      console.error("Error fetching stores:", error);
-      res.status(500).json({
-        message: "Something went wrong, please try again later! its wrong",
-      });
+async function getStores(req, res) {
+  const { companyId } = req.body;
+
+  try {
+    // Step 1: Retrieve all stores for the company (without limiting columns)
+    const stores = await Store.findAll({
+      where: {
+        companyId: companyId,
+      },
     });
+
+    // Step 2: Count items in each store
+    const storesWithItemCount = [];
+
+    for (const store of stores) {
+      // Count the number of items in the StoreItems table for each store
+      const itemCount = await StoreItem.count({
+        where: {
+          storeId: store.id,
+        },
+      });
+
+      // Add store data along with item count to the response
+      storesWithItemCount.push({
+        ...store.toJSON(), // Spread the store object to include all columns
+        itemCount: itemCount, // This is the number of items in the store
+      });
+    }
+
+    res.status(200).json(storesWithItemCount);
+  } catch (error) {
+    console.error("Error fetching stores:", error);
+    res.status(500).json({
+      message: "Something went wrong, please try again later!",
+    });
+  }
 }
+
 
 module.exports = {
   addStore: addStore,
