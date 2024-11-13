@@ -217,33 +217,43 @@ async function getStoresByItem(req, res) {
   }
 
   try {
-    // Step 2: Find all StoreItems that have the given itemId
+    // Step 2: Find all storeIds that have the given itemId in StoreItems
     const storeItems = await models.StoreItems.findAll({
       where: {
         itemId: itemId,
       },
-      include: [
-        {
-          model: models.Store,
-          attributes: ['id', 'name'], // You can modify to include other store attributes
-        },
-      ],
+      attributes: ['storeId', 'quantity'], // Only retrieve storeId and quantity
     });
 
-    // Check if any store was found
+    // Check if any store was found for the given itemId
     if (storeItems.length === 0) {
       return res.status(404).json({
         message: `No stores found with itemId ${itemId}`,
       });
     }
 
-    // Step 3: Structure the response
-    const storesWithItemDetails = storeItems.map((storeItem) => ({
-      storeId: storeItem.Store.id,
-      storeName: storeItem.Store.name,
-      quantity: storeItem.quantity,
-    }));
+    // Step 3: Extract all the storeIds from the StoreItems result
+    const storeIds = storeItems.map(storeItem => storeItem.storeId);
 
+    // Step 4: Retrieve store details from Stores table based on storeIds
+    const stores = await models.Store.findAll({
+      where: {
+        id: storeIds, // Only fetch stores that match the storeIds from StoreItems
+      },
+      attributes: ['id', 'name'], // Specify the columns you want from Store
+    });
+
+    // Step 5: Combine the store data with the quantity from StoreItems
+    const storesWithItemDetails = stores.map(store => {
+      const storeItem = storeItems.find(item => item.storeId === store.id); // Find matching StoreItem for quantity
+      return {
+        storeId: store.id,
+        storeName: store.name,
+        quantity: storeItem ? storeItem.quantity : 0, // Default to 0 if no quantity is found
+      };
+    });
+
+    // Step 6: Send the combined response
     res.status(200).json(storesWithItemDetails);
   } catch (error) {
     // Catch and log any errors that happen during the process
@@ -254,6 +264,7 @@ async function getStoresByItem(req, res) {
     });
   }
 }
+
 
 
 
