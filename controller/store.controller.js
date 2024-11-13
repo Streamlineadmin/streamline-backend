@@ -224,7 +224,7 @@ async function getStoresByItem(req, res) {
       },
       include: [
         {
-          model: Store,
+          model: models.Store,
           attributes: ['id', 'name'], // You can modify to include other store attributes
         },
       ],
