@@ -200,7 +200,7 @@ async function getItems(req, res) {
   
       // Step 2: Retrieve store IDs associated with each item
       const itemIds = items.map(item => item.id);
-      const storeItems = await models.StoreItem.findAll({
+      const storeItems = await models.StoreItems.findAll({
         where: {
           itemId: itemIds
         },
