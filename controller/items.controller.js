@@ -57,7 +57,7 @@ function addItem(req, res) {
                             status: 1
                         };
 
-                        models.StoresItem.create(storeItemData)
+                        models.StoreItems.create(storeItemData)
                             .then(() => {
                                 res.status(201).json({
                                     message: "Item added successfully and associated with the store",
