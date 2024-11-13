@@ -146,40 +146,66 @@ function getStoresById(req, res) {
 async function getStores(req, res) {
   const { companyId } = req.body;
 
+  // Step 1: Check if companyId is provided
+  if (!companyId) {
+    return res.status(400).json({
+      message: 'companyId is required in the request body',
+    });
+  }
+
   try {
-    // Step 1: Retrieve all stores for the company (without limiting columns)
+    // Step 2: Retrieve all stores for the company (without limiting columns)
     const stores = await Store.findAll({
       where: {
         companyId: companyId,
       },
     });
 
-    // Step 2: Count items in each store
+    // Check if no stores were found
+    if (stores.length === 0) {
+      return res.status(404).json({
+        message: `No stores found for companyId ${companyId}`,
+      });
+    }
+
+    // Step 3: Count items in each store
     const storesWithItemCount = [];
 
     for (const store of stores) {
-      // Count the number of items in the StoreItems table for each store
-      const itemCount = await StoreItem.count({
-        where: {
-          storeId: store.id,
-        },
-      });
+      try {
+        // Count the number of items in the StoreItems table for each store
+        const itemCount = await StoreItem.count({
+          where: {
+            storeId: store.id,
+          },
+        });
 
-      // Add store data along with item count to the response
-      storesWithItemCount.push({
-        ...store.toJSON(), // Spread the store object to include all columns
-        itemCount: itemCount, // This is the number of items in the store
-      });
+        // Add store data along with item count to the response
+        storesWithItemCount.push({
+          ...store.toJSON(), // Spread the store object to include all columns
+          itemCount: itemCount, // This is the number of items in the store
+        });
+      } catch (err) {
+        // Log and continue if there's an error counting items for a particular store
+        console.error(`Error counting items for store ${store.id}:`, err);
+        storesWithItemCount.push({
+          ...store.toJSON(),
+          itemCount: 0, // Default to 0 if there's an issue counting items
+        });
+      }
     }
 
     res.status(200).json(storesWithItemCount);
   } catch (error) {
-    console.error("Error fetching stores:", error);
+    // Catch and log any errors that happen during the process
+    console.error('Error fetching stores:', error);
     res.status(500).json({
-      message: "Something went wrong, please try again later!",
+      message: 'Something went wrong, please try again later!',
+      error: error.message, // Include the error message for debugging
     });
   }
 }
+
 
 
 module.exports = {
