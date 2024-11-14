@@ -271,7 +271,7 @@ function stockTransfer(req, res) {
   // Use Promise.all to handle asynchronous create calls
   Promise.all(
     stockData.map(element =>
-      models.StockTransfers.create({
+      models.StockTransfer.create({
         transferNumber: transferNumber,
         fromStoreId: element.fromStore,
         toStoreId: element.toStore,
