@@ -9,4 +9,5 @@ router.post("/deleteStore", storeController.deleteStore);
 router.get("/:id", storeController.getStoresById);
 router.post("/", storeController.getStores);
 router.post("/getStoresByItem", storeController.getStoresByItem);
+router.post("/stockTransfer", storeController.stockTransfer);
 module.exports = router;

@@ -265,6 +265,35 @@ async function getStoresByItem(req, res) {
   }
 }
 
+function stockTransfer(req, res) {
+  const { transferNumber, stockData } = req.body;
+
+  // Use Promise.all to handle asynchronous create calls
+  Promise.all(
+    stockData.map(element =>
+      models.StockTransfers.create({
+        transferNumber: transferNumber,
+        fromStoreId: element.fromStore,
+        toStoreId: element.toStore,
+        quantity: element.quantity,
+      })
+    )
+  )
+    .then(results => {
+      res.status(201).json({
+        message: "Stock transfer entries added successfully",
+        data: results,
+      });
+    })
+    .catch(error => {
+      res.status(500).json({
+        message: "Something went wrong, please try again later!",
+        error: error,
+      });
+    });
+}
+
+
 
 module.exports = {
   addStore: addStore,
@@ -272,5 +301,6 @@ module.exports = {
   getStores: getStores,
   editStore: editStore,
   deleteStore: deleteStore,
-  getStoresByItem: getStoresByItem
+  getStoresByItem: getStoresByItem,
+  stockTransfer: stockTransfer
 };
