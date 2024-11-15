@@ -187,52 +187,63 @@ function deleteItem(req, res) {
 
 async function getItems(req, res) {
     const { companyId } = req.body;
-  
+
     try {
-      // Step 1: Retrieve all items for the given company
-      const items = await models.Items.findAll({
-        where: { companyId: companyId }
-      });
-  
-      if (!items || items.length === 0) {
-        return res.status(200).json([]);
-      }
-  
-      // Step 2: Retrieve store IDs associated with each item
-      const itemIds = items.map(item => item.id);
-      const storeItems = await models.StoreItems.findAll({
-        where: {
-          itemId: itemIds
-        },
-        attributes: ['itemId', 'storeId']
-      });
-  
-      // Step 3: Structure the response to include unique store IDs for each item
-      const itemsWithStores = items.map(item => {
-        const associatedStores = storeItems
-          .filter(storeItem => storeItem.itemId === item.id)
-          .map(storeItem => storeItem.storeId);
-  
-        // Use a Set to remove duplicates and convert back to an array
-        const uniqueStores = Array.from(new Set(associatedStores));
-  
-        return {
-          ...item.toJSON(),
-          storeIds: uniqueStores // Include unique store IDs for each item
-        };
-      });
-  
-      // Send the structured response
-      res.status(200).json(itemsWithStores);
+        // Step 1: Retrieve all items for the given company
+        const items = await models.Items.findAll({
+            where: { companyId }
+        });
+
+        if (!items || items.length === 0) {
+            return res.status(200).json([]);
+        }
+
+        // Step 2: Retrieve store IDs and quantities associated with each item
+        const itemIds = items.map(item => item.id);
+        const storeItems = await models.StoreItems.findAll({
+            where: {
+                itemId: itemIds
+            },
+            attributes: ['itemId', 'storeId', 'quantity']
+        });
+
+        // Step 3: Structure the response to include unique stores and net quantities for each item
+        const itemsWithStores = items.map(item => {
+            // Aggregate quantities for each storeId related to the current item
+            const storeQuantities = storeItems
+                .filter(storeItem => storeItem.itemId === item.id)
+                .reduce((acc, { storeId, quantity }) => {
+                    acc[storeId] = (acc[storeId] || 0) + quantity; // Sum quantities for each store
+                    return acc;
+                }, {});
+
+            // Filter out stores with a non-positive (0 or negative) net quantity
+            const storesWithPositiveQuantity = Object.entries(storeQuantities)
+                .filter(([_, quantity]) => quantity > 0)
+                .map(([storeId, quantity]) => ({
+                    storeId: parseInt(storeId),
+                    quantity
+                }));
+
+            return {
+                ...item.toJSON(),
+                stores: storesWithPositiveQuantity // Include unique stores and their positive quantities
+            };
+        });
+
+        // Send the structured response
+        res.status(200).json(itemsWithStores);
     } catch (error) {
-      console.error("Error fetching items:", error);
-      res.status(500).json({
-        message: "Something went wrong, please try again later!"
-      });
+        console.error("Error fetching items:", error);
+        res.status(500).json({
+            message: "Something went wrong, please try again later!"
+        });
     }
-  }
-  
-  
+}
+
+
+
+
 
 
 module.exports = {
