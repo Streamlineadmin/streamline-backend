@@ -265,10 +265,11 @@ async function getStoresByItem(req, res) {
   }
 }
 
-function stockTransfer(req, res) {
-  const { transferNumber, stockData } = req.body;
 
-  // Use Promise.all to handle asynchronous create calls
+function stockTransfer(req, res) {
+  const { transferNumber, stockData, transferDate, transferredBy } = req.body;
+
+  // Use Promise.all to handle asynchronous create calls for StockTransfer entries
   Promise.all(
     stockData.map(element =>
       models.StockTransfer.create({
@@ -278,13 +279,38 @@ function stockTransfer(req, res) {
         quantity: element.quantity,
         toStoreId: element.toStore,
         quantity: element.quantity,
+        transferDate: transferDate,
+        transferredBy: transferredBy
       })
     )
   )
     .then(results => {
+      // After StockTransfer entries are created, insert data into StoreItems
+      return Promise.all(
+        stockData.flatMap(element => [
+          // Insert into StoreItems for the `fromStore` (reducing quantity)
+          models.StoreItems.create({
+            storeId: element.fromStore,
+            itemId: element.itemId,
+            quantity: -element.quantity, // Deduct quantity from the source store
+            status: 1, // Assuming 1 is the status for successful transfer
+            addedBy: req.user.id, // Replace with actual user ID from request context
+          }),
+          // Insert into StoreItems for the `toStore` (adding quantity)
+          models.StoreItems.create({
+            storeId: element.toStore,
+            itemId: element.itemId,
+            quantity: element.quantity, // Add quantity to the destination store
+            status: 1,
+            addedBy: req.user.id,
+          }),
+        ])
+      );
+    })
+    .then(storeItemResults => {
       res.status(201).json({
-        message: "Stock transfer entries added successfully",
-        data: results,
+        message: "Stock transfer entries and store items updated successfully",
+        stockTransfers: storeItemResults,
       });
     })
     .catch(error => {
@@ -294,8 +320,6 @@ function stockTransfer(req, res) {
       });
     });
 }
-
-
 
 module.exports = {
   addStore: addStore,
