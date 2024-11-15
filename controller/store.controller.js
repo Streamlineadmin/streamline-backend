@@ -294,7 +294,7 @@ function stockTransfer(req, res) {
             itemId: element.itemId,
             quantity: -element.quantity, // Deduct quantity from the source store
             status: 1, // Assuming 1 is the status for successful transfer
-            addedBy: req.user.id, // Replace with actual user ID from request context
+            addedBy: transferredBy, // Replace with actual user ID from request context
           }),
           // Insert into StoreItems for the `toStore` (adding quantity)
           models.StoreItems.create({
@@ -302,7 +302,7 @@ function stockTransfer(req, res) {
             itemId: element.itemId,
             quantity: element.quantity, // Add quantity to the destination store
             status: 1,
-            addedBy: req.user.id,
+            addedBy: transferredBy,
           }),
         ])
       );
