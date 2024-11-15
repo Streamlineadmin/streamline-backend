@@ -19,7 +19,9 @@ module.exports = (sequelize, DataTypes) => {
     toStoreId: DataTypes.INTEGER,
     transferDate: DataTypes.STRING,
     transferredBy: DataTypes.INTEGER,
-    status: DataTypes.INTEGER
+    status: DataTypes.INTEGER,
+    itemId: DataTypes.INTEGER, // New column
+    quantity: DataTypes.INTEGER // New column
   }, {
     sequelize,
     modelName: 'StockTransfer',

@@ -274,6 +274,8 @@ function stockTransfer(req, res) {
       models.StockTransfer.create({
         transferNumber: transferNumber,
         fromStoreId: element.fromStore,
+        itemId: element.itemId,
+        quantity: element.quantity,
         toStoreId: element.toStore,
         quantity: element.quantity,
       })
