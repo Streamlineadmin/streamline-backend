@@ -207,15 +207,18 @@ async function getItems(req, res) {
         attributes: ['itemId', 'storeId']
       });
   
-      // Step 3: Structure the response to include store IDs for each item
+      // Step 3: Structure the response to include unique store IDs for each item
       const itemsWithStores = items.map(item => {
         const associatedStores = storeItems
           .filter(storeItem => storeItem.itemId === item.id)
           .map(storeItem => storeItem.storeId);
   
+        // Use a Set to remove duplicates and convert back to an array
+        const uniqueStores = Array.from(new Set(associatedStores));
+  
         return {
           ...item.toJSON(),
-          storeIds: associatedStores // Include associated store IDs for each item
+          storeIds: uniqueStores // Include unique store IDs for each item
         };
       });
   
@@ -228,6 +231,7 @@ async function getItems(req, res) {
       });
     }
   }
+  
   
 
 
