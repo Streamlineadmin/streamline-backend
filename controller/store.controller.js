@@ -219,9 +219,7 @@ async function getStoresByItem(req, res) {
   try {
     // Step 2: Find all storeIds that have the given itemId in StoreItems
     const storeItems = await models.StoreItems.findAll({
-      where: {
-        itemId: itemId,
-      },
+      where: { itemId },
       attributes: ['storeId', 'quantity'], // Only retrieve storeId and quantity
     });
 
@@ -232,26 +230,36 @@ async function getStoresByItem(req, res) {
       });
     }
 
-    // Step 3: Extract all the storeIds from the StoreItems result
-    const storeIds = storeItems.map(storeItem => storeItem.storeId);
+    // Aggregate the quantities for each storeId
+    const storeQuantities = storeItems.reduce((acc, { storeId, quantity }) => {
+      acc[storeId] = (acc[storeId] || 0) + quantity;
+      return acc;
+    }, {});
 
-    // Step 4: Retrieve store details from Stores table based on storeIds
+    // Step 3: Filter out stores with a total negative quantity
+    const validStoreIds = Object.entries(storeQuantities)
+      .filter(([_, quantity]) => quantity > 0)
+      .map(([storeId]) => parseInt(storeId));
+
+    // If no stores have positive quantities
+    if (validStoreIds.length === 0) {
+      return res.status(404).json({
+        message: `No stores with positive quantity found for itemId ${itemId}`,
+      });
+    }
+
+    // Step 4: Retrieve store details from Stores table based on valid storeIds
     const stores = await models.Store.findAll({
-      where: {
-        id: storeIds, // Only fetch stores that match the storeIds from StoreItems
-      },
+      where: { id: validStoreIds },
       attributes: ['id', 'name'], // Specify the columns you want from Store
     });
 
-    // Step 5: Combine the store data with the quantity from StoreItems
-    const storesWithItemDetails = stores.map(store => {
-      const storeItem = storeItems.find(item => item.storeId === store.id); // Find matching StoreItem for quantity
-      return {
-        storeId: store.id,
-        storeName: store.name,
-        quantity: storeItem ? storeItem.quantity : 0, // Default to 0 if no quantity is found
-      };
-    });
+    // Step 5: Combine the store data with the total quantities
+    const storesWithItemDetails = stores.map(store => ({
+      storeId: store.id,
+      storeName: store.name,
+      quantity: storeQuantities[store.id], // Use aggregated quantity
+    }));
 
     // Step 6: Send the combined response
     res.status(200).json(storesWithItemDetails);
@@ -264,6 +272,7 @@ async function getStoresByItem(req, res) {
     });
   }
 }
+
 
 
 function stockTransfer(req, res) {
