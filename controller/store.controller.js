@@ -340,6 +340,8 @@ async function getItemStockTransferHistory(req, res) {
   }
 
   try {
+    console.log('Received itemId:', itemId); // Debugging the received itemId
+
     // Fetch stock transfers for the given itemId
     const stockTransfers = await models.StockTransfer.findAll({
       where: { itemId },
@@ -360,17 +362,20 @@ async function getItemStockTransferHistory(req, res) {
       });
     }
 
-    // Fetch the item name
+    // Fetch the item name from the Items table
     const item = await models.Items.findOne({
-      where: { id: itemId },
+      where: { id: itemId }, // Make sure 'id' matches the column in your table
       attributes: ['itemName'],
     });
 
     if (!item) {
+      console.log(`No item found with itemId ${itemId}`); // Debugging the missing item
       return res.status(404).json({
         message: `No item found with itemId ${itemId}`,
       });
     }
+
+    console.log('Item found:', item); // Debugging the found item
 
     // Fetch unique store IDs from stockTransfers
     const storeIds = [
@@ -412,6 +417,7 @@ async function getItemStockTransferHistory(req, res) {
     });
   }
 }
+
 
 
 
