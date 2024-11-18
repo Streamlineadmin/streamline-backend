@@ -34,10 +34,6 @@ module.exports = (sequelize, DataTypes) => {
     modelName: 'Items',
   });
 
-  Items.hasMany(models.StockTransfer, {
-    foreignKey: 'itemId',
-    as: 'StockTransfers',
-  });
   
   return Items;
 };

@@ -330,7 +330,7 @@ function stockTransfer(req, res) {
     });
 }
 
-function getItemStockTransferHistory(req, res) {
+async function getItemStockTransferHistory(req, res) {
   const { itemId } = req.body; // Extract itemId from the payload
 
   if (!itemId) {
@@ -339,55 +339,80 @@ function getItemStockTransferHistory(req, res) {
     });
   }
 
-  // Fetch data from StockTransfers table filtered by itemId
-  models.StockTransfer.findAll({
-    where: { itemId }, // Filter by itemId
-    include: [
-      {
-        model: models.Items,
-        attributes: ['itemName'], // Fetch the item name
-      },
-      {
-        model: models.Store,
-        as: 'FromStore', // Alias for fromStoreId relation
-        attributes: ['name'], // Fetch the name of the source store
-      },
-      {
-        model: models.Store,
-        as: 'ToStore', // Alias for toStoreId relation
-        attributes: ['name'], // Fetch the name of the destination store
-      },
-    ],
-    attributes: [
-      'createdAt',
-      'transferNumber',
-      'quantity',
-      'itemId',
-      'fromStoreId',
-      'toStoreId',
-    ], // Select required fields
-    group: ['createdAt'], // Group by createdAt column
-    order: [['createdAt', 'DESC']], // Order by createdAt in descending order
-  })
-    .then(stockTransfers => {
-      if (!stockTransfers.length) {
-        return res.status(404).json({
-          message: `No stock transfers found for itemId ${itemId}`,
-        });
-      }
-
-      res.status(200).json({
-        message: "Stock transfers fetched successfully",
-        stockTransfers,
-      });
-    })
-    .catch(error => {
-      res.status(500).json({
-        message: "Something went wrong, please try again later!",
-        error: error.message,
-      });
+  try {
+    // Fetch stock transfers for the given itemId
+    const stockTransfers = await models.StockTransfer.findAll({
+      where: { itemId },
+      attributes: [
+        'createdAt',
+        'transferNumber',
+        'quantity',
+        'itemId',
+        'fromStoreId',
+        'toStoreId',
+      ],
+      order: [['createdAt', 'DESC']],
     });
+
+    if (!stockTransfers.length) {
+      return res.status(404).json({
+        message: `No stock transfers found for itemId ${itemId}`,
+      });
+    }
+
+    // Fetch the item name
+    const item = await models.Items.findOne({
+      where: { id: itemId },
+      attributes: ['itemName'],
+    });
+
+    if (!item) {
+      return res.status(404).json({
+        message: `No item found with itemId ${itemId}`,
+      });
+    }
+
+    // Fetch unique store IDs from stockTransfers
+    const storeIds = [
+      ...new Set(
+        stockTransfers.flatMap(transfer => [transfer.fromStoreId, transfer.toStoreId])
+      ),
+    ];
+
+    // Fetch store names for the collected store IDs
+    const stores = await models.Store.findAll({
+      where: { id: storeIds },
+      attributes: ['id', 'name'],
+    });
+
+    // Map store IDs to store names
+    const storeMap = stores.reduce((map, store) => {
+      map[store.id] = store.name;
+      return map;
+    }, {});
+
+    // Add additional data (item name and store names) to stockTransfers
+    const enrichedTransfers = stockTransfers.map(transfer => ({
+      createdAt: transfer.createdAt,
+      transferNumber: transfer.transferNumber,
+      quantity: transfer.quantity,
+      itemName: item.itemName,
+      fromStore: storeMap[transfer.fromStoreId] || 'Unknown Store',
+      toStore: storeMap[transfer.toStoreId] || 'Unknown Store',
+    }));
+
+    res.status(200).json({
+      message: "Stock transfers fetched successfully",
+      stockTransfers: enrichedTransfers,
+    });
+  } catch (error) {
+    res.status(500).json({
+      message: "Something went wrong, please try again later!",
+      error: error.message,
+    });
+  }
 }
+
 
 
 

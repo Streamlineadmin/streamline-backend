@@ -28,15 +28,6 @@ module.exports = (sequelize, DataTypes) => {
     modelName: 'Store',
   });
 
-  Store.hasMany(models.StockTransfer, {
-    foreignKey: 'fromStoreId',
-    as: 'FromTransfers',
-  });
-  
-  Store.hasMany(models.StockTransfer, {
-    foreignKey: 'toStoreId',
-    as: 'ToTransfers',
-  });
   
   return Store;
 };
