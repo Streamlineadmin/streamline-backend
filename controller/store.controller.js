@@ -354,7 +354,10 @@ async function getItemStockTransferHistory(req, res) {
         'toStoreId',
       ],
       order: [['createdAt', 'DESC']],
+      raw: true,  // Ensures data is returned as plain objects
     });
+
+    console.log(stockTransfers);
 
     if (!stockTransfers.length) {
       return res.status(404).json({
@@ -364,9 +367,11 @@ async function getItemStockTransferHistory(req, res) {
 
     // Fetch the item name from the Items table
     const item = await models.Items.findOne({
-      where: { id: itemId }, // Make sure 'id' matches the column in your table
+      where: { id: itemId },
       attributes: ['itemName'],
     });
+
+    console.log(item);
 
     if (!item) {
       console.log(`No item found with itemId ${itemId}`); // Debugging the missing item
@@ -377,7 +382,7 @@ async function getItemStockTransferHistory(req, res) {
 
     console.log('Item found:', item); // Debugging the found item
 
-    // Fetch unique store IDs from stockTransfers
+    // Fetch unique store IDs from stockTransfers (both from and to store)
     const storeIds = [
       ...new Set(
         stockTransfers.flatMap(transfer => [transfer.fromStoreId, transfer.toStoreId])
@@ -401,9 +406,9 @@ async function getItemStockTransferHistory(req, res) {
       createdAt: transfer.createdAt,
       transferNumber: transfer.transferNumber,
       quantity: transfer.quantity,
-      itemName: item.itemName,
-      fromStore: storeMap[transfer.fromStoreId] || 'Unknown Store',
-      toStore: storeMap[transfer.toStoreId] || 'Unknown Store',
+      itemName: item.itemName,  // Enrich with item name
+      fromStore: storeMap[transfer.fromStoreId] || 'Unknown Store',  // Enrich with from store name
+      toStore: storeMap[transfer.toStoreId] || 'Unknown Store',  // Enrich with to store name
     }));
 
     res.status(200).json({
@@ -411,12 +416,14 @@ async function getItemStockTransferHistory(req, res) {
       stockTransfers: enrichedTransfers,
     });
   } catch (error) {
+    console.error("Error fetching stock transfers:", error);
     res.status(500).json({
       message: "Something went wrong, please try again later!",
       error: error.message,
     });
   }
 }
+
 
 
 
