@@ -10,4 +10,5 @@ router.get("/:id", storeController.getStoresById);
 router.post("/", storeController.getStores);
 router.post("/getStoresByItem", storeController.getStoresByItem);
 router.post("/stockTransfer", storeController.stockTransfer);
+router.post("/getItemStockTransferHistory", storeController.getItemStockTransferHistory);
 module.exports = router;

@@ -330,6 +330,75 @@ function stockTransfer(req, res) {
     });
 }
 
+function getItemStockTransferHistory(req, res) {
+  const { transferNumber, stockData, transferDate, transferredBy } = req.body;
+
+  // Extract itemIds from the payload
+  const itemIds = stockData.map(element => element.itemId);
+
+  // Use Promise.all for the stock transfer and store updates
+  Promise.all(
+    stockData.map(element =>
+      models.StockTransfer.create({
+        transferNumber: transferNumber,
+        fromStoreId: element.fromStore,
+        itemId: element.itemId,
+        quantity: element.quantity,
+        toStoreId: element.toStore,
+        transferDate: transferDate,
+        transferredBy: transferredBy,
+      })
+    )
+  )
+    .then(() =>
+      // Fetch data from StockTransfers table filtered by itemId
+      models.StockTransfer.findAll({
+        where: {
+          itemId: itemIds, // Filter by the itemId from the payload
+        },
+        include: [
+          {
+            model: models.Items,
+            attributes: ['itemName'], // Fetch the item name
+          },
+          {
+            model: models.Store,
+            as: 'FromStore', // Alias for fromStoreId relation
+            attributes: ['name'], // Fetch the name of the source store
+          },
+          {
+            model: models.Store,
+            as: 'ToStore', // Alias for toStoreId relation
+            attributes: ['name'], // Fetch the name of the destination store
+          },
+        ],
+        attributes: [
+          'createdAt',
+          'transferNumber',
+          'quantity',
+          'itemId',
+          'fromStoreId',
+          'toStoreId',
+        ], // Select required fields
+        group: ['createdAt'], // Group by createdAt column
+        order: [['createdAt', 'DESC']], // Order by createdAt in descending order
+      })
+    )
+    .then(stockTransfers => {
+      res.status(200).json({
+        message: 'Stock transfers fetched successfully',
+        stockTransfers,
+      });
+    })
+    .catch(error => {
+      res.status(500).json({
+        message: 'Something went wrong, please try again later!',
+        error: error.message,
+      });
+    });
+}
+
+
 module.exports = {
   addStore: addStore,
   getStoresById: getStoresById,
@@ -337,5 +406,6 @@ module.exports = {
   editStore: editStore,
   deleteStore: deleteStore,
   getStoresByItem: getStoresByItem,
-  stockTransfer: stockTransfer
+  stockTransfer: stockTransfer,
+  getItemStockTransferHistory: getItemStockTransferHistory
 };
