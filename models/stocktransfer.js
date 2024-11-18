@@ -26,5 +26,21 @@ module.exports = (sequelize, DataTypes) => {
     sequelize,
     modelName: 'StockTransfer',
   });
+
+  StockTransfer.belongsTo(models.Items, {
+    foreignKey: 'itemId',
+    as: 'Item',
+  });
+  
+  StockTransfer.belongsTo(models.Store, {
+    foreignKey: 'fromStoreId',
+    as: 'FromStore',
+  });
+  
+  StockTransfer.belongsTo(models.Store, {
+    foreignKey: 'toStoreId',
+    as: 'ToStore',
+  });
+  
   return StockTransfer;
 };

@@ -33,5 +33,11 @@ module.exports = (sequelize, DataTypes) => {
     sequelize,
     modelName: 'Items',
   });
+
+  Items.hasMany(models.StockTransfer, {
+    foreignKey: 'itemId',
+    as: 'StockTransfers',
+  });
+  
   return Items;
 };
