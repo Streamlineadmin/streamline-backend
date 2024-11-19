@@ -185,6 +185,39 @@ function deleteItem(req, res) {
         });
 }
 
+function deleteItems(req, res) {
+    const { items } = req.body; // Extract item IDs from the payload
+
+    if (!Array.isArray(items) || items.length === 0) {
+        return res.status(400).json({
+            message: "Invalid or empty 'items' array in the request payload.",
+        });
+    }
+
+    models.Items.destroy({
+        where: { id: items },
+    })
+        .then(deletedCount => {
+            if (deletedCount > 0) {
+                res.status(200).json({
+                    message: `${deletedCount} item(s) deleted successfully.`,
+                });
+            } else {
+                res.status(404).json({
+                    message: "No items found with the provided IDs.",
+                });
+            }
+        })
+        .catch(error => {
+            console.error("Error deleting items:", error);
+            res.status(500).json({
+                message: "Something went wrong, please try again later!",
+                error: error.message,
+            });
+        });
+}
+
+
 async function getItems(req, res) {
     const { companyId } = req.body;
 
@@ -241,14 +274,10 @@ async function getItems(req, res) {
     }
 }
 
-
-
-
-
-
 module.exports = {
     addItem: addItem,
     getItems: getItems,
     editItem: editItem,
-    deleteItem: deleteItem
+    deleteItem: deleteItem,
+    deleteItems: deleteItems
 }

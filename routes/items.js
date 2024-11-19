@@ -7,5 +7,6 @@ router.post('/addItem', itemController.addItem);
 router.post('/editItem', itemController.editItem);
 router.post('/deleteItem', itemController.deleteItem);
 router.post('/', itemController.getItems);
+router.post('/deleteItems', itemController.deleteItems);
 
 module.exports = router;
