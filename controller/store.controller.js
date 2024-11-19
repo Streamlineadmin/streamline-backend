@@ -352,12 +352,12 @@ async function getItemStockTransferHistory(req, res) {
         'itemId',
         'fromStoreId',
         'toStoreId',
+        'transferredBy',
+        'comment'
       ],
       order: [['createdAt', 'DESC']],
       raw: true,  // Ensures data is returned as plain objects
     });
-
-    console.log(stockTransfers);
 
     if (!stockTransfers.length) {
       return res.status(404).json({
@@ -368,10 +368,8 @@ async function getItemStockTransferHistory(req, res) {
     // Fetch the item name from the Items table
     const item = await models.Items.findOne({
       where: { id: itemId },
-      attributes: ['itemName'],
+      attributes: ['itemName', 'itemId'],
     });
-
-    console.log(item);
 
     if (!item) {
       console.log(`No item found with itemId ${itemId}`); // Debugging the missing item
@@ -379,8 +377,6 @@ async function getItemStockTransferHistory(req, res) {
         message: `No item found with itemId ${itemId}`,
       });
     }
-
-    console.log('Item found:', item); // Debugging the found item
 
     // Fetch unique store IDs from stockTransfers (both from and to store)
     const storeIds = [
@@ -401,14 +397,32 @@ async function getItemStockTransferHistory(req, res) {
       return map;
     }, {});
 
+    // Fetch unique transferredBy user IDs
+    const userIds = [...new Set(stockTransfers.map(transfer => transfer.transferredBy))];
+
+    // Fetch user names for the collected user IDs
+    const users = await models.Users.findAll({
+      where: { id: userIds },
+      attributes: ['id', 'name'],
+    });
+
+    // Map user IDs to user names
+    const userMap = users.reduce((map, user) => {
+      map[user.id] = user.name;
+      return map;
+    }, {});
+
     // Add additional data (item name and store names) to stockTransfers
     const enrichedTransfers = stockTransfers.map(transfer => ({
       createdAt: transfer.createdAt,
       transferNumber: transfer.transferNumber,
       quantity: transfer.quantity,
       itemName: item.itemName,  // Enrich with item name
+      itemId: item.itemId,
       fromStore: storeMap[transfer.fromStoreId] || 'Unknown Store',  // Enrich with from store name
       toStore: storeMap[transfer.toStoreId] || 'Unknown Store',  // Enrich with to store name
+      transferredBy: userMap[transfer.transferredBy] || 'Unknown User',  // Enrich with user name
+      comment: transfer.comment
     }));
 
     res.status(200).json({
@@ -423,11 +437,6 @@ async function getItemStockTransferHistory(req, res) {
     });
   }
 }
-
-
-
-
-
 
 module.exports = {
   addStore: addStore,
