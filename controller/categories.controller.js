@@ -77,7 +77,45 @@ async function getCategories(req, res) {
     }
 }
 
+async function addCategory(req, res) {
+    const { categoryName, companyId, parentId, description, addedBy, ip_address } = req.body;
+
+    // Step 1: Validate required fields
+    if (!categoryName || !companyId) {
+        return res.status(400).json({
+            message: "categoryName and companyId are required fields.",
+        });
+    }
+
+    try {
+        // Step 2: Create the category
+        const newCategory = await models.Categories.create({
+            name: categoryName,        // Map categoryName to the 'name' field in the table
+            companyId,
+            description,
+            addedBy,
+            status: 1,
+            ip_address,
+            parentId: parentId || null // Allows nesting if parentId is provided
+        });
+
+        // Step 3: Return success response
+        return res.status(201).json({
+            message: "Category added successfully.",
+            data: newCategory,
+        });
+    } catch (error) {
+        // Step 4: Handle errors
+        console.error("Error adding category:", error);
+        return res.status(500).json({
+            message: "An error occurred while adding the category.",
+            error: error.message,
+        });
+    }
+}
+
 
 module.exports = {
-    getCategories: getCategories
+    getCategories: getCategories,
+    addCategory: addCategory
 };
