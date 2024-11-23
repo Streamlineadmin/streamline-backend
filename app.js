@@ -19,7 +19,7 @@ const documentsRoute = require('./routes/documents');
 const notificationRoute = require('./routes/notifications');
 const botRoute = require('./routes/bot');
 const uomRoute = require('./routes/uom');
-const uom = require('./models/uom');
+const categoriesRoute = require('./routes/categories');
 
 const app = express();
 
@@ -59,5 +59,6 @@ app.use('/documents', documentsRoute);
 app.use('/notification', notificationRoute);
 app.use('/bot', botRoute);
 app.use('/uom', uomRoute);
+app.use('/categories', categoriesRoute);
 
 module.exports = app;
