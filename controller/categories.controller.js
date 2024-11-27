@@ -114,8 +114,81 @@ async function addCategory(req, res) {
     }
 }
 
+async function editCategory(req, res) {
+    const { id, categoryName, description, addedBy, ip_address, companyId } = req.body;
+    const updatedCategoryData = {
+        companyId,
+        name: categoryName,
+        description: description,
+        addedBy: addedBy,
+        ip_address: ip_address,
+    };
+
+    // Check if the category name already exists for the given company but exclude the current category
+    models.Categories.findOne({
+        where: { name: categoryName, companyId, id: { [models.Sequelize.Op.ne]: id } }
+    }).then(existingCategory => {
+        if (existingCategory) {
+            // If a category with the same name already exists for the company
+            return res.status(409).json({
+                message: "Category name already exists for this company!",
+            });
+        } else {
+            // Proceed with the update
+            models.Categories.update(updatedCategoryData, { where: { id: id } })
+                .then(result => {
+                    if (result[0] > 0) {
+                        res.status(200).json({
+                            message: "Category updated successfully",
+                            post: updatedCategoryData
+                        });
+                    } else {
+                        res.status(404).json({
+                            message: "Category not found"
+                        });
+                    }
+                })
+                .catch(error => {
+                    res.status(500).json({
+                        message: "Something went wrong, please try again later!",
+                        error: error.message || error
+                    });
+                });
+        }
+    }).catch(error => {
+        res.status(500).json({
+            message: "Something went wrong, please try again later!",
+            error: error.message || error
+        });
+    });
+}
+
+async function deleteCategory(req, res) {
+    const id = req.body.id;
+
+    models.Categories.destroy({ where: { id: id } })
+        .then(result => {
+            if (result) {
+                res.status(200).json({
+                    message: "Category deleted successfully"
+                });
+            } else {
+                res.status(200).json({
+                    message: "Category not found"
+                });
+            }
+        })
+        .catch(error => {
+            res.status(500).json({
+                message: "Something went wrong, please try again later!",
+                error: error
+            });
+        });
+}
 
 module.exports = {
     getCategories: getCategories,
-    addCategory: addCategory
+    addCategory: addCategory,
+    editCategory: editCategory,
+    deleteCategory: deleteCategory,
 };
