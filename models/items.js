@@ -17,11 +17,18 @@ module.exports = (sequelize, DataTypes) => {
     itemName: DataTypes.STRING,
     itemType: DataTypes.INTEGER,
     category: DataTypes.INTEGER,
+    subCategory: DataTypes.INTEGER,
+    microCategory: DataTypes.INTEGER,
+    alternateUnit: DataTypes.INTEGER,
+    conversionFactor: DataTypes.FLOAT,
     metricsUnit: DataTypes.INTEGER,
     HSNCode: DataTypes.STRING,
     price: DataTypes.INTEGER,
     taxType: DataTypes.INTEGER,
-    tax: DataTypes.FLOAT,
+    tax: {
+      type: DataTypes.FLOAT,
+      allowNull: true,
+    },
     currentStock: DataTypes.INTEGER,
     minStock: DataTypes.INTEGER,
     maxStock: DataTypes.INTEGER,
@@ -30,10 +37,10 @@ module.exports = (sequelize, DataTypes) => {
     itemId: DataTypes.INTEGER,
     status: DataTypes.INTEGER
   }, {
-    sequelize,
-    modelName: 'Items',
-  });
+  sequelize,
+  modelName: 'Items',
+});
 
-  
-  return Items;
+
+return Items;
 };

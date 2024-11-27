@@ -44,7 +44,7 @@ function addItem(req, res) {
                     HSNCode: req.body.HSNCode,
                     price: req.body.price,
                     taxType: req.body.taxType,
-                    tax: req.body.tax,
+                    tax: req.body.tax || null,
                     currentStock: req.body.currentStock,
                     minStock: req.body.minStock,
                     maxStock: req.body.maxStock,
