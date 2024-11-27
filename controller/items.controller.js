@@ -1,7 +1,14 @@
 const models = require('../models');
 
 function addItem(req, res) {
-    const { itemId, itemName, companyId } = req.body;
+    const { itemId, itemName, itemType, metricsUnit, companyId } = req.body;
+
+    // Check for mandatory fields
+    if (!itemId || !itemName || !itemType || !metricsUnit) {
+        return res.status(400).json({
+            message: "Mandatory fields are missing: itemId, itemName, itemType, and metricsUnit are required."
+        });
+    }
 
     // Check if itemId or itemName already exists for the same company
     models.Items.findOne({
@@ -29,9 +36,11 @@ function addItem(req, res) {
                 const itemData = {
                     itemId,
                     itemName,
-                    itemType: req.body.itemType,
+                    itemType,
+                    metricsUnit,
                     category: req.body.category,
-                    metricsUnit: req.body.metricsUnit,
+                    subCategory: req.body.subCategory,
+                    microCategory: req.body.microCategory,
                     HSNCode: req.body.HSNCode,
                     price: req.body.price,
                     taxType: req.body.taxType,
@@ -52,7 +61,7 @@ function addItem(req, res) {
                         const storeItemData = {
                             storeId: req.body.storeId,     // storeId from req.body.store
                             itemId: newItemId,  // Use the generated item ID
-                            quantity: req.body.currentStock,        // Default quantity; adjust if needed
+                            quantity: req.body.currentStock || 0, // Default quantity; adjust if needed
                             addedBy: req.body.userId,
                             status: 1
                         };
@@ -86,6 +95,7 @@ function addItem(req, res) {
             });
         });
 }
+
 
 
 function editItem(req, res) {
