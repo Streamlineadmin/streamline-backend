@@ -289,7 +289,8 @@ function stockTransfer(req, res) {
         toStoreId: element.toStore,
         quantity: element.quantity,
         transferDate: transferDate,
-        transferredBy: transferredBy
+        transferredBy: transferredBy,
+        comment: stockData.comment
       })
     )
   )
@@ -340,8 +341,6 @@ async function getItemStockTransferHistory(req, res) {
   }
 
   try {
-    console.log('Received itemId:', itemId); // Debugging the received itemId
-
     // Fetch stock transfers for the given itemId
     const stockTransfers = await models.StockTransfer.findAll({
       where: { itemId },
@@ -438,6 +437,104 @@ async function getItemStockTransferHistory(req, res) {
   }
 }
 
+async function getStockTransferHistory(req, res) {
+  try {
+    // Fetch all stock transfers
+    const stockTransfers = await models.StockTransfer.findAll({
+      attributes: [
+        'createdAt',
+        'transferNumber',
+        'quantity',
+        'itemId',
+        'fromStoreId',
+        'toStoreId',
+        'transferredBy',
+        'comment'
+      ],
+      order: [['createdAt', 'DESC']],
+      raw: true,  // Ensures data is returned as plain objects
+    });
+
+    if (!stockTransfers.length) {
+      return res.status(404).json({
+        message: "No stock transfers found.",
+      });
+    }
+
+    // Fetch item details for all unique item IDs in stockTransfers
+    const itemIds = [...new Set(stockTransfers.map(transfer => transfer.itemId))];
+    const items = await models.Items.findAll({
+      where: { id: itemIds },
+      attributes: ['id', 'itemName', 'itemId'],
+    });
+
+    // Map item IDs to item names
+    const itemMap = items.reduce((map, item) => {
+      map[item.id] = item.itemName;
+      return map;
+    }, {});
+
+    // Fetch unique store IDs from stockTransfers (both from and to store)
+    const storeIds = [
+      ...new Set(
+        stockTransfers.flatMap(transfer => [transfer.fromStoreId, transfer.toStoreId])
+      ),
+    ];
+
+    // Fetch store names for the collected store IDs
+    const stores = await models.Store.findAll({
+      where: { id: storeIds },
+      attributes: ['id', 'name'],
+    });
+
+    // Map store IDs to store names
+    const storeMap = stores.reduce((map, store) => {
+      map[store.id] = store.name;
+      return map;
+    }, {});
+
+    // Fetch unique transferredBy user IDs
+    const userIds = [...new Set(stockTransfers.map(transfer => transfer.transferredBy))];
+
+    // Fetch user names for the collected user IDs
+    const users = await models.Users.findAll({
+      where: { id: userIds },
+      attributes: ['id', 'name'],
+    });
+
+    // Map user IDs to user names
+    const userMap = users.reduce((map, user) => {
+      map[user.id] = user.name;
+      return map;
+    }, {});
+
+    // Add additional data (item name and store names) to stockTransfers
+    const enrichedTransfers = stockTransfers.map(transfer => ({
+      createdAt: transfer.createdAt,
+      transferNumber: transfer.transferNumber,
+      quantity: transfer.quantity,
+      itemName: itemMap[transfer.itemId] || 'Unknown Item',  // Enrich with item name
+      itemId: transfer.itemId,
+      fromStore: storeMap[transfer.fromStoreId] || 'Unknown Store',  // Enrich with from store name
+      toStore: storeMap[transfer.toStoreId] || 'Unknown Store',  // Enrich with to store name
+      transferredBy: userMap[transfer.transferredBy] || 'Unknown User',  // Enrich with user name
+      comment: transfer.comment,
+    }));
+
+    res.status(200).json({
+      message: "Stock transfers fetched successfully",
+      stockTransfers: enrichedTransfers,
+    });
+  } catch (error) {
+    console.error("Error fetching stock transfers:", error);
+    res.status(500).json({
+      message: "Something went wrong, please try again later!",
+      error: error.message,
+    });
+  }
+}
+
+
 module.exports = {
   addStore: addStore,
   getStoresById: getStoresById,
@@ -446,5 +543,6 @@ module.exports = {
   deleteStore: deleteStore,
   getStoresByItem: getStoresByItem,
   stockTransfer: stockTransfer,
-  getItemStockTransferHistory: getItemStockTransferHistory
+  getItemStockTransferHistory: getItemStockTransferHistory,
+  getStockTransferHistory: getStockTransferHistory
 };
