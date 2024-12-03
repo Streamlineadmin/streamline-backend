@@ -22,6 +22,7 @@ module.exports = (sequelize, DataTypes) => {
     status: DataTypes.INTEGER,
     itemId: DataTypes.INTEGER, // New column
     quantity: DataTypes.INTEGER, // New column
+    companyId: DataTypes.INTEGER,
     comment: {
       type: DataTypes.STRING,
       allowNull: true,

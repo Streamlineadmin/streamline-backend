@@ -276,7 +276,7 @@ async function getStoresByItem(req, res) {
 
 
 function stockTransfer(req, res) {
-  const { transferNumber, stockData, transferDate, transferredBy } = req.body;
+  const { transferNumber, stockData, transferDate, transferredBy, companyId } = req.body;
 
   // Use Promise.all to handle asynchronous create calls for StockTransfer entries
   Promise.all(
@@ -290,7 +290,8 @@ function stockTransfer(req, res) {
         quantity: element.quantity,
         transferDate: transferDate,
         transferredBy: transferredBy,
-        comment: stockData.comment
+        comment: stockData.comment,
+        companyId: companyId
       })
     )
   )
@@ -354,7 +355,7 @@ async function getItemStockTransferHistory(req, res) {
         'transferredBy',
         'comment'
       ],
-      order: [['createdAt', 'DESC']],
+      order: [['createdAt', 'ASC']], // Order by date for cumulative calculations
       raw: true,  // Ensures data is returned as plain objects
     });
 
@@ -411,18 +412,49 @@ async function getItemStockTransferHistory(req, res) {
       return map;
     }, {});
 
-    // Add additional data (item name and store names) to stockTransfers
-    const enrichedTransfers = stockTransfers.map(transfer => ({
-      createdAt: transfer.createdAt,
-      transferNumber: transfer.transferNumber,
-      quantity: transfer.quantity,
-      itemName: item.itemName,  // Enrich with item name
-      itemId: item.itemId,
-      fromStore: storeMap[transfer.fromStoreId] || 'Unknown Store',  // Enrich with from store name
-      toStore: storeMap[transfer.toStoreId] || 'Unknown Store',  // Enrich with to store name
-      transferredBy: userMap[transfer.transferredBy] || 'Unknown User',  // Enrich with user name
-      comment: transfer.comment
-    }));
+    // Initialize cumulative quantities for stores
+    const storeQuantities = {};
+
+    const enrichedTransfers = stockTransfers.map(transfer => {
+      // Initialize cumulative quantities for `fromStore` and `toStore` if not set
+      if (!storeQuantities[transfer.fromStoreId]) {
+        storeQuantities[transfer.fromStoreId] = 0;
+      }
+      if (!storeQuantities[transfer.toStoreId]) {
+        storeQuantities[transfer.toStoreId] = 0;
+      }
+
+      // Previous and current quantities for `fromStore`
+      const fromStorePreviousQuantity = storeQuantities[transfer.fromStoreId];
+      storeQuantities[transfer.fromStoreId] -= transfer.quantity;
+      const fromStoreCurrentQuantity = storeQuantities[transfer.fromStoreId];
+
+      // Previous and current quantities for `toStore`
+      const toStorePreviousQuantity = storeQuantities[transfer.toStoreId];
+      storeQuantities[transfer.toStoreId] += transfer.quantity;
+      const toStoreCurrentQuantity = storeQuantities[transfer.toStoreId];
+
+      // Enrich the transfer record
+      return {
+        createdAt: transfer.createdAt,
+        transferNumber: transfer.transferNumber,
+        quantity: transfer.quantity,
+        itemName: item.itemName,  // Enrich with item name
+        itemId: item.itemId,
+        fromStore: {
+          name: storeMap[transfer.fromStoreId] || 'Unknown Store',
+          previousQuantity: fromStorePreviousQuantity,
+          currentQuantity: fromStoreCurrentQuantity,
+        },
+        toStore: {
+          name: storeMap[transfer.toStoreId] || 'Unknown Store',
+          previousQuantity: toStorePreviousQuantity,
+          currentQuantity: toStoreCurrentQuantity,
+        },
+        transferredBy: userMap[transfer.transferredBy] || 'Unknown User',  // Enrich with user name
+        comment: transfer.comment
+      };
+    });
 
     res.status(200).json({
       message: "Stock transfers fetched successfully",
@@ -437,11 +469,22 @@ async function getItemStockTransferHistory(req, res) {
   }
 }
 
+
 async function getStockTransferHistory(req, res) {
+  const { companyId } = req.body; // Extract companyId from the payload
+
+  if (!companyId) {
+    return res.status(400).json({
+      message: "companyId is required",
+    });
+  }
+
   try {
-    // Fetch all stock transfers
+    // Fetch stock transfers for the given companyId
     const stockTransfers = await models.StockTransfer.findAll({
+      where: { companyId },
       attributes: [
+        'id',
         'createdAt',
         'transferNumber',
         'quantity',
@@ -449,15 +492,15 @@ async function getStockTransferHistory(req, res) {
         'fromStoreId',
         'toStoreId',
         'transferredBy',
-        'comment'
+        'comment',
       ],
-      order: [['createdAt', 'DESC']],
-      raw: true,  // Ensures data is returned as plain objects
+      order: [['createdAt', 'ASC']], // Order by time for cumulative calculations
+      raw: true,
     });
 
     if (!stockTransfers.length) {
       return res.status(404).json({
-        message: "No stock transfers found.",
+        message: `No stock transfers found for companyId ${companyId}.`,
       });
     }
 
@@ -465,8 +508,22 @@ async function getStockTransferHistory(req, res) {
     const itemIds = [...new Set(stockTransfers.map(transfer => transfer.itemId))];
     const items = await models.Items.findAll({
       where: { id: itemIds },
-      attributes: ['id', 'itemName', 'itemId'],
+      attributes: ['id', 'itemName'],
     });
+
+    // Map valid item IDs
+    const validItemIds = new Set(items.map(item => item.id));
+
+    // Filter out stock transfers with invalid item IDs
+    const validStockTransfers = stockTransfers.filter(transfer =>
+      validItemIds.has(transfer.itemId)
+    );
+
+    if (!validStockTransfers.length) {
+      return res.status(404).json({
+        message: `No valid stock transfers found for companyId ${companyId}.`,
+      });
+    }
 
     // Map item IDs to item names
     const itemMap = items.reduce((map, item) => {
@@ -474,55 +531,52 @@ async function getStockTransferHistory(req, res) {
       return map;
     }, {});
 
-    // Fetch unique store IDs from stockTransfers (both from and to store)
-    const storeIds = [
-      ...new Set(
-        stockTransfers.flatMap(transfer => [transfer.fromStoreId, transfer.toStoreId])
-      ),
-    ];
+    // Create cumulative quantities for all stores
+    const storeQuantities = {};
 
-    // Fetch store names for the collected store IDs
-    const stores = await models.Store.findAll({
-      where: { id: storeIds },
-      attributes: ['id', 'name'],
+    const enrichedTransfers = validStockTransfers.map(transfer => {
+      // Initialize cumulative quantities for `fromStore` and `toStore`
+      if (!storeQuantities[transfer.fromStoreId]) {
+        storeQuantities[transfer.fromStoreId] = 0;
+      }
+      if (!storeQuantities[transfer.toStoreId]) {
+        storeQuantities[transfer.toStoreId] = 0;
+      }
+
+      // Calculate previous and current quantities for `fromStore`
+      const fromStorePreviousQuantity = storeQuantities[transfer.fromStoreId];
+      storeQuantities[transfer.fromStoreId] -= transfer.quantity;
+      const fromStoreCurrentQuantity = storeQuantities[transfer.fromStoreId];
+
+      // Calculate previous and current quantities for `toStore`
+      const toStorePreviousQuantity = storeQuantities[transfer.toStoreId];
+      storeQuantities[transfer.toStoreId] += transfer.quantity;
+      const toStoreCurrentQuantity = storeQuantities[transfer.toStoreId];
+
+      // Enrich the transfer record
+      return {
+        createdAt: transfer.createdAt,
+        transferNumber: transfer.transferNumber,
+        quantity: transfer.quantity,
+        itemName: itemMap[transfer.itemId] || 'Unknown Item',
+        itemId: transfer.itemId,
+        fromStoreId: transfer.fromStoreId,
+        toStoreId: transfer.toStoreId,
+        transferredBy: transfer.transferredBy,
+        comment: transfer.comment,
+        fromStore: {
+          previousQuantity: fromStorePreviousQuantity,
+          currentQuantity: fromStoreCurrentQuantity,
+        },
+        toStore: {
+          previousQuantity: toStorePreviousQuantity,
+          currentQuantity: toStoreCurrentQuantity,
+        },
+      };
     });
-
-    // Map store IDs to store names
-    const storeMap = stores.reduce((map, store) => {
-      map[store.id] = store.name;
-      return map;
-    }, {});
-
-    // Fetch unique transferredBy user IDs
-    const userIds = [...new Set(stockTransfers.map(transfer => transfer.transferredBy))];
-
-    // Fetch user names for the collected user IDs
-    const users = await models.Users.findAll({
-      where: { id: userIds },
-      attributes: ['id', 'name'],
-    });
-
-    // Map user IDs to user names
-    const userMap = users.reduce((map, user) => {
-      map[user.id] = user.name;
-      return map;
-    }, {});
-
-    // Add additional data (item name and store names) to stockTransfers
-    const enrichedTransfers = stockTransfers.map(transfer => ({
-      createdAt: transfer.createdAt,
-      transferNumber: transfer.transferNumber,
-      quantity: transfer.quantity,
-      itemName: itemMap[transfer.itemId] || 'Unknown Item',  // Enrich with item name
-      itemId: transfer.itemId,
-      fromStore: storeMap[transfer.fromStoreId] || 'Unknown Store',  // Enrich with from store name
-      toStore: storeMap[transfer.toStoreId] || 'Unknown Store',  // Enrich with to store name
-      transferredBy: userMap[transfer.transferredBy] || 'Unknown User',  // Enrich with user name
-      comment: transfer.comment,
-    }));
 
     res.status(200).json({
-      message: "Stock transfers fetched successfully",
+      message: "Valid stock transfers fetched successfully",
       stockTransfers: enrichedTransfers,
     });
   } catch (error) {
@@ -533,6 +587,8 @@ async function getStockTransferHistory(req, res) {
     });
   }
 }
+
+
 
 
 module.exports = {
