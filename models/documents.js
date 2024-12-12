@@ -59,7 +59,17 @@ module.exports = (sequelize, DataTypes) => {
     billDate: DataTypes.DATE,
     returnRecieveDate: DataTypes.DATE,
     creditNoteNumber: DataTypes.STRING,
-    creditNotedate: DataTypes.DATE
+    creditNotedate: DataTypes.DATE,
+    indent_number: DataTypes.STRING,
+    indent_date: DataTypes.STRING,
+    supplier_invoice_number: DataTypes.STRING,
+    supplier_invoice_date: DataTypes.STRING,
+    challan_number: DataTypes.STRING,
+    challan_date: DataTypes.STRING,
+    inspection_date: DataTypes.STRING,
+    pay_to_transporter: DataTypes.STRING,
+    debit_note_number: DataTypes.STRING,
+    debit_note_date: DataTypes.STRING,
   }, {
     sequelize,
     modelName: 'Documents',
