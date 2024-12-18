@@ -17,9 +17,13 @@ const documentSeriesRoute = require('./routes/documentSeries');
 const accountDetailsRoute = require('./routes/accountDetails');
 const documentsRoute = require('./routes/documents');
 const notificationRoute = require('./routes/notifications');
-const botRoute = require('./routes/bot');
+// const botRoute = require('./routes/bot');
 const uomRoute = require('./routes/uom');
 const categoriesRoute = require('./routes/categories');
+const paymentTermsRoutes = require('./routes/paymentTerms');
+const logisticDetailsRoutes = require('./routes/logisticDetails');
+const transporterDetailsRoutes = require('./routes/transporterDetails');
+const termsConditionRoutes = require('./routes/termsCondition');
 
 const app = express();
 
@@ -57,8 +61,12 @@ app.use('/documentSeries', documentSeriesRoute);
 app.use('/accountDetails', accountDetailsRoute);
 app.use('/documents', documentsRoute);
 app.use('/notification', notificationRoute);
-app.use('/bot', botRoute);
+// app.use('/bot', botRoute);
 app.use('/uom', uomRoute);
 app.use('/categories', categoriesRoute);
+app.use('/api', paymentTermsRoutes);
+app.use('/api', logisticDetailsRoutes);
+app.use('/api', transporterDetailsRoutes);
+app.use('/api', termsConditionRoutes);
 
 module.exports = app;
