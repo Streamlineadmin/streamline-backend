@@ -64,9 +64,9 @@ app.use('/notification', notificationRoute);
 // app.use('/bot', botRoute);
 app.use('/uom', uomRoute);
 app.use('/categories', categoriesRoute);
-app.use('/api', paymentTermsRoutes);
-app.use('/api', logisticDetailsRoutes);
-app.use('/api', transporterDetailsRoutes);
-app.use('/api', termsConditionRoutes);
+app.use('/paymentTerms', paymentTermsRoutes);
+app.use('/logisticDetails', logisticDetailsRoutes);
+app.use('/transporterDetails', transporterDetailsRoutes);
+app.use('/termsCondition', termsConditionRoutes);
 
 module.exports = app;
