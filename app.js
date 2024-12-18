@@ -21,6 +21,9 @@ const notificationRoute = require('./routes/notifications');
 const uomRoute = require('./routes/uom');
 const categoriesRoute = require('./routes/categories');
 const paymentTermsRoutes = require('./routes/paymentTerms');
+const logisticDetailsRoutes = require('./routes/logisticDetails');
+const transporterDetailsRoutes = require('./routes/transporterDetails');
+const termsConditionRoutes = require('./routes/termsCondition');
 
 const app = express();
 
@@ -62,5 +65,8 @@ app.use('/notification', notificationRoute);
 app.use('/uom', uomRoute);
 app.use('/categories', categoriesRoute);
 app.use('/api', paymentTermsRoutes);
+app.use('/api', logisticDetailsRoutes);
+app.use('/api', transporterDetailsRoutes);
+app.use('/api', termsConditionRoutes);
 
 module.exports = app;
