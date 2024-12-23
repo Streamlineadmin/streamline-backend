@@ -2,61 +2,62 @@
 const models = require('../models');
 
 function addLogisticDetails(req, res) {
-    // Check if Logistic Details  already exists for the given company
-    models.LogisticDetails.findOne({
-        where: {
-            documentType: req.body.documentType,
-            logisticType: req.body.logisticType,
-            companyId: req.body.companyId,
-            userId: req.body.userId,
-        },
-    }) .then(logisticDetailsResult => {
-        if (logisticDetailsResult) {
-            return res.status(409).json({
-                message: "Logistic details already exist!",
-            });
-        } else {
-            // Logistic details do not exist, proceed to create
-            const logisticDetails = {
-                companyId: req.body.companyId, 
-                userId: req.body.userId,
-                documentType: req.body.documentType,
-                logisticType: req.body.logisticType,
-                description: req.body.description,
-                ip_address: req.body.ip_address,
-                status: 1,
-            };
-
-            models.PaymentTerms.create(logisticDetails)
-                .then(result => {
-                    res.status(201).json({
-                        message: "Payment terms added successfully!",
-                        data: result,
-                    });
-                })
-                .catch(error => {
-                    console.error("Error creating payment terms:", error);
-                    res.status(500).json({
-                        message: "Something went wrong. Please try again later!",
-                        error: error.message,
-                    });
-                });
-        }
-    })
-    .catch(error => {
-        console.error("Error finding logistic details:", error);
-        res.status(500).json({
-            message: "Something went wrong. Please try again later!",
-            error: error.message,
+  // Check if Logistic Details  already exists for the given company
+  models.LogisticDetails.findOne({
+    where: {
+      documentType: req.body.documentType,
+      logisticType: req.body.logisticType,
+      companyId: req.body.companyId,
+      userId: req.body.userId,
+    },
+  })
+    .then((logisticDetailsResult) => {
+      if (logisticDetailsResult) {
+        return res.status(409).json({
+          message: "Logistic details already exist!",
         });
+      } else {
+        // Logistic details do not exist, proceed to create
+        const logisticDetails = {
+          companyId: req.body.companyId,
+          userId: req.body.userId,
+          documentType: req.body.documentType,
+          logisticType: req.body.logisticType,
+          description: req.body.description,
+          ip_address: req.body.ip_address,
+          status: 1,
+        };
+
+        models.LogisticDetails.create(logisticDetails)
+          .then((result) => {
+            res.status(201).json({
+              message: "Logistic details added successfully!",
+              data: result,
+            });
+          })
+          .catch((error) => {
+            console.error("Error creating Logistic details:", error);
+            res.status(500).json({
+              message: "Something went wrong. Please try again later!",
+              error: error,
+            });
+          });
+      }
+    })
+    .catch((error) => { 
+      res.status(500).json({
+        message: "Something went wrong. Please try again later!",
+        error: error.message,
+      });
     });
 }
  // Check if the logistic details already exist for the given company and logistic type, but exclude the current record
 function editLogisticDetails(req, res) {
     const logisticDetailId = req.body.logisticDetailId;  
     const companyId = req.body.companyId;
-    const updatedPaymentTermData = {
+    const updatedLogisticData = {
         companyId,
+        logisticDetailId: req.body.logisticDetailId,
         logisticType: req.body.logisticType,
         documentType: req.body.documentType, 
         description: req.body.description,
@@ -81,12 +82,12 @@ function editLogisticDetails(req, res) {
             });
         } else {
             // Proceed with the update
-            models.LogisticDetails.update(updatedLogisticDetailData, { where: { id: logisticDetailId } })
+            models.LogisticDetails.update(updatedLogisticData, { where: { id: logisticDetailId } })
                 .then(result => {
                     if (result[0] > 0) {
                         res.status(200).json({
                             message: "Logistic details updated successfully",
-                            post: updatedLogisticDetailData
+                            post: updatedLogisticData
                         });
                     } else {
                         res.status(404).json({
