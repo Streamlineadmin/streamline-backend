@@ -50,7 +50,15 @@ function createDocument(req, res) {
         items = [],
         additionalCharges = [],
         bankDetails = {},
-        termsCondition = null
+        termsCondition = null,
+        quotationNumber = null,
+        quotationDate = null,
+        orderConfirmationNumber = null,
+        orderConfirmationDate = null,
+        purchaseOrderNumber = null,
+        purchaseOrderDate = null,
+        grn_number = null,
+        grn_Date = null
     } = req.body;
 
     models.Documents.create({
