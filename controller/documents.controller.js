@@ -98,7 +98,24 @@ function createDocument(req, res) {
         billDate,
         returnRecieveDate,
         creditNoteNumber,
-        creditNotedate
+        creditNotedate,
+        indent_number,
+        indent_date,
+        supplier_invoice_number,
+        supplier_invoice_date,
+        challan_number,
+        challan_date,
+        debit_note_number,
+        pay_to_transporter,
+        inspection_date,
+        quotationNumber,
+        quotationDate,
+        orderConfirmationNumber,
+        orderConfirmationDate,
+        purchaseOrderNumber,
+        purchaseOrderDate,
+        grn_number,
+        grn_Date
     })
     .then(document => {
         return Promise.all([
