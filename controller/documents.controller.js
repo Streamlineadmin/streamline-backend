@@ -58,7 +58,16 @@ function createDocument(req, res) {
         purchaseOrderNumber = null,
         purchaseOrderDate = null,
         grn_number = null,
-        grn_Date = null
+        grn_Date = null,
+        indent_number = null,
+        indent_date = null,
+        supplier_invoice_number = null,
+        supplier_invoice_date = null,
+        challan_number = null,
+        challan_date = null,
+        debit_note_number = null,
+        pay_to_transporter = null,
+        inspection_date = null,
     } = req.body;
 
     models.Documents.create({
