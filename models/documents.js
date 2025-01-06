@@ -70,7 +70,6 @@ module.exports = (sequelize, DataTypes) => {
     pay_to_transporter: DataTypes.STRING,
     debit_note_number: DataTypes.STRING,
     debit_note_date: DataTypes.STRING,
-    quotation_Date: DataTypes.STRING,
     quotationDate: DataTypes.STRING,
     orderConfirmationNumber:DataTypes.STRING,
     orderConfirmationDate: DataTypes.STRING,
