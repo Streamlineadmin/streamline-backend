@@ -162,6 +162,200 @@ function createDocument(req, res) {
     });
 }
 
+async function editDocument(req, res) {
+  const {
+    documentId, // The ID of the document to be edited
+    documentType,
+    documentNumber,
+    buyerName,
+    buyerBillingAddress,
+    buyerDeliveryAddress,
+    buyerContactNumber,
+    buyerEmail,
+    supplierName,
+    supplierBillingAddress,
+    supplierDeliverAddress,
+    supplierContactNo,
+    supplierEmail,
+    documentDate,
+    ammendment,
+    deliveryDate,
+    paymentTerm,
+    store,
+    enquiryNumber,
+    enquiryDate,
+    logisticDetails,
+    additionalDetails,
+    signature,
+    companyId,
+    updatedBy,
+    status,
+    ip_address,
+    paymentDate,
+    POCName,
+    POCNumber,
+    POCDate,
+    OCNumber,
+    OCDate,
+    transporterName,
+    TGNumber,
+    TDNumber,
+    TDDate,
+    VehicleNumber,
+    replyDate,
+    Attention,
+    invoiceNumber,
+    invoiceDate,
+    billDate,
+    returnRecieveDate,
+    creditNoteNumber,
+    creditNotedate,
+    items = [],
+    additionalCharges = [],
+    bankDetails = {},
+    termsCondition = null,
+  } = req.body;
+
+  if (!documentId) {
+    return res.status(400).json({
+      message: "Document ID is required for editing",
+    });
+  }
+
+  try {
+    // Update the main document
+    const documentUpdate = await models.Documents.update(
+      {
+        documentType,
+        documentNumber,
+        buyerName,
+        buyerBillingAddress,
+        buyerDeliveryAddress,
+        buyerContactNumber,
+        buyerEmail,
+        supplierName,
+        supplierBillingAddress,
+        supplierDeliverAddress,
+        supplierContactNo,
+        supplierEmail,
+        documentDate,
+        ammendment,
+        deliveryDate,
+        paymentTerm,
+        store,
+        enquiryNumber,
+        enquiryDate,
+        logisticDetails,
+        additionalDetails,
+        signature,
+        status,
+        ip_address,
+        paymentDate,
+        POCName,
+        POCNumber,
+        POCDate,
+        OCNumber,
+        OCDate,
+        transporterName,
+        TGNumber,
+        TDNumber,
+        TDDate,
+        VehicleNumber,
+        replyDate,
+        Attention,
+        invoiceNumber,
+        invoiceDate,
+        billDate,
+        returnRecieveDate,
+        creditNoteNumber,
+        creditNotedate,
+        updatedBy,
+      },
+      { where: { id: documentId } }
+    );
+
+    if (!documentUpdate[0]) {
+      return res.status(404).json({
+        message: "Document not found",
+      });
+    }
+
+    // Update items
+    await models.DocumentItems.destroy({ where: { documentNumber } });
+    await models.DocumentItems.bulkCreate(
+      items.map((item) => ({
+        documentNumber,
+        itemId: item.itemId,
+        itemName: item.itemName,
+        HSN: item.HSN,
+        UOM: item.UOM,
+        quantity: item.quantity,
+        price: item.price,
+        discountOne: item.discountOne,
+        discountTwo: item.discountTwo,
+        totalDiscount: item.totalDiscount,
+        taxType: item.taxType,
+        tax: item.tax,
+        totalTax: item.totalTax,
+        totalBeforeTax: item.totalBeforeTax,
+        totalAfterTax: item.totalAfterTax,
+      }))
+    );
+
+    // Update additional charges
+    await models.DocumentAdditionalCharges.destroy({
+      where: { documentNumber },
+    });
+    await models.DocumentAdditionalCharges.bulkCreate(
+      additionalCharges.map((charge) => ({
+        documentNumber,
+        chargingFor: charge.chargingFor,
+        price: charge.price,
+        tax: charge.tax,
+        total: charge.total,
+        status: charge.status,
+        ip_address: charge.ip_address,
+      }))
+    );
+
+    // Update bank details
+    await models.DocumentBankDetails.update(
+      {
+        bankName: bankDetails.bankName,
+        accountName: bankDetails.accountName,
+        accountNumber: bankDetails.accountNumber,
+        branch: bankDetails.branch,
+        IFSCCode: bankDetails.IFSCCode,
+        MICRCode: bankDetails.MICRCode,
+        address: bankDetails.address,
+        SWIFTCode: bankDetails.SWIFTCode,
+        status: bankDetails.status,
+        ip_address: bankDetails.ip_address,
+      },
+      { where: { documentNumber } }
+    );
+
+    // Update terms and conditions
+    if (termsCondition) {
+      await models.CompanyTermsCondition.update(
+        { termsCondition },
+        { where: { companyId } }
+      );
+    }
+
+    res.status(200).json({
+      message:
+        "Document, items, additional charges, bank details, and terms condition updated successfully!",
+    });
+  } catch (error) {
+    console.error("Error editing document:", error);
+    res.status(500).json({
+      message: "Something went wrong, please try again later!",
+      error: error.message || error,
+    });
+  }
+}
+
 function getDocuments(req, res) {
     models.Documents.findAll({
         where: {
@@ -234,8 +428,90 @@ function getDocumentById(req, res) {
     });
 }
 
+async function discardDocument(req, res) {
+  const { documentId, companyId } = req.body;
+
+  try {
+    // Find the document using documentId and companyId
+    const document = await models.Documents.findOne({
+      where: { id: documentId, companyId },
+    });
+
+    // If the document doesn't exist, return an error
+    if (!document) {
+      return res.status(404).json({ message: "Document not found!" });
+    }
+
+    // Start a transaction to ensure atomicity
+    const transaction = await models.sequelize.transaction();
+
+    try {
+      // Mark the specified document as discarded
+      await models.Documents.update(
+        { status: 2 },  
+        { where: { id: documentId }, transaction }
+      );
+
+      // Commit the transaction
+      await transaction.commit();
+
+      // Success response
+      res.status(200).json({
+        message: `Document with ID ${documentId} has been successfully discarded.`,
+      });
+    } catch (error) {
+      // If something goes wrong, roll back the transaction
+      await transaction.rollback();
+      throw error;
+    }
+  } catch (error) {
+    // Catch any errors and send a failure response
+    res.status(500).json({
+      message: "Something went wrong while discarding the document.",
+      error: error.message || error,
+    });
+  }
+}
+
+function deleteDocument(req, res) {
+  const { documentId } = req.body;
+
+  // Check if documentId is provided
+  if (!documentId) {
+    return res.status(400).json({
+      message: "Document ID is required",
+    });
+  }
+
+  // Attempt to delete the document
+  models.Documents.destroy({ where: { id: documentId } })
+    .then((result) => {
+      if (result) {
+        // Document was successfully deleted
+        res.status(200).json({
+          message: "Document deleted successfully",
+        });
+      } else {
+        // No document was found with the given ID
+        res.status(404).json({
+          message: "Document not found",
+        });
+      }
+    })
+    .catch((error) => {
+      // Handle errors
+      res.status(500).json({
+        message: "Something went wrong, please try again later!",
+        error: error.message || error,
+      });
+    });
+}
+  
 module.exports = {
     getDocuments,
     getDocumentById,
-    createDocument
+    createDocument,
+    editDocument,
+    discardDocument,
+    deleteDocument,
 };
