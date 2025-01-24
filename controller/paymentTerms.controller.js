@@ -3,14 +3,20 @@ const models = require('../models');
 
 function addPaymentTerms(req, res) {
     // Check if payment terms  already exists for the given company
-    models.PaymentTerms.findOne({ where: { name: req.body.name, companyId: req.body.companyId, userId: req.body.userId, } }).then(teamResult => {
-        if (teamResult) {
+    models.PaymentTerms.findOne({ 
+        where: { 
+            name: req.body.name, 
+            companyId: req.body.companyId, 
+            userId: req.body.userId, 
+        } 
+    }).then(paymentResult => {
+        if (paymentResult) {
             return res.status(409).json({
                 message: "Payment terms already exists!",
             });
         } else {
-            // Team does not exist, proceed to create
-            const team = {
+            // Payment does not exist, proceed to create
+            const paymentTerm = {
                 companyId: req.body.companyId,
                 name: req.body.name,
                 days: req.body.days,
@@ -20,7 +26,7 @@ function addPaymentTerms(req, res) {
                 status: 1
             };
 
-            models.PaymentTerms.create(team).then(result => {
+            models.PaymentTerms.create(paymentTerm).then(result => {
                 res.status(201).json({
                     message: "Payment terms added successfully",
                     post: result
@@ -45,8 +51,8 @@ function editPaymentTerms(req, res) {
     const companyId = req.body.companyId;
     const updatedPaymentTermData = {
         companyId,
-        name: req.body.name,
         paymentTermId: req.body.paymentTermId,
+        name: req.body.name,
         days: req.body.days,
         description: req.body.description,
         ip_address: req.body.ip_address,
@@ -58,7 +64,7 @@ function editPaymentTerms(req, res) {
         where: { name: req.body.name, companyId, id: { [models.Sequelize.Op.ne]: paymentTermId  } }
     }).then(existingPaymentTerm  => {
         if (existingPaymentTerm ) {
-            // If a team with the same name already exists for the company
+            // If a payment term with the same name already exists for the company
             return res.status(409).json({
                 message: "Payment term already exists for this company!",
             });
