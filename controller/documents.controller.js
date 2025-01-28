@@ -198,7 +198,7 @@ function createDocument(req, res) {
 
 async function editDocument(req, res) {
   const {
-    documentId, // The ID of the document to be edited
+    documentId,  
     documentType,
     documentNumber,
     buyerName,

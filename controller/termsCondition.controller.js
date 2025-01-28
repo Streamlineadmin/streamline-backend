@@ -2,25 +2,24 @@
 const models = require('../models');
 
 function addTermsCondition(req, res) {
-    // Check if Terms Condition  already exists for the given company
-    models.addTermsConditionTermsCondition.findOne({
+    models.TermsCondition.findOne({
         where: {
             documentType: req.body.documentType, 
             companyId: req.body.companyId,
             userId: req.body.userId,
         },
-    }) .then(termsConditionResult => {
+    })
+    .then(termsConditionResult => {
         if (termsConditionResult) {
             return res.status(409).json({
-                message: "Terms condition already exist!",
+                message: "Terms condition already exists!"
             });
         } else {
-            // Terms ConditionResult do not exist, proceed to create
             const termsCondition = {
                 companyId: req.body.companyId, 
                 userId: req.body.userId,
                 documentType: req.body.documentType,
-                termsCondition: req.body.termsCondition,
+                term: req.body.term,
                 description: req.body.description,
                 ip_address: req.body.ip_address,
                 status: 1,
@@ -30,14 +29,14 @@ function addTermsCondition(req, res) {
                 .then(result => {
                     res.status(201).json({
                         message: "Terms condition added successfully!",
-                        data: result,
+                        data: result
                     });
                 })
                 .catch(error => {
                     console.error("Error creating terms condition:", error);
                     res.status(500).json({
-                        message: "Something went wrong. Please try again later!",
-                        error: error.message,
+                        message: "Something went wrong while creating the terms condition. Please try again later.",
+                        error: error.message
                     });
                 });
         }
@@ -45,8 +44,8 @@ function addTermsCondition(req, res) {
     .catch(error => {
         console.error("Error finding Terms Condition:", error);
         res.status(500).json({
-            message: "Something went wrong. Please try again later!",
-            error: error.message,
+            message: "Something went wrong while checking for existing terms condition. Please try again later.",
+            error: error.message
         });
     });
 }
@@ -57,7 +56,7 @@ function editTermsCondition(req, res) {
     const updatedTermsConditionData = {
         companyId,
         documentType: req.body.documentType,
-        termsCondition: req.body.termsCondition,
+        term: req.body.term,
         description: req.body.description,
         ip_address: req.body.ip_address,
         status: req.body.status || 1,
