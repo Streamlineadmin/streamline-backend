@@ -176,22 +176,22 @@ async function editTermsCondition(req, res) {
 
 async function deleteTermsCondition(req, res) {
   try {
-      const { termsConditionId } = req.body;
+      const { termsConditionId, companyId } = req.body;
 
-      if (!termsConditionId) {
-          return res.status(400).json({ message: "Terms Condition ID is required." });
+      if (!termsConditionId || !companyId) {
+          return res.status(400).json({ message: "Terms Condition ID and Company ID are required." });
       }
 
       const existingTerm = await models.TermsCondition.findOne({
-          where: { id: termsConditionId },
+          where: { id: termsConditionId, companyId },
       });
 
       if (!existingTerm) {
-          return res.status(404).json({ message: "Terms condition not found." });
+          return res.status(404).json({ message: "Terms condition not found for the given Company ID." });
       }
 
       await models.TermsCondition.destroy({
-          where: { id: termsConditionId },
+          where: { id: termsConditionId, companyId },
       });
 
       return res.status(200).json({
