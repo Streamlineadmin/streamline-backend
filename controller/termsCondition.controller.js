@@ -220,7 +220,9 @@ async function getTermsCondition(req, res) {
       });
 
       if (!termsConditions.length) {
-          return res.status(404).json({ message: "No terms found for this company." });
+        return res
+          .status(404)
+          .json({ message: "No terms found for this company.", data: [] });
       }
 
       const { userId, ip_address, status, createdAt, updatedAt } = termsConditions[0];
