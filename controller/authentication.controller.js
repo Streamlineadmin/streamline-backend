@@ -4,6 +4,8 @@ const jwt = require('jsonwebtoken');
 const nodemailer = require("nodemailer");
 require("dotenv").config();
 
+const crypto = require('crypto');
+
 const transporter = nodemailer.createTransport({
     host: process.env.SMTP_HOST,
     port: process.env.SMTP_PORT,
@@ -57,7 +59,7 @@ async function signUp(req, res) {
 
         // Email Template (HTML)
         const emailTemplate = `<div style="font-family: 'Inter', Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px; ">
-            <img src="https://easemargin.com/static/media/ease-primary.3d606f37b10fdb7c34fe36ebf9ce65ff.svg" alt="EaseMargin Logo" style="height: 120px; margin-bottom: 20px;">
+            <img src="https://easemargin.com/static/media/logo.254ec62d5b107c7a9405.png" alt="EaseMargin Logo" style="height: 120px; margin-bottom: 20px;">
             
             <h2 style="color: #1780fb; font-size: 24px; margin-bottom: 10px;">Welcome to EaseMargin</h2>
             <p style="color: #555; font-size: 16px;">Dear ${name},</p>
@@ -143,7 +145,92 @@ function login(req, res) {
     })
 }
 
+async function forgotPassword(req, res) {
+    try {
+        const { email } = req.body;
+
+        // Check if user exists
+        const user = await models.Users.findOne({ where: { email } });
+        if (!user) return res.status(404).json({ message: "User not found!" });
+
+        // Generate a secure reset token
+        const resetToken = crypto.randomBytes(32).toString("hex");
+        const resetTokenExpiry = Date.now() + 3600000; // 1 hour from now
+
+        // Save reset token in the database
+        await models.Users.update(
+            { resetToken, resetTokenExpiry },
+            { where: { email } }
+        );
+
+        // Reset password link (frontend URL)
+        const resetLink = `https://easemargin.com/reset-password?token=${resetToken}`;
+
+        // Email template
+        const emailTemplate = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px; border-radius: 10px;">
+        <div>
+            <img src="https://easemargin.com/static/media/logo.254ec62d5b107c7a9405.png" 
+                 alt="EaseMargin Logo" 
+                 style="height: 60px;">
+        </div>
+
+        <div style="background: #ffffff; border-radius: 8px; padding: 20px;">
+            <h2 style="color: #1780fb; font-weight: 600;">Reset Your Password</h2>
+
+            <p style="color: #333; font-size: 16px;">Hello <strong>${user.name}</strong>,</p>
+            <p style="color: #555; font-size: 14px; line-height: 1.6;">
+                We received a request to reset your password. Click the button below to set a new password:
+            </p>
+
+            <div style="margin: 20px 0;">
+                <a href="${resetLink}" 
+                   style="background-color: #1780fb; color: white; padding: 10px 15px; text-decoration: none; 
+                          border-radius: 3px; font-size: 14px; font-weight: normal; display: inline-block;">
+                    Reset Password
+                </a>
+            </div>
+
+            <p style="color: #666; font-size: 14px;">
+                This link will expire in <strong>1 hour</strong>. If you didn’t request this, please ignore this email.
+            </p>
+
+            <div style="border-top: 1px solid #ddd; margin-top: 20px; padding-top: 10px;">
+                <p style="color: #888; font-size: 13px;">
+                    If you have any questions, feel free to contact our support team at 
+                    <a href="mailto:info@easemargin.com" style="color: #1780fb; text-decoration: none;">
+                        info@easemargin.com
+                    </a>.
+                </p>
+            </div>
+
+            <p style="color: #555; font-size: 14px; margin-top: 10px;">
+                Best regards, <br><strong>EaseMargin Team</strong>
+            </p>
+        </div>
+    </div>
+        `;
+
+        // Send email
+        const mailOptions = {
+            from: process.env.SMTP_USER,
+            to: email,
+            subject: "Reset Your Password - EaseMargin",
+            html: emailTemplate,
+        };
+        console.log(mailOptions);
+        await transporter.sendMail(mailOptions);
+
+        res.status(200).json({ message: "Password reset email sent successfully!" });
+    } catch (error) {
+        console.error("Error:", error);
+        res.status(500).json({ message: "Something went wrong!", error: error.message });
+    }
+}
+
+
 module.exports = {
     signUp: signUp,
-    login: login
+    login: login,
+    forgotPassword: forgotPassword
 }
