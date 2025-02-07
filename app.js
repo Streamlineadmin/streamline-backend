@@ -1,7 +1,7 @@
-const express = require('express');
-const bodyParser = require('body-parser');
-const path = require('path');
-const cors = require('cors');
+const express = require("express");
+const bodyParser = require("body-parser");
+const path = require("path");
+const cors = require("cors");
 
 const authenticationRoute = require('./routes/authentication');
 const fileRoute = require('./routes/file');
@@ -33,20 +33,20 @@ app.use(bodyParser.json());
 
 // Define the CORS options
 const corsOptions = {
-    origin: '*',
-    credentials: true, // Allow credentials (e.g., cookies, authorization headers)
+  origin: "*",
+  credentials: true, // Allow credentials (e.g., cookies, authorization headers)
 };
 
 // Use the cors middleware with your options
 app.use(cors(corsOptions));
 
 // Define route for the root URL
-app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, '/index.html'));
-    //res.send("Welcome to EaseMargin APIs !");
+app.get("/", (req, res) => {
+  res.sendFile(path.join(__dirname, "/index.html"));
+  //res.send("Welcome to EaseMargin APIs !");
 });
 // Serve files from the 'uploads' folder
-app.use('/uploads', express.static('uploads'), fileRoute);
+app.use("/uploads", express.static("uploads"), fileRoute);
 
 // Use authentication routes for `/authentication` path
 app.use('/authentication', authenticationRoute);
