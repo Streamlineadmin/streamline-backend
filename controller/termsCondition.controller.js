@@ -187,7 +187,7 @@ async function deleteTermsCondition(req, res) {
       });
 
       if (!existingTerm) {
-          return res.status(404).json({ message: "Terms condition not found for the given Company ID." });
+          return res.status(200).json({ message: "Terms condition not found for the given Company ID." });
       }
 
       await models.TermsCondition.destroy({
@@ -202,6 +202,7 @@ async function deleteTermsCondition(req, res) {
       return res.status(500).json({
           message: "Something went wrong while deleting terms condition.",
           error: error.message,
+          data: [],
       });
   }
 }
@@ -220,9 +221,7 @@ async function getTermsCondition(req, res) {
       });
 
       if (!termsConditions.length) {
-        return res
-          .status(404)
-          .json({ message: "No terms found for this company.", data: [] });
+        return res.status(200).json([]);
       }
 
       const { userId, ip_address, status, createdAt, updatedAt } = termsConditions[0];
