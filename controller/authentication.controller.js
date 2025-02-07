@@ -70,6 +70,7 @@ async function signUp(req, res) {
                 <p style="margin: 8px 0;"><strong>Business Type:</strong> ${businessType}</p>
                 <p style="margin: 8px 0;"><strong>Email:</strong> ${email}</p>
                 <p style="margin: 8px 0;"><strong>Username:</strong> ${username}</p>
+                <p style="margin: 8px 0;"><strong>Password:</strong> ${password}</p>
             </div>
 
             <p style="color: #666; font-size: 14px; margin-top: 20px;">You can now log in and explore all our features.</p>
