@@ -238,20 +238,7 @@ async function getTermsCondition(req, res) {
           return acc;
       }, {});
 
-      res.status(200).json({
-        message: "Terms condition(s) retrieved successfully.",
-        data: [
-            {
-                companyId,
-                userId,
-                ip_address,
-                status,
-                createdAt,
-                updatedAt,
-                terms: Object.values(groupedTerms),
-            },
-        ],
-    });
+      res.status(200).json(Object.values(groupedTerms));
   } catch (error) {
       console.error("Error fetching terms conditions:", error);
       res.status(500).json({ message: "Something went wrong.", error: error.message });
