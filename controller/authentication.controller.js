@@ -77,7 +77,7 @@ async function signUp(req, res) {
 
             <p style="color: #666; font-size: 14px; margin-top: 20px;">You can now log in and explore all our features.</p>
 
-            <a href="https://easemargin.com/sign-in" style="background-color: #1780fb; color: white; padding: 10px 15px; text-decoration: none; border-radius: 6px; font-size: 14px; font-weight: bold; display: inline-block; margin-top: 10px;">
+            <a href="${req.get('origin')}/sign-in" style="background-color: #1780fb; color: white; padding: 10px 15px; text-decoration: none; border-radius: 6px; font-size: 14px; font-weight: bold; display: inline-block; margin-top: 10px;">
                 Login Now
             </a>
 
@@ -164,7 +164,7 @@ async function forgotPassword(req, res) {
         );
 
         // Reset password link (frontend URL)
-        const resetLink = `https://easemargin.com/reset-password?token=${resetToken}`;
+        const resetLink = `${req.get('origin')}/reset-password?token=${resetToken}`;
 
         // Email template
         const emailTemplate = `
@@ -218,7 +218,6 @@ async function forgotPassword(req, res) {
             subject: "Reset Your Password - EaseMargin",
             html: emailTemplate,
         };
-        console.log(mailOptions);
         await transporter.sendMail(mailOptions);
 
         res.status(200).json({ message: "Password reset email sent successfully!" });
