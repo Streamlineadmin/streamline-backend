@@ -51,6 +51,10 @@ web_modules/
 # Optional npm cache directory
 .npm
 
+# stop tracking .env file
+.env
+
+
 # Optional eslint cache
 .eslintcache
 
@@ -128,3 +132,5 @@ dist
 .yarn/build-state.yml
 .yarn/install-state.gz
 .pnp.*
+
+.package-lock.json

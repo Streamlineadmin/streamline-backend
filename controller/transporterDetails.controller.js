@@ -1,9 +1,8 @@
 
 const models = require('../models');
 
-function addTransporterDetails(req, res) {
-    // Check if payment terms  already exists for the given company
-    models.TransporterDetails.findOne({ 
+function addTransporterDetails(req, res) { 
+    models.Transporters.findOne({ 
         where: { 
             name: req.body.name,
             companyId: req.body.companyId,
@@ -14,18 +13,17 @@ function addTransporterDetails(req, res) {
             return res.status(409).json({
                 message: "Transporter details already exist!",
             });
-        } else {
-            // Transporter details do not exist, proceed to create
+        } else { 
             const transporterDetails = {
                 companyId: req.body.companyId,
                 name: req.body.name,
-                gSTNumber: req.body.gSTNumber,
+                GSTNumber: req.body.GSTNumber,
                 userId: req.body.userId,
                 ip_address: req.body.ip_address,
                 status: 1,
             };
 
-            models.TransporterDetails.create(transporterDetails)
+            models.Transporters.create(transporterDetails)
                 .then((result) => {
                     res.status(201).json({
                         message: "Transporter details added successfully",
@@ -55,14 +53,13 @@ function editTransporterDetails(req, res) {
     const updatedTransporterDetails = {
         companyId,
         name: req.body.name,
-        gSTNumber: req.body.gSTNumber,
+        GSTNumber: req.body.GSTNumber,
         userId: req.body.userId,
         ip_address: req.body.ip_address,
         status: req.body.status || 1,
     };
 
-    // Check if transporter details already exist with the same name, excluding the current one
-    models.TransporterDetails.findOne({
+    models.Transporters.findOne({
         where: {
             name: req.body.name,
             companyId,
@@ -75,8 +72,7 @@ function editTransporterDetails(req, res) {
                     message: "Transporter details already exist for this company!",
                 });
             } else {
-                // Proceed with the update
-                models.TransporterDetails.update(updatedTransporterDetails, { where: { id: transporterId } })
+                models.Transporters.update(updatedTransporterDetails, { where: { id: transporterId } })
                     .then((result) => {
                         if (result[0] > 0) {
                             res.status(200).json({
@@ -114,7 +110,7 @@ function deleteTransporterDetails(req, res) {
         });
     }
 
-    models.TransporterDetails.destroy({ where: { id: transporterId } })
+    models.Transporters.destroy({ where: { id: transporterId } })
         .then((result) => {
             if (result) {
                 res.status(200).json({
@@ -135,7 +131,7 @@ function deleteTransporterDetails(req, res) {
 }
 
 function getTransporterDetails(req, res) {
-    models.TransporterDetails.findAll({
+    models.Transporters.findAll({
         where: {
             companyId: req.body.companyId,
         },
