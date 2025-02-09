@@ -22,9 +22,7 @@ module.exports = (sequelize, DataTypes) => {
     companyId: DataTypes.STRING,
     contactNo: DataTypes.STRING,
     role: DataTypes.STRING,
-    status: DataTypes.INTEGER,
-    resetToken: DataTypes.STRING,  // Token for password reset
-    resetTokenExpiry: DataTypes.DATE // Expiry time for the reset token
+    status: DataTypes.INTEGER
   }, {
     sequelize,
     modelName: 'Users',

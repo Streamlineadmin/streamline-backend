@@ -5,5 +5,6 @@ const botController = require('../controller/LLMBot.controller');
 const router = express.Router();
 router.post('/trainModel', botController.trainModel);
 router.post('/', botController.predict);
+router.post('/', botController.predict);
 
 module.exports = router;
