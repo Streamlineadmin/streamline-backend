@@ -179,10 +179,61 @@ function getUsers(req, res) {
         });
 }
 
+async function updateProfile(req, res) {
+    try {
+        const {
+            userId,
+            companyName,
+            email, 
+            website,
+            name, 
+            businessType,
+            contactNo,
+            role
+        } = req.body;
+
+        if (!userId) {
+            return res.status(400).json({ message: "User ID is required" });
+        }
+
+        // Update User Table
+        const [affectedRows] = await models.Users.update(
+            { 
+                companyName, 
+                email, 
+                website, 
+                name, 
+                businessType,
+                contactNo,
+                role 
+            },
+            { where: { id: userId } }
+        );
+
+        const user = await models.Users.findOne({
+            where: { id: 287 },  
+            attributes: ['website']
+        });
+        
+        console.log("Website in DB:", user ? user.website : "Not found");
+        
+        if (affectedRows === 0) {
+            return res.status(404).json({ message: "User not found or no changes made." });
+        }
+
+        res.status(200).json({ message: "Profile updated successfully." });
+
+    } catch (error) {
+        console.error("Error updating profile:", error);
+        res.status(500).json({ message: "Something went wrong, please try again later!" });
+    }
+}
+
 
 module.exports = {
     addUser: addUser,
     getUsers: getUsers,
-    editUser: editUser,
-    deleteUser: deleteUser
+    editUser: editUser, 
+    deleteUser: deleteUser,
+    updateProfile: updateProfile
 }
