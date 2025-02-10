@@ -17,7 +17,6 @@ const transporter = nodemailer.createTransport({
     },
 });
 
-
 async function signUp(req, res) {
     try {
         const { companyName, businessType, email, username, password, contactNo, name, role } = req.body;
@@ -109,8 +108,6 @@ async function signUp(req, res) {
     }
 }
 
-
-
 function login(req, res) {
     models.Users.findOne({ where: { email: req.body.email } }).then(user => {
         if (user === null) {
@@ -125,11 +122,17 @@ function login(req, res) {
                         email: user.email,
                         userId: user.id,
                         companyId: user.companyId,
-                        companyName: user.companyName
+                        companyName: user.companyName,
+                        companyBusinessType: user.businessType || null,
+                        companyWebsite: user.website || null,
+                        name: user.name,
+                        contactPersonNumber: user.contactNo,
+                        email: user.email,
+                        role: user.role
                     }, 'secret', function (err, token) {
                         res.status(200).json({
-                            message: "Authentication successful.",
-                            token: token
+                            message: "Login successful.",
+                            token: token,
                         });
                     });
                 } else {
