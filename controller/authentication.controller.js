@@ -2,6 +2,7 @@ const models = require('../models');
 const bcryptjs = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const nodemailer = require("nodemailer");
+const { Op } = require("sequelize");
 require("dotenv").config();
 
 const crypto = require('crypto');
@@ -15,7 +16,6 @@ const transporter = nodemailer.createTransport({
         pass: process.env.SMTP_PASS,
     },
 });
-
 
 async function signUp(req, res) {
     try {
@@ -108,8 +108,6 @@ async function signUp(req, res) {
     }
 }
 
-
-
 function login(req, res) {
     models.Users.findOne({ where: { email: req.body.email } }).then(user => {
         if (user === null) {
@@ -124,11 +122,17 @@ function login(req, res) {
                         email: user.email,
                         userId: user.id,
                         companyId: user.companyId,
-                        companyName: user.companyName
+                        companyName: user.companyName,
+                        companyBusinessType: user.businessType || null,
+                        companyWebsite: user.website || null,
+                        name: user.name,
+                        contactPersonNumber: user.contactNo,
+                        email: user.email,
+                        role: user.role
                     }, 'secret', function (err, token) {
                         res.status(200).json({
-                            message: "Authentication successful.",
-                            token: token
+                            message: "Login successful.",
+                            token: token,
                         });
                     });
                 } else {
@@ -227,9 +231,34 @@ async function forgotPassword(req, res) {
     }
 }
 
+async function resetPassword(req, res) {
+    try {
+        const { token, newPassword } = req.body;
+
+        // Find user by reset token and check if token is valid
+        const user = await models.Users.findOne({ where: { resetToken: token, resetTokenExpiry: { [Op.gt]: Date.now() } } });
+        if (!user) return res.status(400).json({ message: "Invalid or expired reset token!" });
+
+        // Hash new password
+        const salt = await bcryptjs.genSalt(10);
+        const hashedPassword = await bcryptjs.hash(newPassword, salt);
+
+        // Update user's password and clear reset token fields
+        await models.Users.update(
+            { password: hashedPassword, resetToken: null, resetTokenExpiry: null },
+            { where: { id: user.id } }
+        );
+
+        res.status(200).json({ message: "Password reset successfully!" });
+    } catch (error) {
+        console.error("Error:", error);
+        res.status(500).json({ message: "Something went wrong!", error: error.message });
+    }
+}
 
 module.exports = {
     signUp: signUp,
     login: login,
-    forgotPassword: forgotPassword
+    forgotPassword: forgotPassword,
+    resetPassword: resetPassword,
 }
