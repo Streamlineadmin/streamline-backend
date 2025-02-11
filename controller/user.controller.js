@@ -210,18 +210,29 @@ async function updateProfile(req, res) {
             { where: { id: userId } }
         );
 
-        const user = await models.Users.findOne({
-            where: { id: 287 },  
-            attributes: ['website']
-        });
-        
-        console.log("Website in DB:", user ? user.website : "Not found");
-        
         if (affectedRows === 0) {
             return res.status(404).json({ message: "User not found or no changes made." });
         }
 
-        res.status(200).json({ message: "Profile updated successfully." });
+        // Fetch the updated user details
+        const updatedUser = await models.Users.findOne({ 
+            where: { id: userId }, 
+            attributes: ['id', 'name', 'email', 'companyName', 'companyId', 'contactNo', 'role', 'website' ]
+        });
+
+        // Format response
+        res.status(200).json({ 
+            message: "Profile updated successfully.",
+            userId: updatedUser.id,
+            name: updatedUser.name,
+            email: updatedUser.email,
+            companyName: updatedUser.companyName,
+            companyId: updatedUser.companyId,
+            contactNo: updatedUser.contactNo,
+            role: updatedUser.role,
+            website: updatedUser.website,
+            companyBusinessType: updatedUser.businessType
+        });
 
     } catch (error) {
         console.error("Error updating profile:", error);
