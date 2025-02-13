@@ -240,11 +240,47 @@ async function updateProfile(req, res) {
     }
 }
 
+async function updateProfileURL(req, res) {
+    try {
+        const { userId, profileURL } = req.body;
+
+        if (!userId || !profileURL) {
+            return res.status(400).json({ message: "User ID and Profile URL are required" });
+        }
+
+        // First, check if the user exists
+        const user = await models.Users.findOne({ where: { id: userId } });
+
+        if (!user) {
+            return res.status(404).json({ message: "User not found" });
+        }
+
+        // Update the profile URL
+        await models.Users.update(
+            { profileURL: profileURL },
+            { where: { id: userId } }
+        );
+
+        // Return the updated user data
+        res.status(200).json({
+            message: "Profile URL updated successfully",
+            profileURL: profileURL
+        });
+
+    } catch (error) {
+        console.error("Error updating profile URL:", error);
+        res.status(500).json({
+            message: "Something went wrong, please try again later!",
+            error: error.message
+        });
+    }
+}
 
 module.exports = {
     addUser: addUser,
     getUsers: getUsers,
     editUser: editUser, 
     deleteUser: deleteUser,
-    updateProfile: updateProfile
+    updateProfile: updateProfile,
+    updateProfileURL: updateProfileURL,
 }

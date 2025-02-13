@@ -25,7 +25,6 @@ const logisticDetailsRoutes = require('./routes/logisticDetails');
 const transporterDetailsRoutes = require('./routes/transporterDetails');
 const termsConditionRoutes = require('./routes/termsCondition');
 const mailRoutes = require('./routes/mailer');
-const imageRoutes = require('./routes/updateImage');
 
 const app = express();
 
@@ -71,6 +70,5 @@ app.use('/logisticDetails', logisticDetailsRoutes);
 app.use('/transporterDetails', transporterDetailsRoutes);
 app.use('/termsCondition', termsConditionRoutes);
 app.use('/mail', mailRoutes);
-app.use('/', imageRoutes)
 
 module.exports = app;

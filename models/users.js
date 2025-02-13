@@ -24,7 +24,10 @@ module.exports = (sequelize, DataTypes) => {
     role: DataTypes.STRING,
     status: DataTypes.INTEGER,
     resetToken: DataTypes.STRING,  // Token for password reset
-    resetTokenExpiry: DataTypes.DATE // Expiry time for the reset token
+    resetTokenExpiry: DataTypes.DATE, // Expiry time for the reset token
+    website: DataTypes.STRING,
+    profileURL: DataTypes.STRING,
+    businessType: DataTypes.STRING,
   }, {
     sequelize,
     modelName: 'Users',
