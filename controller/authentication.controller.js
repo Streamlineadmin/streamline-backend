@@ -124,6 +124,7 @@ function login(req, res) {
                         companyId: user.companyId,
                         companyName: user.companyName,
                         businessType: user.businessType,
+                        profileURL: user.profileURL,
                         website: user.website,
                         name: user.name,
                         contactPersonNumber: user.contactNo,
