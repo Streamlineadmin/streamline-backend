@@ -25,7 +25,7 @@ const logisticDetailsRoutes = require('./routes/logisticDetails');
 const transporterDetailsRoutes = require('./routes/transporterDetails');
 const termsConditionRoutes = require('./routes/termsCondition');
 const mailRoutes = require('./routes/mailer');
-const contactUSRoutes = require('./routes/contactUs')
+const contactUSRoutes = require('./routes/customerQuery')
 const app = express();
 
 // Apply body-parser middleware to handle JSON request bodies
