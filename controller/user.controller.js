@@ -3,59 +3,107 @@ const bcryptjs = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { Op } = require('sequelize');
 
-function addUser(req, res) {
-    const { email, username, contactNo } = req.body;
+const bcrypt = require('bcrypt');
+const crypto = require('crypto');
+const nodemailer = require('nodemailer');
 
-    // Execute all checks in parallel
-    Promise.all([
-        models.Users.findOne({ where: { email } }),
-        models.Users.findOne({ where: { username } }),
-        models.Users.findOne({ where: { contactNo } })
-    ])
-        .then(([emailResult, usernameResult, contactNoResult]) => {
-            if (emailResult) {
-                return res.status(409).json({
-                    message: "Email already exists!",
-                });
-            }
-            if (usernameResult) {
-                return res.status(409).json({
-                    message: "Username already exists!",
-                });
-            }
-            if (contactNoResult) {
-                return res.status(409).json({
-                    message: "This contact number belongs to someone else!",
-                });
-            }
+async function addUser(req, res) {
+    const { email, username, contactNo, name, companyName, businessType } = req.body;
 
-            // If all checks pass, create the user
-            const client = {
-                name: req.body.name,
-                email: req.body.email,
-                contactNo: req.body.contactNo,
-                username: req.body.username,
-                role: req.body.role,
-                companyName: req.body.companyName,
-                companyId: req.body.companyId,
-                ip_address: req.body.ip_address,
-                status: 1
-            };
+    try {
+        // Execute all checks in parallel
+        const [emailResult, usernameResult, contactNoResult] = await Promise.all([
+            models.Users.findOne({ where: { email } }),
+            models.Users.findOne({ where: { username } }),
+            models.Users.findOne({ where: { contactNo } })
+        ]);
 
-            return models.Users.create(client);
-        })
-        .then(result => {
-            res.status(201).json({
-                message: "User created successfully",
-            });
-        })
-        .catch(error => {
-            res.status(500).json({
-                message: "Something went wrong! Please try again later.",
-                error: error.message || error,  // Optional: Log the actual error message
-            });
+        if (emailResult) {
+            return res.status(409).json({ message: "Email already exists!" });
+        }
+        if (usernameResult) {
+            return res.status(409).json({ message: "Username already exists!" });
+        }
+        if (contactNoResult) {
+            return res.status(409).json({ message: "This contact number belongs to someone else!" });
+        }
+
+        // Generate a random 8-character password
+        const plainPassword = crypto.randomBytes(4).toString('hex');
+
+        // Hash the password using bcrypt
+        const hashedPassword = await bcrypt.hash(plainPassword, 10);
+
+        // Create user object with encrypted password
+        const newUser = await models.Users.create({
+            name,
+            email,
+            contactNo,
+            username,
+            password: hashedPassword,  // Save encrypted password
+            role: req.body.role,
+            companyName,
+            companyId: req.body.companyId,
+            ip_address: req.body.ip_address,
+            status: 1
         });
+
+        // **Email Template (HTML)**
+        const emailTemplate = `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px;">
+                <img src="https://easemargin.com/static/media/logo.254ec62d5b107c7a9405.png" alt="EaseMargin Logo" style="height: 80px; margin-bottom: 20px;">
+                
+                <h2 style="color: #1780fb; font-size: 22px; margin-bottom: 10px;">Welcome to EaseMargin</h2>
+                <p style="color: #555; font-size: 16px;">Dear ${name},</p>
+                <p style="color: #666; font-size: 14px; line-height: 1.6;">
+                    Your account has been successfully created! Below are your login credentials:
+                </p>
+
+                <div style="background: #f5faff; padding: 15px; border-radius: 8px; text-align: left;">
+                    <p style="margin: 8px 0;"><strong>Company Name:</strong> ${companyName}</p>
+                    <p style="margin: 8px 0;"><strong>Email:</strong> ${email}</p>
+                    <p style="margin: 8px 0;"><strong>Username:</strong> ${username}</p>
+                    <p style="margin: 8px 0;"><strong>Password:</strong> <span style="color: red; font-weight: bold;">${plainPassword}</span></p>
+                </div>
+
+                <p style="color: #666; font-size: 14px; margin-top: 20px;">You can now log in and start using EaseMargin.</p>
+
+                <a href="${req.get('origin')}/sign-in" style="background-color: #1780fb; color: white; padding: 10px 15px; text-decoration: none; border-radius: 6px; font-size: 14px; font-weight: bold; display: inline-block; margin-top: 10px;">
+                    Login Now
+                </a>
+
+                <p style="color: #888; font-size: 13px; margin-top: 20px;">
+                    If you have any questions, feel free to contact our support team at <a href="mailto:info@easemargin.com">info@easemargin.com</a>
+                </p>
+
+                <p style="color: #555; font-size: 14px; margin-top: 10px;">
+                    Best regards, <br><strong>EaseMargin Team</strong>
+                </p>
+            </div>`;
+
+        // **Send signup confirmation email**
+        const mailOptions = {
+            from: process.env.SMTP_USER,
+            to: email,
+            subject: "Welcome to EaseMargin!",
+            html: emailTemplate,
+        };
+
+        await transporter.sendMail(mailOptions);
+
+        res.status(201).json({
+            message: "User created successfully! Login details sent to email.",
+        });
+
+    } catch (error) {
+        res.status(500).json({
+            message: "Something went wrong! Please try again later.",
+            error: error.message || error,
+        });
+    }
 }
+
+
 
 function editUser(req, res) {
     const userId = req.body.userId;
