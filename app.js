@@ -26,7 +26,7 @@ const transporterDetailsRoutes = require('./routes/transporterDetails');
 const termsConditionRoutes = require('./routes/termsCondition');
 const mailRoutes = require('./routes/mailer');
 const contactUSRoutes = require('./routes/customerQuery');
-const requestedDemoRoutes = require('./routes/requestedDemoData')
+const demoQueryRoutes = require('./routes/demoQuery')
 const app = express();
 
 // Apply body-parser middleware to handle JSON request bodies
@@ -72,6 +72,6 @@ app.use('/transporterDetails', transporterDetailsRoutes);
 app.use('/termsCondition', termsConditionRoutes);
 app.use('/mail', mailRoutes);
 app.use('/contactUs', contactUSRoutes);
-app.use('/requestedDemo', requestedDemoRoutes);
+app.use('/demoQuery', demoQueryRoutes);
 
 module.exports = app;

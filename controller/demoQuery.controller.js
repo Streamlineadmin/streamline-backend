@@ -1,6 +1,6 @@
 const models = require("../models");
 
-async function addRequestedDemoData(req, res) {
+async function addDemoQuery(req, res) {
   try {
     const {
       fullName,
@@ -14,7 +14,6 @@ async function addRequestedDemoData(req, res) {
       modules,
       query,
       source,
-      consultation,
       ip_address,
     } = req.body;
 
@@ -24,8 +23,8 @@ async function addRequestedDemoData(req, res) {
         .json({ message: "Please fill all mandatory fields." });
     }
 
-    const newDemoData = await models.RequestedDemo.create({
-      fullName,
+    const newDemoData = await models.DemoQuery.create({
+      name: fullName,
       email,
       phone,
       companyName,
@@ -33,10 +32,9 @@ async function addRequestedDemoData(req, res) {
       industry,
       companySize,
       currentERP,
-      modules: JSON.stringify(modules),
+      modules: Array.isArray(modules) ? JSON.stringify(modules) : modules, 
       query,
       source,
-      consultation,
       ip_address,
     });
 
@@ -50,9 +48,9 @@ async function addRequestedDemoData(req, res) {
   }
 }
 
-async function getAllRequestedDemos(req, res) {
+async function getDemoQuery(req, res) {
   try {
-    const demoRequests = await models.RequestedDemoModel.findAll(); // Fetch all records
+    const demoRequests = await models.DemoQuery.findAll(); 
 
     return res.status(200).json({
       message: "Demo requests fetched successfully",
@@ -65,6 +63,6 @@ async function getAllRequestedDemos(req, res) {
 }
 
 module.exports = {
-  addRequestedDemoData: addRequestedDemoData,
-  getAllRequestedDemos: getAllRequestedDemos,
+  addDemoQuery: addDemoQuery,
+  getDemoQuery: getDemoQuery,
 };
