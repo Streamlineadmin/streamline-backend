@@ -7,8 +7,18 @@ const bcrypt = require('bcrypt');
 const crypto = require('crypto');
 const nodemailer = require('nodemailer');
 
+const transporter = nodemailer.createTransport({
+    host: process.env.SMTP_HOST,
+    port: process.env.SMTP_PORT,
+    secure: true,
+    auth: {
+        user: process.env.SMTP_USER,
+        pass: process.env.SMTP_PASS,
+    },
+});
+
 async function addUser(req, res) {
-    const { email, username, contactNo, name, companyName, businessType } = req.body;
+    const { email, username, contactNo, name, companyName } = req.body;
 
     try {
         // Execute all checks in parallel
@@ -96,6 +106,7 @@ async function addUser(req, res) {
         });
 
     } catch (error) {
+        console.log(error)
         res.status(500).json({
             message: "Something went wrong! Please try again later.",
             error: error.message || error,
