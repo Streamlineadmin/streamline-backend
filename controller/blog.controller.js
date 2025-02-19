@@ -109,11 +109,27 @@ function getblogs(req, res) {
     });
 }
 
+function getblogscategories(req, res) {
+    models.BlogCategory.findAll().then(result => {
+        if (!result || result.length === 0) {
+            return res.status(200).json([]);
+        }
+        res.status(200).json(result);
+    })
+    .catch(error => {
+        console.error("Error fetching blogs:", error);
+        res.status(500).json({
+            message: "Something went wrong, please try again later!"
+        });
+    });
+}
+
 
 module.exports = {
     addBlog: addBlog,
     getblogsById : getblogsById,
     getblogs: getblogs,
     editBlog: editBlog,
-    deleteBlog: deleteBlog
+    deleteBlog: deleteBlog,
+    getblogscategories: getblogscategories
 }
