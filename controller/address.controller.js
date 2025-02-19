@@ -1,14 +1,13 @@
 const models = require("../models");
 
 function addAddress(req, res) {
-  const { addressType, companyId, ip_address, addressLineOne, addressLineTwo, pinCode, city, state, country } = req.body;
+  const { addressType, companyId, ip_address, addressLineOne, pinCode, city, state, country } = req.body;
 
   // Define the common data for both addresses
   const baseAddress = {
     companyId,
     ip_address,
     addressLineOne,
-    addressLineTwo,
     pincode: pinCode,
     city,
     state,
@@ -57,7 +56,6 @@ function editAddress(req, res) {
     companyId: req.body.companyId,
     ip_address: req.body.ip_address,
     addressLineOne: req.body.addressLineOne,
-    addressLineTwo: req.body.addressLineTwo,
     pincode: req.body.pinCode,
     city: req.body.city,
     state: req.body.state,

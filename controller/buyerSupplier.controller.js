@@ -20,8 +20,7 @@ function addBuyerSupplier(req, res) {
         req.body.addresses.map((elem) => {
             let addressData = {
                 buyerSupplierId: result.id,
-                addressLineOne: elem.addressLine1,
-                addressLineTwo: elem.addressLine2,
+                addressLineOne: elem.addressLineOne,
                 addressType: elem.addressType,
                 city: elem.city,
                 country: elem.country,
