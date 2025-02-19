@@ -8,5 +8,6 @@ router.post('/editBlog', blogController.editBlog);
 router.post('/deleteBlog', blogController.deleteBlog);
 router.get('/:id', blogController.getblogsById);
 router.get('/', blogController.getblogs);
+router.get('/blogCategories', blogController.getblogs);
 
 module.exports = router;

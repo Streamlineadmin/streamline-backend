@@ -7,7 +7,8 @@ function addBlog(req, res) {
         author: req.body.author,
         content: req.body.content,
         imageURL: req.body.imageURL,
-        userId: req.body.userId
+        userId: req.body.userId,
+        categoryId: req.body.categoryId ,
     }
 
     models.Blogs.create(blog).then(result => {
@@ -79,8 +80,6 @@ function deleteBlog(req, res) {
         });
 }
 
-
-
 function getblogsById(req, res) {
     const id = req.params.id;
 
@@ -109,11 +108,34 @@ function getblogs(req, res) {
     });
 }
 
+const getBlogCategory = async (req, res) => {
+    try {
+        const categories = await models.BlogCategory.findAll();
+        console.log("Fetched Categories:", categories);
+        if (!categories || categories.length === 0) {
+            return res.status(200).json({
+                message: "No blog categories found",
+                data: []
+            });
+        }
+
+        res.status(200).json({
+            message: "Blog categories retrieved successfully",
+            data: categories
+        });
+    } catch (error) {
+        res.status(500).json({
+            message: "Error fetching blog categories",
+            error: error.message
+        });
+    }
+};
 
 module.exports = {
     addBlog: addBlog,
     getblogsById : getblogsById,
     getblogs: getblogs,
     editBlog: editBlog,
-    deleteBlog: deleteBlog
+    deleteBlog: deleteBlog,
+    getBlogCategory: getBlogCategory,
 }
