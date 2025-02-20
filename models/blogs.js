@@ -11,6 +11,10 @@ module.exports = (sequelize, DataTypes) => {
      */
     static associate(models) {
       // define association here
+      Blogs.belongsTo(models.BlogCategory, {
+        foreignKey: 'blogCategory',
+        as: 'category', 
+      });
     }
   }
   Blogs.init({
@@ -21,6 +25,10 @@ module.exports = (sequelize, DataTypes) => {
     ip_address: DataTypes.STRING,
     status: DataTypes.INTEGER,
     // New attributes
+    URLTitle: {
+      type: DataTypes.STRING,
+      allowNull: true, // Change to false if it should be required
+    },
     shortDesc: {
       type: DataTypes.TEXT, // or DataTypes.TEXT if needed
       allowNull: true // Adjust as needed
@@ -28,7 +36,17 @@ module.exports = (sequelize, DataTypes) => {
     author: {
       type: DataTypes.STRING, // or DataTypes.TEXT if needed
       allowNull: false // Adjust as needed
-    }
+    },
+    blogCategory: {
+      type: DataTypes.INTEGER, 
+      allowNull: true, // Adjust as needed
+      references: {
+        model: 'BlogCategories', // Table name
+        key: 'id', // Primary key in BlogCategories
+      },
+      onUpdate: 'CASCADE',
+      onDelete: 'SET NULL',  
+    },
   }, {
     sequelize,
     modelName: 'Blogs',
