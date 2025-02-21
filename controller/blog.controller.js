@@ -1,63 +1,92 @@
 const models = require('../models');
 
 function addBlog(req, res) {
-    const blog = {
-        title: req.body.title,
-        shortDesc: req.body.shortDesc,
-        author: req.body.author,
-        content: req.body.content,
-        imageURL: req.body.imageURL,
-        userId: req.body.userId
-    }
+  const blog = {
+    title: req.body.title,
+    shortDesc: req.body.shortDesc,
+    author: req.body.author,
+    content: req.body.content,
+    imageURL: req.body.imageURL,
+    userId: req.body.userId,
+    blogCategory: req.body.blogCategory,
+    URLTitle: req.body.URLTitle, 
+  };
 
-    models.Blogs.create(blog).then(result => {
-        res.status(201).json({
-            message: "Blog added successfully",
-            post: result
-        });
-    }).catch(error => {
-        res.status(500).json({
-            message: "Something went wrong, please try again later!",
-            error: error
-        });
+  models.Blogs.create(blog)
+    .then((result) => { 
+      return models.Blogs.findOne({
+        where: { id: result.id },
+        include: [
+          {
+            model: models.BlogCategory,
+            as: "category", 
+            attributes: ["id", "category"],
+          },
+        ],
+      });
+    })
+    .then((result) => {
+      res.status(201).json({
+        message: "Blog added successfully",
+        post: result,
+      });
+    })
+    .catch((error) => {
+      res.status(500).json({
+        message: "Something went wrong, please try again later!",
+        error: error,
+      });
     });
 }
 
 function editBlog(req, res) {
-    const blogId = req.body.blogId;
+  const blogId = req.body.blogId;
 
-    const updatedBlogData = {
-        title: req.body.title,
-        shortDesc: req.body.shortDesc,
-        author: req.body.author,
-        content: req.body.content,
-        imageURL: req.body.imageURL,
-        userId: req.body.userId
-    };
+  const updatedBlogData = {
+    title: req.body.title,
+    shortDesc: req.body.shortDesc,
+    author: req.body.author,
+    content: req.body.content,
+    imageURL: req.body.imageURL,
+    userId: req.body.userId,
+    blogCategory: req.body.blogCategory,
+    URLTitle: req.body.URLTitle, 
+  };
 
-    models.Blogs.update(updatedBlogData, { where: { id: blogId } })
-        .then(result => {
-            if (result[0] > 0) {
-                res.status(200).json({
-                    message: "Blog updated successfully",
-                    post: updatedBlogData
-                });
-            } else {
-                res.status(404).json({
-                    message: "Blog not found"
-                });
-            }
-        })
-        .catch(error => {
-            res.status(500).json({
-                message: "Something went wrong, please try again later!",
-                error: error
-            });
+  models.Blogs.update(updatedBlogData, { where: { id: blogId } })
+    .then((result) => {
+      if (result[0] > 0) {
+        return models.Blogs.findOne({
+          where: { id: blogId },
+          include: [
+            {
+              model: models.BlogCategory,
+              as: "category",
+              attributes: ["id", "category"],
+            },
+          ],
         });
+      } else {
+        res.status(404).json({ message: "Blog not found" });
+      }
+    })
+    .then((updatedBlog) => {
+      res.status(200).json({
+        message: "Blog updated successfully",
+        post: updatedBlog,
+      });
+    })
+    .catch((error) => {
+      console.error("Error updating blog:", error);
+      res.status(500).json({
+        message: "Something went wrong, please try again later!",
+        error: error.message,
+      });
+    });
 }
 
 function deleteBlog(req, res) {
-    const blogId = req.body.id;  // Assuming the blog ID is passed as a URL parameter
+    const blogId = req.body.id;
 
     models.Blogs.destroy({ where: { id: blogId } })
         .then(result => {
@@ -79,8 +108,6 @@ function deleteBlog(req, res) {
         });
 }
 
-
-
 function getblogsById(req, res) {
     const id = req.params.id;
 
@@ -94,11 +121,19 @@ function getblogsById(req, res) {
 }
 
 function getblogs(req, res) {
-    models.Blogs.findAll().then(result => {
+    models.Blogs.findAll({
+        include: [
+            {
+                model: models.BlogCategory,
+                as: 'category',  
+                attributes: ['id', 'category'] ,
+                required: true,
+            }
+        ],
+    }).then(result => {
         if (!result || result.length === 0) {
             return res.status(200).json([]);
         }
-        console.log(res.status(200).json(result));
         res.status(200).json(result);
     })
     .catch(error => {
