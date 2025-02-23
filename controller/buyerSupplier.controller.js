@@ -20,8 +20,8 @@ function addBuyerSupplier(req, res) {
         req.body.addresses.map((elem) => {
             let addressData = {
                 buyerSupplierId: result.id,
-                addressLineOne: elem.addressLine1,
-                addressLineTwo: elem.addressLine2,
+                addressLineOne: elem.addressLineOne,
+                addressLineTwo: elem.addressLineTwo,
                 addressType: elem.addressType,
                 city: elem.city,
                 country: elem.country,
@@ -42,6 +42,81 @@ function addBuyerSupplier(req, res) {
             error: error
         });
     });
+}
+
+async function editBuyerSupplier(req, res) {
+    const { id, name, companyId, email, phone, companyName, companyEmail, companyType, gstNumber, gstType, ip_address, addresses } = req.body;
+
+    try {
+        const buyerSupplier = await models.BuyerSupplier.findByPk(id);
+        if (!buyerSupplier) {
+            return res.status(404).json({ message: "Buyer/Supplier not found" });
+        }
+
+        await buyerSupplier.update({
+            name,
+            companyId,
+            email,
+            phone,
+            companyName,
+            companyEmail,
+            companyType,
+            GSTNumber: gstNumber,
+            GSTType: gstType,
+            ip_address,
+        });
+
+        if (addresses && addresses.length > 0) {
+            const existingAddresses = await models.BuyerSupplierAddress.findAll({
+                where: { buyerSupplierId: id },
+            });
+
+            const existingAddressMap = new Map(existingAddresses.map(addr => [addr.id, addr]));
+
+            for (const address of addresses) {
+                if (address.id && existingAddressMap.has(address.id)) {
+                    await existingAddressMap.get(address.id).update({
+                        addressLineOne: address.addressLineOne,
+                        addressLineTwo: address.addressLineTwo,
+                        addressType: address.addressType,
+                        city: address.city,
+                        country: address.country,
+                        pincode: address.pincode,
+                        state: address.state,
+                        ip_address,
+                    });
+
+                    existingAddressMap.delete(address.id);
+                } else {
+                    await models.BuyerSupplierAddress.create({
+                        buyerSupplierId: id,
+                        addressLineOne: address.addressLineOne,
+                        addressLineTwo: address.addressLineTwo,
+                        addressType: address.addressType,
+                        city: address.city,
+                        country: address.country,
+                        pincode: address.pincode,
+                        state: address.state,
+                        ip_address,
+                        status: 1,
+                    });
+                }
+            }
+
+            for (const address of existingAddressMap.values()) {
+                await address.destroy();
+            }
+        } else {
+            await models.BuyerSupplierAddress.destroy({ where: { buyerSupplierId: id } });
+        }
+
+        res.status(200).json({ message: "Buyer/Supplier updated successfully" });
+    } catch (error) {
+        res.status(500).json({
+            message: "Something went wrong, please try again later!",
+            error: error.message,
+        });
+    }
 }
 
 function deleteBuyerSupplier(req, res) {
@@ -69,7 +144,6 @@ function deleteBuyerSupplier(req, res) {
 
 async function getBuyerSupplier(req, res) {
     try {
-        // Find all BuyerSupplier records for the given companyId
         const result = await models.BuyerSupplier.findAll({
             where: { companyId: req.body.companyId }
         });
@@ -106,5 +180,6 @@ async function getBuyerSupplier(req, res) {
 module.exports = {
     addBuyerSupplier: addBuyerSupplier,
     getBuyerSupplier: getBuyerSupplier,
-    deleteBuyerSupplier: deleteBuyerSupplier
+    deleteBuyerSupplier: deleteBuyerSupplier,
+    editBuyerSupplier: editBuyerSupplier,
 }

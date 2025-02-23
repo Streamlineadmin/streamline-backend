@@ -156,17 +156,13 @@ async function getStores(req, res) {
   try {
     // Step 2: Retrieve all stores for the company (without limiting columns)
     const stores = await models.Store.findAll({
-      where: {
-        companyId: companyId,
-      },
+      where: { companyId: companyId },
     });
 
     // Check if no stores were found
-    if (stores.length === 0) {
-      return res.status(404).json({
-        message: `No stores found for companyId ${companyId}`,
-      });
-    }
+    if (!stores || stores.length === 0) {
+      return res.status(200).json([]);
+  }
 
     // Step 3: Count items in each store
     const storesWithItemCount = [];
@@ -174,7 +170,7 @@ async function getStores(req, res) {
     for (const store of stores) {
       try {
         // Count the number of items in the StoreItems table for each store
-        const itemCount = await models.StoreItems.count({
+        const itemCount = await models.StoreItems.count({ 
           where: {
             storeId: store.id,
           },
