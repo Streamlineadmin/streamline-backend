@@ -356,8 +356,9 @@ async function getItemStockTransferHistory(req, res) {
     });
 
     if (!stockTransfers.length) {
-      return res.status(404).json({
+      return res.status(200).json({
         message: `No stock transfers found for itemId ${itemId}`,
+        data: [],
       });
     }
 

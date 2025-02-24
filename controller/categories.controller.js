@@ -20,7 +20,7 @@ async function getCategories(req, res) {
         });
 
         if (!categories || categories.length === 0) {
-            return res.status(404).json({
+            return res.status(200).json({
                 message: 'No categories found for the provided companyId',
                 data: [],
             });
