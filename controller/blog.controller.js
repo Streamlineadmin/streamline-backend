@@ -1,5 +1,5 @@
 const models = require('../models');
-
+const { Op } = require("sequelize");
 function addBlog(req, res) {
   const blog = {
     title: req.body.title,
@@ -160,11 +160,51 @@ function getblogscategories(req, res) {
 }
 
 
+async function searchBlogs(req, res) {
+  try {
+    const { query, blogCategory } = req.body;
+
+    if (!query && !blogCategory) {
+      return res.status(400).json({ message: "Either query or blogCategory is required" });
+    }
+
+    const searchConditions = {};
+
+    if (query) {
+      searchConditions[Op.or] = [
+        { title: { [Op.like]: `%${query}%` } },
+        { content: { [Op.like]: `%${query}%` } },
+        { author: { [Op.like]: `%${query}%` } },
+      ];
+    }
+
+    if (blogCategory !== null) { 
+      searchConditions.blogCategory = blogCategory;
+    }
+
+    const blogs = await models.Blogs.findAll({
+      where: searchConditions,
+      include: [
+        {
+          model: models.BlogCategory,
+          as: "category",
+        },
+      ],
+    });
+
+    return res.status(200).json(blogs);
+  } catch (error) {
+    console.error("Error searching blogs:", error);
+    return res.status(500).json({ message: "Something went wrong. Please try again later!" });
+  }
+}
+
 module.exports = {
     addBlog: addBlog,
     getblogsById : getblogsById,
     getblogs: getblogs,
     editBlog: editBlog,
     deleteBlog: deleteBlog,
-    getblogscategories: getblogscategories
+    getblogscategories: getblogscategories,
+    searchBlogs: searchBlogs,
 }
