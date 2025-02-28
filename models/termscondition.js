@@ -16,7 +16,7 @@ module.exports = (sequelize, DataTypes) => {
   TermsCondition.init({
     documentType: DataTypes.STRING,
     term: DataTypes.STRING,
-    description: DataTypes.STRING,
+    description: DataTypes.TEXT,
     companyId: DataTypes.INTEGER,
     userId: DataTypes.INTEGER,
     ip_address: DataTypes.STRING,

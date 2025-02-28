@@ -90,87 +90,90 @@ function addTermsCondition(req, res) {
 
 async function editTermsCondition(req, res) {
   try {
-      const { documentType, userId, companyId, ip_address, status = 1, terms } = req.body;
+    const { documentType, userId, companyId, ip_address, status = 1, terms } = req.body;
 
-      if (!documentType || !userId || !companyId || !terms || terms.length === 0) {
-          return res.status(400).json({
-              message: "Document Type, User ID, Company ID, and Terms are required.",
-          });
-      }
-
-      const termIds = terms.map(term => term.id);
-      const existingTerms = await models.TermsCondition.findAll({
-          where: { id: termIds, companyId, documentType, userId }
+    if (!documentType || !userId || !companyId || !terms) {
+      return res.status(400).json({
+        message: "Document Type, User ID, Company ID, and Terms are required.",
       });
+    }
 
-      if (existingTerms.length !== terms.length) {
-          return res.status(404).json({
-              message: "One or more terms conditions not found.",
-          });
-      }
+    // Get all existing terms for this document type, user, and company
+    const existingTerms = await models.TermsCondition.findAll({
+      where: { companyId, documentType, userId },
+    });
 
-      const conflictPromises = terms.map(term => {
-          return models.TermsCondition.findOne({
-              where: {
-                  documentType,
-                  companyId,
-                  userId,
-                  term: term.term,
-                  description: term.description,
-                  id: { [models.Sequelize.Op.not]: term.id },
-              },
-          });
+    const termIdsInRequest = terms.map(term => term.id).filter(id => id !== null);
+    
+    // Find terms to delete (terms in DB that are NOT in the request)
+    const termsToDelete = existingTerms.filter(term => !termIdsInRequest.includes(term.id));
+
+    // Delete the missing terms
+    if (termsToDelete.length > 0) {
+      const deleteIds = termsToDelete.map(term => term.id);
+      await models.TermsCondition.destroy({
+        where: { id: deleteIds },
       });
+    }
 
-      const conflicts = await Promise.all(conflictPromises);
-      for (const conflict of conflicts) {
-          if (conflict) {
-              return res.status(409).json({
-                  message: `Term "${conflict.term}" already exists for the given document type and company.`,
-              });
-          }
-      }
+    const existingTermsToUpdate = terms.filter(term => term.id !== null);
+    const newTerms = terms.filter(term => term.id === null);
 
-      const updatePromises = terms.map(async (term) => {
-          return models.TermsCondition.update(
-              {
-                  term: term.term,
-                  description: term.description,
-                  ip_address,
-                  status,
-              },
-              { where: { id: term.id } }
-          );
+    // Update existing terms
+    const updatePromises = existingTermsToUpdate.map(async (term) => {
+      return models.TermsCondition.update(
+        {
+          term: term.term,
+          description: term.description,
+          ip_address,
+          status,
+        },
+        { where: { id: term.id } }
+      );
+    });
+
+    // Insert new terms
+    const insertPromises = newTerms.map(async (term) => {
+      return models.TermsCondition.create({
+        documentType,
+        userId,
+        companyId,
+        term: term.term,
+        description: term.description,
+        ip_address,
+        status,
       });
+    });
 
-      await Promise.all(updatePromises);
+    await Promise.all([...updatePromises, ...insertPromises]);
 
-      const updatedRecords = await models.TermsCondition.findAll({
-          where: { id: termIds }
-      });
+    // Fetch the updated list of terms
+    const updatedRecords = await models.TermsCondition.findAll({
+      where: { companyId, documentType, userId },
+    });
 
-      return res.status(200).json({
-          message: "Terms condition(s) updated successfully!",
-          data: {
-              documentType: documentType,
-              userId: userId,
-              companyId: companyId,
-              ip_address: ip_address,
-              status: status,
-              terms: updatedRecords.map(record => ({
-                  id: record.id,
-                  term: record.term,
-                  description: record.description,
-              })),
-          },
-      });
+    return res.status(200).json({
+      message: "Terms condition(s) updated successfully!",
+      data: {
+        documentType,
+        userId,
+        companyId,
+        ip_address,
+        status,
+        terms: updatedRecords.map(record => ({
+          id: record.id,
+          term: record.term,
+          description: record.description,
+        })),
+      },
+    });
 
   } catch (error) {
-      console.error("Error updating terms condition:", error);
-      res.status(500).json({
-          message: "Something went wrong while updating terms condition. Please try again later.",
-          error: error.message,
-      });
+    console.error("Error updating terms condition:", error);
+    res.status(500).json({
+      message: "Something went wrong while updating terms condition. Please try again later.",
+      error: error.message,
+    });
   }
 }
 
@@ -223,8 +226,6 @@ async function getTermsCondition(req, res) {
       if (!termsConditions.length) {
         return res.status(200).json([]);
       }
-
-      const { userId, ip_address, status, createdAt, updatedAt } = termsConditions[0];
 
       const groupedTerms = termsConditions.reduce((acc, term) => {
           if (!acc[term.documentType]) {
