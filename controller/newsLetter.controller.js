@@ -1,29 +1,36 @@
 const models = require("../models");
 
 async function addNewsLetter(req, res) {
-  try {
-    const { email, pageId, ip_address, status } = req.body;
-
-    if (!email || !pageId) {
-      return res.status(400).json({ message: "Email and Page ID are required" });
+    try {
+      const { email, pageId, ip_address, status } = req.body;
+  
+      if (!email || !pageId) {
+        return res.status(400).json({ message: "Email and Page ID are required" });
+      }
+  
+      const existingNewsLetter = await models.NewsLetter.findOne({ where: { email } });
+  
+      if (existingNewsLetter) {
+        return res.status(409).json({ message: "Email is already subscribed to this page" });
+      }
+  
+      const newsLetter = await models.NewsLetter.create({
+        email,
+        pageId,
+        ip_address,
+        status,
+      });
+  
+      return res.status(201).json({
+        message: "Newsletter submitted successfully",
+        data: newsLetter,
+      });
+    } catch (error) {
+      console.error("Error submitting newsletter:", error);
+      return res.status(500).json({ message: "Server error", error: error.message });
     }
-
-    const newsLetter = await models.NewsLetter.create({
-      email,
-      pageId,
-      ip_address,
-      status,
-    });
-
-    return res.status(201).json({
-      message: "Newsletter submitted successfully",
-      data: newsLetter, 
-    });
-  } catch (error) {
-    console.error("Error submitting newsletter:", error);
-    return res.status(500).json({ message: "Server error" });
   }
-}
+  
 
 async function getAllNewsLetters(req, res) {
   try {
