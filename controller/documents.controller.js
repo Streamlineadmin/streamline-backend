@@ -168,16 +168,16 @@ function createDocument(req, res) {
             ),
             models.DocumentBankDetails.create({
                 documentNumber: document.documentNumber,
-                bankName: bankDetails.bankName,
-                accountName: bankDetails.accountName,
-                accountNumber: bankDetails.accountNumber,
-                branch: bankDetails.branch,
-                IFSCCode: bankDetails.IFSCCode,
-                MICRCode: bankDetails.MICRCode,
-                address: bankDetails.address,
-                SWIFTCode: bankDetails.SWIFTCode,
-                status: bankDetails.status,
-                ip_address: bankDetails.ip_address
+                bankName: bankDetails.bankName || null,
+                accountName: bankDetails.accountName || null,
+                accountNumber: bankDetails.accountNumber || null,
+                branch: bankDetails.branch || null,
+                IFSCCode: bankDetails.IFSCCode || null,
+                MICRCode: bankDetails.MICRCode || null,
+                address: bankDetails.address || null,
+                SWIFTCode: bankDetails.SWIFTCode || null,
+                status: bankDetails.status || 1, 
+                ip_address: bankDetails.ip_address || null,
             }),
             models.CompanyTermsCondition.update(
                 { termsCondition },
@@ -540,7 +540,34 @@ function deleteDocument(req, res) {
       });
     });
 }
-  
+
+function getPreviewDocuments(req, res) {
+  const { documentType } = req.body;
+
+  if (!documentType) {
+    return res.status(400).json({ message: "documentType is required" });
+  }
+
+  models.PreviewDocument.findAll({
+    where: {
+      documentType: req.body.documentType,
+    },
+  })
+    .then((previewDocuments) => {
+      if (!previewDocuments.length) {
+        return res.status(200).json([]);
+      }
+
+      res.status(200).json(previewDocuments.map((doc) => doc.toJSON()));
+    })
+    .catch((error) => {
+      console.error("Error fetching preview documents:", error);
+      res
+        .status(500)
+        .json({ message: "Something went wrong, please try again later!" });
+    });
+}  
+
 module.exports = {
     getDocuments,
     getDocumentById,
@@ -548,4 +575,5 @@ module.exports = {
     editDocument,
     discardDocument,
     deleteDocument,
+    getPreviewDocuments,
 };
