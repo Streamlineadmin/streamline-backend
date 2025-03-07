@@ -68,6 +68,7 @@ function createDocument(req, res) {
         debit_note_number = null,
         pay_to_transporter = null,
         inspection_date = null,
+        attachments = [],
     } = req.body;
 
     models.Documents.create({
@@ -182,11 +183,17 @@ function createDocument(req, res) {
             models.CompanyTermsCondition.update(
                 { termsCondition },
                 { where: { companyId } }
+            ),
+            models.DocumentAttachments.bulkCreate(
+                attachments.map(attachment => ({
+                    documentNumber: document.documentNumber,
+                    attachmentName: attachment
+                }))
             )
         ]);
     })
     .then(() => {
-        res.status(201).json({ message: "Document, items, additional charges, bank details, and terms condition updated successfully!" });
+        res.status(201).json({ message: "Document, items, additional charges, bank details, attachments, and terms condition updated successfully!" });
     })
     .catch(error => {
         console.error("Error adding document:", error);
