@@ -180,10 +180,29 @@ function createDocument(req, res) {
                 status: bankDetails.status || 1, 
                 ip_address: bankDetails.ip_address || null,
             }),
-            models.CompanyTermsCondition.update(
-                { termsCondition },
-                { where: { companyId } }
-            ),
+            models.CompanyTermsCondition.findOne({ where: { companyId } }).then(
+              (existingRecord) => {
+                if (existingRecord) {
+                  return models.CompanyTermsCondition.update(
+                    {
+                      termsCondition: JSON.stringify(termsCondition),
+                      status,
+                      ip_address,
+                    },
+                    { where: { companyId } }
+                  );
+                } else {
+                  return models.CompanyTermsCondition.create({
+                    companyId,
+                    termsCondition: JSON.stringify(termsCondition),
+                    status,
+                    ip_address,
+                    createdAt: new Date(),
+                    updatedAt: new Date(),
+                  });
+                }
+              }
+            ),,
             models.DocumentAttachments.bulkCreate(
                 attachments.map(attachment => ({
                     documentNumber: document.documentNumber,
