@@ -449,15 +449,17 @@ function getDocumentById(req, res) {
             models.DocumentItems.findAll({ where: { documentNumber } }),
             models.DocumentAdditionalCharges.findAll({ where: { documentNumber } }),
             models.DocumentBankDetails.findAll({ where: { documentNumber } }),
-            models.CompanyTermsCondition.findOne({ where: { companyId } })
+            models.CompanyTermsCondition.findOne({ where: { companyId } }),
+            models.DocumentAttachments.findAll({ where: { documentNumber } }),
         ])
-        .then(([items, additionalCharges, bankDetails, termsCondition]) => {
+        .then(([items, additionalCharges, bankDetails, termsCondition, attachments]) => {
             const response = {
                 ...document.toJSON(),
                 items,
                 additionalCharges,
                 bankDetails,
-                termsCondition: termsCondition ? termsCondition.termsCondition : null
+                termsCondition: termsCondition ? termsCondition.termsCondition : null,
+                attachments: attachments.map(attachment => attachment.attachmentName),
             };
 
             res.status(200).json(response);
