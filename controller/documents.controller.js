@@ -68,6 +68,7 @@ function createDocument(req, res) {
         debit_note_number = null,
         pay_to_transporter = null,
         inspection_date = null,
+        attachments = [],
     } = req.body;
 
     models.Documents.create({
@@ -182,11 +183,17 @@ function createDocument(req, res) {
             models.CompanyTermsCondition.update(
                 { termsCondition },
                 { where: { companyId } }
+            ),
+            models.DocumentAttachments.bulkCreate(
+                attachments.map(attachment => ({
+                    documentNumber: document.documentNumber,
+                    attachmentName: attachment
+                }))
             )
         ]);
     })
     .then(() => {
-        res.status(201).json({ message: "Document, items, additional charges, bank details, and terms condition updated successfully!" });
+        res.status(201).json({ message: "Document, items, additional charges, bank details, attachments, and terms condition updated successfully!" });
     })
     .catch(error => {
         console.error("Error adding document:", error);
@@ -442,15 +449,17 @@ function getDocumentById(req, res) {
             models.DocumentItems.findAll({ where: { documentNumber } }),
             models.DocumentAdditionalCharges.findAll({ where: { documentNumber } }),
             models.DocumentBankDetails.findAll({ where: { documentNumber } }),
-            models.CompanyTermsCondition.findOne({ where: { companyId } })
+            models.CompanyTermsCondition.findOne({ where: { companyId } }),
+            models.DocumentAttachments.findAll({ where: { documentNumber } }),
         ])
-        .then(([items, additionalCharges, bankDetails, termsCondition]) => {
+        .then(([items, additionalCharges, bankDetails, termsCondition, attachments]) => {
             const response = {
                 ...document.toJSON(),
                 items,
                 additionalCharges,
                 bankDetails,
-                termsCondition: termsCondition ? termsCondition.termsCondition : null
+                termsCondition: termsCondition ? termsCondition.termsCondition : null,
+                attachments: attachments.map(attachment => attachment.attachmentName),
             };
 
             res.status(200).json(response);
