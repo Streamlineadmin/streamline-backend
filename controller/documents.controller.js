@@ -202,7 +202,7 @@ function createDocument(req, res) {
                   });
                 }
               }
-            ),,
+            ),
             models.DocumentAttachments.bulkCreate(
                 attachments.map(attachment => ({
                     documentNumber: document.documentNumber,
