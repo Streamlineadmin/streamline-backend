@@ -162,7 +162,7 @@ async function getStores(req, res) {
     // Check if no stores were found
     if (!stores || stores.length === 0) {
       return res.status(200).json([]);
-  }
+    }
 
     // Step 3: Count items in each store
     const storesWithItemCount = [];
@@ -170,7 +170,7 @@ async function getStores(req, res) {
     for (const store of stores) {
       try {
         // Count the number of items in the StoreItems table for each store
-        const itemCount = await models.StoreItems.count({ 
+        const itemCount = await models.StoreItems.count({
           where: {
             storeId: store.id,
           },
@@ -221,9 +221,7 @@ async function getStoresByItem(req, res) {
 
     // Check if any store was found for the given itemId
     if (storeItems.length === 0) {
-      return res.status(404).json({
-        message: `No stores found with itemId ${itemId}`,
-      });
+      return res.status(200).json([]);
     }
 
     // Aggregate the quantities for each storeId
