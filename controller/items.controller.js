@@ -317,257 +317,250 @@ async function addBulkItem(req, res) {
     try {
         const file = req.file;
         const data = await convertXlsxToJson(file.filename, 'bulkUpload');
+
         if (!data.length) {
-            return res.status(400).json({ message: 'Add Atleast One Item.' });
+            return res.status(400).json({ message: 'Add At Least One Item.' });
         }
-        let errorArray = [], err = '';
+
+        const { companyId } = req.body;
+        let errorArray = [];
+        let err = '';
+
+        const itemIds = data.map(item => item['* Item ID']);
+        const itemNames = data.map(item => item['* Item Name']);
+
+        const existingItems = await models.Items.findAll({
+            where: {
+                companyId,
+                [Op.or]: [
+                    { itemId: { [Op.in]: itemIds } },
+                    { itemName: { [Op.in]: itemNames } }
+                ]
+            }
+        });
+
+        const existingItemMap = new Map(existingItems.map(item => [item.itemId, true]));
+
+        const categoryNames = [...new Set(data.map(item => item.Category).filter(Boolean))];
+        const subCategoryNames = [...new Set(data.map(item => item['Sub Category']).filter(Boolean))];
+        const microCategoryNames = [...new Set(data.map(item => item['Micro Category']).filter(Boolean))];
+
+        const categories = await models.Categories.findAll({
+            where: { name: { [Op.in]: categoryNames }, companyId }
+        });
+
+        const subCategories = await models.Categories.findAll({
+            where: { name: { [Op.in]: subCategoryNames }, companyId }
+        });
+
+        const microCategories = await models.Categories.findAll({
+            where: { name: { [Op.in]: microCategoryNames }, companyId }
+        });
+
+        const categoryMap = new Map(categories.map(cat => [cat.name, cat]));
+        const subCategoryMap = new Map(subCategories.map(sub => [sub.name, sub]));
+        const microCategoryMap = new Map(microCategories.map(micro => [micro.name, micro]));
+
+        const itemsData = [];
+
         for (const item of data) {
-            const { '* Item ID': itemId, '* Item Name': itemName, '* Item Type': itemType, '* Metrics Unit': metricsUnit } = item;
-            const { companyId } = req.body;
-            let category, subCategory, microCategory;
-            const existingItem = await models.Items.findOne({
-                where: {
-                    companyId: companyId,
-                    [models.Sequelize.Op.or]: [
-                        { itemId: itemId },
-                        { itemName: itemName }
-                    ]
-                }
-            });
-            if (existingItem) {
-                err = 'Item Id Already Exist. '
+            const { '* Item ID': itemId, '* Item Name': itemName, '* Item Type': itemType } = item;
+            if (existingItemMap.has(itemId?.toString())) {
+                err = 'Item ID already exists. ';
             }
-            if (!itemId || !itemName || !itemType || !metricsUnit) {
-                let count = 0, missingKey = '';
-                if (!itemId) {
-                    count += 1;
-                    missingKey = 'itemId';
-                }
-                if (!itemName) {
-                    count += 1;
-                    missingKey = 'itemName';
-                }
-                if (!itemType) {
-                    count += 1;
-                    missingKey = 'itemType';
-                }
-                if (!metricsUnit) {
-                    count += 1;
-                    missingKey = 'metricsUnit';
-                }
-                if (count === 1) {
-                    err += `${missingKey} is required Field. `;
-                }
-                else err += `Mandatory fields are missing: ${!itemId ? 'itemId' : '' + !itemName ? ' itemName' : '' + !itemType ? ' itemType' : '' + !metricsUnit ? ' metricsUnit' : ''} are required. `;
+            if (!itemId || !itemName || !itemType) {
+                err += 'Required fields are missing. ';
             }
 
-            if (item?.price || item?.price === 0) {
-                err += 'Price Should be Gretaer than 0. '
+            if (item?.Price <= 0) {
+                err += 'Price should be greater than 0. ';
             }
-            if (item?.currentStock && Number(item?.currentStock) < 0) {
-                err += 'currentStock Value should be non Negative. '
+            if (item?.['Min Stock'] && item?.['Min Stock'] < 0) {
+                err += 'Min Stock must be non-negative. ';
             }
-            if (item?.minStock && Number(item?.minStock) < 0) {
-                err += 'minStock Value should be non Negative. '
-            }
-            if (item?.maxStock && Number(item?.maxStock) < 0) {
-                err += 'maxStock Value should be non Negative. '
+            if (item?.['Max Stock'] && item?.['Max Stock'] < 0) {
+                err += 'Max Stock must be non-negative. ';
             }
 
-            const uom = await models.UOM.findOne({
-                    where: { name: metricsUnit.split(' ')[0]}
-                });
-            if(!uom) err+= 'Invalid UOM unit. ';
-            if (item?.Category) {
-                category = await models.Categories.findOne({
-                    where: {
-                        name: item?.Category,
-                        companyId
-                    }
-                });
-                if (!category) {
-                    err += 'Category Not Found. ';
-                }
-                else {
-                    if (item?.['Sub Category']) {
-                        subCategory = await models.Categories.findOne({
-                            where: {
-                                name: item?.['Sub Category'],
-                                companyId
-                            }
-                        });
-                        if (!subCategory) {
-                            err += 'Sub Category Not Found. ';
-                        }
-                       
-                        else if (subCategory?.parentId != category?.id) {
-                            err += 'Sub Category not found under Selected Category. ';
-                        }
-                        if(item?.['Micro Category'] && subCategory?.parentId == category?.id) {
-                            microCategory = await models.Categories.findOne({
-                                where: {
-                                    name: item?.['Micro Category'],
-                                    companyId
-                                }
-                            });
-                            if (!microCategory) err += 'Micro Category Not Found. ';
-                            else if (microCategory?.parentId != subCategory?.id)
-                                err += 'Micro Category not found under Selected Sub Category. ';
-                        }
-                    }
-                }
+            let category = categoryMap.get(item.Category) || null;
+            let subCategory = subCategoryMap.get(item['Sub Category']) || null;
+            let microCategory = microCategoryMap.get(item['Micro Category']) || null;
+
+            if (item.Category && !category) {
+                err += "Category Not Found. ";
+            }
+            if (item["Sub Category"] && !subCategory) {
+                err += "Sub Category Not Found. ";
+            }
+            if (item["Sub Category"] && category.id != subCategory.parentId) {
+                err += "Sub Category Not Found under this Category. "
+            }
+            if (item["Micro Category"] && !microCategory) {
+                err += "Micro Category Not Found. ";
+            }
+            if (item["Micro Category"] && subCategory.id != microCategory.parentId) {
+                err += "Micro Category Not Found under this Sub Category. "
             }
 
             if (err) {
                 errorArray.push({ ...item, Error: err });
+                err = '';
                 continue;
             }
-            const itemData = {
+
+            itemsData.push({
                 itemId,
                 itemName,
                 itemType,
-                metricsUnit: uom.id,
+                metricsUnit: 'uom.id',
                 category: category?.id || null,
                 subCategory: subCategory?.id || null,
                 microCategory: microCategory?.id || null,
                 HSNCode: item.HSN || null,
                 price: item.Price || null,
-                taxType: item['Tax Type'] || null,
+                taxType: item['Tax Type'] ? item['Tax Type'] == 'Inclusive' ? 1 : 2 : null,
                 tax: item['Tax'] || null,
                 minStock: item['Min Stock'] || null,
                 maxStock: item['Max Stock'] || null,
                 description: item['Description'] || null,
                 companyId: Number(companyId),
                 status: 1
-            };
-
-            await models.Items.create(itemData);
+            });
         }
-        let msg = '';
-        msg = !errorArray.length ? 'Bulk Items Uploaded successfully.' : errorArray.length != data.length ? 'Bulk Items Uploaded Successfully. Few Items Contain Overlapping/Invalid Data. We Download Those Rows for you.' : 'All Items Contain Overlapping/Invalid Data. We Download Those Rows for you.';
+
+        if (itemsData.length) {
+            await models.Items.bulkCreate(itemsData);
+        }
+
+        const msg = !errorArray.length
+            ? 'Bulk items uploaded successfully.'
+            : errorArray.length !== data.length
+                ? 'Bulk items uploaded successfully. Some rows contain invalid data. We Download Those Rows for you.'
+                : 'All rows contain invalid data. We Download Those Rows for you.';
+
         res.status(200).json({ message: msg, invalidData: errorArray });
     } catch (error) {
-        console.log(error);
+        console.error(error);
         res.status(500).json({ error: 'Something went wrong' });
     }
 }
 
 async function bulkEditItems(req, res) {
-    const file = req.file;
-    const items = await convertXlsxToJson(file.filename, 'bulkEdit');
-
-    if (!Array.isArray(items) || items.length === 0) {
-        return res.status(400).json({ message: "Edit Atlease one Item" });
-    }
-
-    const transaction = await models.sequelize.transaction();
-    const errorArray = [];
-    let category, subCategory, microCategory;
-
     try {
+        const file = req.file;
+        const items = await convertXlsxToJson(file.filename, "bulkEdit");
+
+        if (!Array.isArray(items) || items.length === 0) {
+            return res.status(400).json({ message: "Edit at least one item" });
+        }
+
+        const companyId = Number(req.body.companyId);
+        const itemIds = items.map(item => item["Item ID"]).filter(Boolean);
+
+        const existingItems = await models.Items.findAll({
+            where: { companyId, itemId: { [Op.in]: itemIds } },
+        });
+
+        const existingItemsMap = new Map(existingItems.map(item => [item.itemId, item]));
+
+        const categoryNames = [...new Set(items.map(item => item.Category).filter(Boolean))];
+        const subCategoryNames = [...new Set(items.map(item => item["Sub Category"]).filter(Boolean))];
+        const microCategoryNames = [...new Set(items.map(item => item["Micro Category"]).filter(Boolean))];
+
+        const categories = await models.Categories.findAll({ where: { name: { [Op.in]: categoryNames }, companyId } });
+        const subCategories = await models.Categories.findAll({ where: { name: { [Op.in]: subCategoryNames }, companyId } });
+        const microCategories = await models.Categories.findAll({ where: { name: { [Op.in]: microCategoryNames }, companyId } });
+        const categoryMap = new Map(categories.map(cat => [cat.name, cat]));
+        const subCategoryMap = new Map(subCategories.map(sub => [sub.name, sub]));
+        const microCategoryMap = new Map(microCategories.map(micro => [micro.name, micro]));
+
+        let errorArray = [];
+        let updateData = [];
+
         for (const item of items) {
-            const { 'Item ID': itemId, 'Item Name': itemName } = item;
-            let err = '';
+            const { "Item ID": itemId, "Item Name": itemName } = item;
+            let err = "";
+
             if (!itemId) {
-                errorArray.push({ ...item, Error: 'Item Id is required.' });
+                errorArray.push({ ...item, Error: "Item ID is required." });
                 continue;
             }
-            const existingItem = await models.Items.findOne({
-                where: {
-                    companyId: Number(req?.body?.companyId),
-                    [Op.or]: [{ itemId }],
-                },
-                transaction,
-            });
 
+            const existingItem = existingItemsMap.get(itemId);
             if (!existingItem) {
-                err += 'Item Not Found. ';
-            }
-            if (item['Price'] && Number(item['Price']) < 0) {
-                err += 'Price Should be Gretaer than 0. '
-            }
-            if (item['Min Stock'] && Number(item['Min Stock']) < 0) {
-                err += 'Max Stock Value should be non Negative. '
-            }
-            if (item['Max Stock'] && Number(item['Max Stock']) < 0) {
-                err += 'Max Stock Value should be non Negative. '
+                err += "Item Not Found. ";
             }
 
-            if (item?.Category) {
-                category = await models.Categories.findOne({
-                    where: {
-                        name: item?.Category,
-                        companyId: req?.body?.companyId
-                    }
-                });
-                if (!category) {
-                    err += 'Category Not Found. ';
-                }
-                else {
-                    if (item?.['Sub Category']) {
-                        subCategory = await models.Categories.findOne({
-                            where: {
-                                name: item?.['Sub Category'],
-                                companyId: req?.body?.companyId,
-                            }
-                        });
-                        if (!subCategory) {
-                            err += 'Sub Category Not Found. ';
-                        }
-                        else if (subCategory?.parentId != category?.id) {
-                            err += 'Sub Category not found under Selected Category. ';
-                        }
-                        if (item?.['Micro Category'] && subCategory?.parentId == category?.id) {
-                            microCategory = await models.Categories.findOne({
-                                where: {
-                                    name: item?.['Micro Category'],
-                                    companyId: req?.body?.companyId,
-                                }
-                            });
-                            if (!microCategory) err += 'Micro Category Not Found. ';
-                            else if (microCategory?.parentId != subCategory?.id)
-                                err += 'Micro Category not found under Selected Sub Category. ';
-                        }
-                    }
-                }
+            if (item["Price"] && Number(item["Price"]) < 0) {
+                err += "Price should be greater than 0. ";
             }
-           
+            if (item["Min Stock"] && Number(item["Min Stock"]) < 0) {
+                err += "Min Stock value should be non-negative. ";
+            }
+            if (item["Max Stock"] && Number(item["Max Stock"]) < 0) {
+                err += "Max Stock value should be non-negative. ";
+            }
+
+            let category = categoryMap.get(item.Category) || null;
+            let subCategory = subCategoryMap.get(item["Sub Category"]) || null;
+            let microCategory = microCategoryMap.get(item["Micro Category"]) || null;
+
+            if (item.Category && !category) {
+                err += "Category Not Found. ";
+            }
+            if (item["Sub Category"] && !subCategory) {
+                err += "Sub Category Not Found. ";
+            }
+            if (item["Sub Category"] && category.id != subCategory.parentId) {
+                err += "Sub Category Not Found under this Category."
+            }
+            if (item["Micro Category"] && !microCategory) {
+                err += "Micro Category Not Found. ";
+            }
+            if (item["Micro Category"] && subCategory.id != microCategory.parentId) {
+                err += "Micro Category Not Found under this Sub Category."
+            }
 
             if (err) {
                 errorArray.push({ ...item, Error: err });
                 continue;
             }
-
             const updatedObj = {
-                itemId,
-                itemName
-            };
-            if (item['HSN']) updatedObj.HSNCode = item['HSN'];
-            if (item['Category']) updatedObj.category = category?.id;
-            if (item['Sub Category']) updatedObj.subCategory = subCategory?.id;
-            if (item['Micro Category']) updatedObj.microCategory = microCategory?.id;
-            if (item['Price']) updatedObj.price = item['Price'];
-            if (item['Min Stock']) updatedObj.minStock = item['Min Stock'];
-            if (item['Max Stock']) updatedObj.maxStock = item['Max Stock'];
-            if (item.Description) updatedObj.description = item.description;
-            if (item['Tax Type']) updatedObj.taxType = item['Tax Type'] == 'Inclusive' ? 1 : 2;
-            if (item['Tax']) updatedObj.tax = item['Tax'];
-            if (item['Item type']) updatedObj.itemType = item['Item type'] == 'Buy' ? 1 : item['Item type'] == 'Sell' ? 2 : 3;
+                itemId
+            }
+            if (itemName) updatedObj.itemName = itemName;
+            if (category) updatedObj.category = category?.id || null;
+            if (subCategory) updatedObj.subCategory = subCategory?.id || null;
+            if (microCategory) updatedObj.microCategory = microCategory?.id || null;
+            if (item.Price) updatedObj.price = item.Price;
+            if (item["Min Stock"]) updatedObj.minStock = item["Min Stock"];
+            if (item["Max Stock"]) updatedObj.maxStock = item["Max Stock"];
             if (item.Description) updatedObj.description = item.Description;
+            if (item["Tax Type"]) updatedObj.taxType = item['Tax Type'] == 'Inclusive' ? 1 : 2;
+            if (item.Tax) updatedObj.tax = item.Tax;
+            if (item["Item type"]) updatedObj.itemType = item["Item type"] === "Buy" ? 1 : item["Item type"] === "Sell" ? 2 : 3;
 
-            await models.Items.update(
-                updatedObj,
-                { where: { itemId, companyId: Number(req.body.companyId) }, transaction }
+            updateData.push(updatedObj);
+        }
+
+        if (updateData.length) {
+            await Promise.all(
+                updateData.map(data =>
+                    models.Items.update(data, { where: { itemId: data.itemId, companyId } })
+                )
             );
         }
 
-        await transaction.commit();
-        msg = !errorArray.length ? 'Bulk Items Edited successfully.' : errorArray.length != items.length ? 'Few data are Invalid. We Download Those Rows for you.' : 'All Items are Invalid. We Download Invalid Rows for you.'
-        return res.status(200).json({ message: msg, invalidData: errorArray });
+        let msg =
+            !errorArray.length
+                ? "Bulk Items Edited successfully."
+                : errorArray.length !== items.length
+                    ? "Few data are Invalid. We Download Those Rows for you."
+                    : "All Items are Invalid. We Download Invalid Rows for you.";
 
+        return res.status(200).json({ message: msg, invalidData: errorArray });
     } catch (error) {
-        console.log(error);
-        transaction.rollback();
+        console.error(error);
         return res.status(500).json({ message: "Something went wrong, please try again later!", error });
     }
 }
