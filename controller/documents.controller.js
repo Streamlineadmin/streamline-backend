@@ -21,7 +21,7 @@ function createDocument(req, res) {
         store = null,
         enquiryNumber = null,
         enquiryDate = null,
-        logisticDetails = null,
+        logisticDetailsId = null,
         additionalDetails = null,
         signature = null,
         companyId = null,
@@ -91,7 +91,7 @@ function createDocument(req, res) {
         store,
         enquiryNumber,
         enquiryDate,
-        logisticDetails,
+        logisticDetailsId,
         additionalDetails,
         signature,
         companyId,
@@ -133,7 +133,7 @@ function createDocument(req, res) {
         purchaseOrderNumber,
         purchaseOrderDate,
         grn_number,
-        grn_Date
+        grn_Date,
     })
     .then(document => {
         return Promise.all([
@@ -420,7 +420,8 @@ function getDocuments(req, res) {
     models.Documents.findAll({
         where: {
             companyId: req.body.companyId
-        }
+        },
+        include: [{ model: models.LogisticDetails, as: 'logisticDetails' }]
     })
     .then(documents => {
         if (!documents || documents.length === 0) {
@@ -458,7 +459,8 @@ function getDocuments(req, res) {
 function getDocumentById(req, res) {
     const { documentNumber, companyId } = req.body;
 
-    models.Documents.findOne({ where: { documentNumber } })
+    models.Documents.findOne({ where: { documentNumber },
+      include: [{ model: models.LogisticDetails, as: 'logisticDetails' }]})
     .then(document => {
         if (!document) {
             return res.status(404).json({ message: "Document not found" });
@@ -470,8 +472,9 @@ function getDocumentById(req, res) {
             models.DocumentBankDetails.findAll({ where: { documentNumber } }),
             models.CompanyTermsCondition.findOne({ where: { companyId } }),
             models.DocumentAttachments.findAll({ where: { documentNumber } }),
+            models.LogisticDetails.findByPk(document.logisticDetailsId),
         ])
-        .then(([items, additionalCharges, bankDetails, termsCondition, attachments]) => {
+        .then(([items, additionalCharges, bankDetails, termsCondition, attachments, logisticDetails]) => {
             const response = {
                 ...document.toJSON(),
                 items,
@@ -479,6 +482,7 @@ function getDocumentById(req, res) {
                 bankDetails,
                 termsCondition: termsCondition ? termsCondition.termsCondition : null,
                 attachments: attachments.map(attachment => attachment.attachmentName),
+                logisticDetails: logisticDetails ? logisticDetails.toJSON() : null,
             };
 
             res.status(200).json(response);
