@@ -182,10 +182,14 @@ function createDocument(req, res) {
             }),
             models.CompanyTermsCondition.findOne({ where: { companyId } }).then(
               (existingRecord) => {
+                const formattedTerms = Array.isArray(termsCondition)
+                  ? JSON.stringify(termsCondition)
+                  : JSON.stringify([]);
+
                 if (existingRecord) {
                   return models.CompanyTermsCondition.update(
                     {
-                      termsCondition: JSON.stringify(termsCondition),
+                      termsCondition: formattedTerms,
                       status,
                       ip_address,
                     },
@@ -194,7 +198,7 @@ function createDocument(req, res) {
                 } else {
                   return models.CompanyTermsCondition.create({
                     companyId,
-                    termsCondition: JSON.stringify(termsCondition),
+                    termsCondition: formattedTerms,
                     status,
                     ip_address,
                     createdAt: new Date(),
@@ -442,7 +446,10 @@ function getDocuments(req, res) {
                 items: items.filter(item => item.documentNumber === document.documentNumber),
                 additionalCharges: additionalCharges.filter(charge => charge.documentNumber === document.documentNumber),
                 bankDetails: bankDetails.filter(bank => bank.documentNumber === document.documentNumber),
-                termsCondition: termsCondition ? termsCondition.termsCondition : null
+                termsCondition: termsCondition 
+                ? JSON.parse(termsCondition.termsCondition) 
+                : null
+
             }));
 
             res.status(200).json(formattedResult);
@@ -480,7 +487,9 @@ function getDocumentById(req, res) {
                 items,
                 additionalCharges,
                 bankDetails,
-                termsCondition: termsCondition ? termsCondition.termsCondition : null,
+                termsCondition: termsCondition 
+                  ? JSON.parse(termsCondition.termsCondition)
+                  : [],
                 attachments: attachments.map(attachment => attachment.attachmentName),
                 logisticDetails: logisticDetails ? logisticDetails.toJSON() : null,
             };
