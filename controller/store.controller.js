@@ -236,11 +236,11 @@ async function getStoresByItem(req, res) {
       .map(([storeId]) => parseInt(storeId));
 
     // If no stores have positive quantities
-    if (validStoreIds.length === 0) {
-      return res.status(404).json({
-        message: `No stores with positive quantity found for itemId ${itemId}`,
-      });
-    }
+    // if (validStoreIds.length === 0) {
+    //   return res.status(404).json({
+    //     message: `No stores with positive quantity found for itemId ${itemId}`,
+    //   });
+    // }
 
     // Step 4: Retrieve store details from Stores table based on valid storeIds
     const stores = await models.Store.findAll({
@@ -270,8 +270,8 @@ async function getStoresByItem(req, res) {
 
 
 function stockTransfer(req, res) {
-  const { transferNumber, stockData, transferDate, transferredBy, companyId } = req.body;
-
+  const { transferNumber, stockData, transferDate, transferredBy, companyId, addReduce } = req.body;
+  let storeItemResults = [];
   // Use Promise.all to handle asynchronous create calls for StockTransfer entries
   Promise.all(
     stockData.map(element =>
@@ -279,9 +279,8 @@ function stockTransfer(req, res) {
         transferNumber: transferNumber,
         fromStoreId: element.fromStore,
         itemId: element.itemId,
-        quantity: element.quantity,
+        quantity: addReduce == 2 ? element.quantity * -1 : element.quantity,
         toStoreId: element.toStore,
-        quantity: element.quantity,
         transferDate: transferDate,
         transferredBy: transferredBy,
         comment: stockData.comment,
@@ -305,14 +304,25 @@ function stockTransfer(req, res) {
           models.StoreItems.create({
             storeId: element.toStore,
             itemId: element.itemId,
-            quantity: element.quantity, // Add quantity to the destination store
+            quantity: addReduce == 2 ? -element.quantity : element.quantity, // Add quantity to the destination store
             status: 1,
             addedBy: transferredBy,
           }),
         ])
       );
     })
-    .then(storeItemResults => {
+    .then((storeItemResult) => {
+      storeItemResults = storeItemResult;
+      return Promise.all(
+        stockData.map(data =>
+          models.Items.update(
+            { currentStock: addReduce == 2 ? -data.quantity : data.quantity },
+            { where: { itemId: data.itemId } }
+          )
+        )
+      );
+    })
+    .then(() => {
       res.status(201).json({
         message: "Stock transfer entries and store items updated successfully",
         stockTransfers: storeItemResults,
@@ -352,6 +362,8 @@ async function getItemStockTransferHistory(req, res) {
       order: [['createdAt', 'ASC']], // Order by date for cumulative calculations
       raw: true,  // Ensures data is returned as plain objects
     });
+
+    console.log(stockTransfers);
 
     if (!stockTransfers.length) {
       return res.status(200).json({

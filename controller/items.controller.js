@@ -629,6 +629,86 @@ async function stockReconcilation(req, res) {
     }
 }
 
+async function bulkUploadAlternateUnit(req, res) {
+    try {
+        const file = req.file;
+        const items = await convertXlsxToJson(file.filename, "alternateUnit");
+
+        if (!Array.isArray(items) || items.length === 0) {
+            return res.status(400).json({ message: "Empty data found." });
+        }
+
+        const errorArray = [], newAlternateUnits = [];
+        const itemIds = new Set(), unitCodes = new Set();
+
+        for (const item of items) {
+            const { "* Item ID": itemId, "* Base Unit": baseUnit, "* Alternate Unit": alternateUnit } = item;
+            if (itemId) itemIds.add(itemId);
+            if (baseUnit) unitCodes.add(baseUnit.match(/\((.*?)\)/)?.[1]);
+            if (alternateUnit) unitCodes.add(alternateUnit.match(/\((.*?)\)/)?.[1]);
+        }
+
+        const [existingItems, uomList] = await Promise.all([
+            models.Items.findAll({ where: { itemId: Array.from(itemIds) }, raw: true }),
+            models.UOM.findAll({ where: { code: Array.from(unitCodes) }, raw: true }),
+        ]);
+
+        const itemMap = new Map(existingItems.map((i) => [i.itemId, i]));
+        const uomMap = new Map(uomList.map((u) => [u.code, u.id]));
+
+        console.log(itemMap);
+
+        for (const item of items) {
+            let err = "";
+            const {
+                "* Item ID": itemId,
+                "* Base Unit": baseUnit,
+                "* Alternate Unit": alternateUnit,
+                "* Conversion Factor": conversionFactor,
+            } = item;
+
+            const baseUnitCode = baseUnit?.match(/\((.*?)\)/)?.[1];
+            const alternateUnitCode = alternateUnit?.match(/\((.*?)\)/)?.[1];
+
+            if (!itemId || !baseUnit || !alternateUnit || !conversionFactor) {
+                err += "Required fields are missing. ";
+            }
+            if (!itemMap.has(itemId.toString())) err += "Item not found. ";
+            if (!uomMap.has(baseUnitCode)) err += "Base unit not found. ";
+            if (!uomMap.has(alternateUnitCode)) err += "Alternate unit not found. ";
+
+            if (err) {
+                errorArray.push({ ...item, Error: err });
+                continue;
+            }
+
+            newAlternateUnits.push({
+                itemId:itemMap.get(itemId.toString())?.id,
+                alternateUnits: uomMap.get(alternateUnitCode),
+                conversionfactor: conversionFactor,
+                status: 1,
+                createdAt: new Date(),
+                updatedAt: new Date(),
+            });
+        }
+
+        if (newAlternateUnits.length) {
+            await models.AlternateUnits.bulkCreate(newAlternateUnits);
+        }
+
+        const msg = errorArray.length === 0
+            ? "Alternate Unit Added Successfully."
+            : errorArray.length !== items.length
+                ? "Few Rows have Invalid Data. We Download Those Rows for You."
+                : "All Rows have Invalid Data. We Download Those Rows for You.";
+
+        return res.status(200).json({ message: msg, invalidData: errorArray });
+
+    } catch (error) {
+        return res.status(500).json({ message: "Something went wrong, please try again later!", error });
+    }
+}
+
 
 module.exports = {
     addItem: addItem,
@@ -638,5 +718,6 @@ module.exports = {
     deleteItems: deleteItems,
     addBulkItem: addBulkItem,
     bulkEditItems: bulkEditItems,
-    stockReconcilation: stockReconcilation
+    stockReconcilation: stockReconcilation,
+    bulkUploadAlternateUnit: bulkUploadAlternateUnit
 }
