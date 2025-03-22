@@ -134,6 +134,7 @@ function createDocument(req, res) {
         purchaseOrderDate,
         grn_number,
         grn_Date,
+        termsCondition,
     })
     .then(document => {
         return Promise.all([
@@ -180,33 +181,17 @@ function createDocument(req, res) {
                 status: bankDetails.status || 1, 
                 ip_address: bankDetails.ip_address || null,
             }),
-            models.CompanyTermsCondition.findOne({ where: { companyId } }).then(
-              (existingRecord) => {
-                const formattedTerms = Array.isArray(termsCondition)
-                  ? JSON.stringify(termsCondition)
-                  : JSON.stringify([]);
+            
+            models.CompanyTermsCondition.create({
+                companyId: companyId || null, 
+                termsCondition: termsCondition || [],
+                ip_address: ip_address || null,
+                documentNumber:  document.documentNumber || null,
+                createdAt: new Date(),
+                updatedAt: new Date()
+          }), 
 
-                if (existingRecord) {
-                  return models.CompanyTermsCondition.update(
-                    {
-                      termsCondition: formattedTerms,
-                      status,
-                      ip_address,
-                    },
-                    { where: { companyId } }
-                  );
-                } else {
-                  return models.CompanyTermsCondition.create({
-                    companyId,
-                    termsCondition: formattedTerms,
-                    status,
-                    ip_address,
-                    createdAt: new Date(),
-                    updatedAt: new Date(),
-                  });
-                }
-              }
-            ),
+           
             models.DocumentAttachments.bulkCreate(
                 attachments.map(attachment => ({
                     documentNumber: document.documentNumber,
@@ -477,7 +462,7 @@ function getDocumentById(req, res) {
             models.DocumentItems.findAll({ where: { documentNumber } }),
             models.DocumentAdditionalCharges.findAll({ where: { documentNumber } }),
             models.DocumentBankDetails.findAll({ where: { documentNumber } }),
-            models.CompanyTermsCondition.findOne({ where: { companyId } }),
+            models.CompanyTermsCondition.findOne({ where: { companyId, documentNumber } }),
             models.DocumentAttachments.findAll({ where: { documentNumber } }),
             models.LogisticDetails.findByPk(document.logisticDetailsId),
         ])

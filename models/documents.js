@@ -83,6 +83,7 @@ module.exports = (sequelize, DataTypes) => {
     debit_note_number: DataTypes.STRING,
     debit_note_date: DataTypes.STRING,
     quotationDate: DataTypes.STRING,
+    quotationNumber:DataTypes.STRING,
     orderConfirmationNumber:DataTypes.STRING,
     orderConfirmationDate: DataTypes.STRING,
     purchaseOrderNumber: DataTypes.STRING,
