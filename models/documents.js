@@ -14,6 +14,13 @@ module.exports = (sequelize, DataTypes) => {
         onDelete: 'CASCADE',
         onUpdate: 'CASCADE',
       });
+
+      Documents.belongsTo(models.CompanyTermsCondition, {
+        foreignKey: 'companyTermsConditionId',
+        as: 'termsCondition',
+        onDelete: 'SET NULL',
+        onUpdate: 'CASCADE',
+      });
     }
   }
 
@@ -89,7 +96,15 @@ module.exports = (sequelize, DataTypes) => {
     purchaseOrderNumber: DataTypes.STRING,
     purchaseOrderDate: DataTypes.STRING,
     grn_number: DataTypes.STRING,
-    grn_Date: DataTypes.STRING
+    grn_Date: DataTypes.STRING,
+    companyTermsConditionId: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      references: {
+        model: 'CompanyTermsConditions',
+        key: 'id'
+      }
+    }
   }, {
     sequelize,
     modelName: 'Documents',

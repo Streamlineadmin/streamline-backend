@@ -11,6 +11,12 @@ module.exports = (sequelize, DataTypes) => {
      */
     static associate(models) {
       // define association here
+      CompanyTermsCondition.hasMany(models.Documents, {
+        foreignKey: 'companyTermsConditionId',
+        as: 'documents',
+        onDelete: 'SET NULL',
+        onUpdate: 'CASCADE',
+      });
     }
   }
   CompanyTermsCondition.init({
