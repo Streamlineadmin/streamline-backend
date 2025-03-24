@@ -8,7 +8,12 @@ module.exports = (sequelize, DataTypes) => {
      * The `models/index` file will call this method automatically.
      */
     static associate(models) {
-      // define association here
+      Documents.belongsTo(models.LogisticDetails, {
+        foreignKey: 'logisticDetailsId',
+        as: 'logisticDetails', 
+        onDelete: 'CASCADE',
+        onUpdate: 'CASCADE',
+      });
     }
   }
 
@@ -32,7 +37,14 @@ module.exports = (sequelize, DataTypes) => {
     store: DataTypes.STRING,
     enquiryNumber: DataTypes.STRING,
     enquiryDate: DataTypes.STRING,
-    logisticDetails: DataTypes.TEXT,
+    logisticDetailsId: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      references: {
+        model: 'LogisticDetails',
+        key: 'id',
+      },
+    },
     additionalDetails: DataTypes.TEXT,
     signature: DataTypes.STRING,
     companyId: DataTypes.INTEGER,
@@ -71,6 +83,7 @@ module.exports = (sequelize, DataTypes) => {
     debit_note_number: DataTypes.STRING,
     debit_note_date: DataTypes.STRING,
     quotationDate: DataTypes.STRING,
+    quotationNumber:DataTypes.STRING,
     orderConfirmationNumber:DataTypes.STRING,
     orderConfirmationDate: DataTypes.STRING,
     purchaseOrderNumber: DataTypes.STRING,

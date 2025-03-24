@@ -21,7 +21,7 @@ function createDocument(req, res) {
         store = null,
         enquiryNumber = null,
         enquiryDate = null,
-        logisticDetails = null,
+        logisticDetailsId = null,
         additionalDetails = null,
         signature = null,
         companyId = null,
@@ -91,7 +91,7 @@ function createDocument(req, res) {
         store,
         enquiryNumber,
         enquiryDate,
-        logisticDetails,
+        logisticDetailsId,
         additionalDetails,
         signature,
         companyId,
@@ -133,7 +133,8 @@ function createDocument(req, res) {
         purchaseOrderNumber,
         purchaseOrderDate,
         grn_number,
-        grn_Date
+        grn_Date,
+        termsCondition,
     })
     .then(document => {
         return Promise.all([
@@ -180,29 +181,17 @@ function createDocument(req, res) {
                 status: bankDetails.status || 1, 
                 ip_address: bankDetails.ip_address || null,
             }),
-            models.CompanyTermsCondition.findOne({ where: { companyId } }).then(
-              (existingRecord) => {
-                if (existingRecord) {
-                  return models.CompanyTermsCondition.update(
-                    {
-                      termsCondition: JSON.stringify(termsCondition),
-                      status,
-                      ip_address,
-                    },
-                    { where: { companyId } }
-                  );
-                } else {
-                  return models.CompanyTermsCondition.create({
-                    companyId,
-                    termsCondition: JSON.stringify(termsCondition),
-                    status,
-                    ip_address,
-                    createdAt: new Date(),
-                    updatedAt: new Date(),
-                  });
-                }
-              }
-            ),
+            
+            models.CompanyTermsCondition.create({
+                companyId: companyId || null, 
+                termsCondition: termsCondition || [],
+                ip_address: ip_address || null,
+                documentNumber:  document.documentNumber || null,
+                createdAt: new Date(),
+                updatedAt: new Date()
+          }), 
+
+           
             models.DocumentAttachments.bulkCreate(
                 attachments.map(attachment => ({
                     documentNumber: document.documentNumber,
@@ -420,7 +409,8 @@ function getDocuments(req, res) {
     models.Documents.findAll({
         where: {
             companyId: req.body.companyId
-        }
+        },
+        include: [{ model: models.LogisticDetails, as: 'logisticDetails' }]
     })
     .then(documents => {
         if (!documents || documents.length === 0) {
@@ -441,7 +431,10 @@ function getDocuments(req, res) {
                 items: items.filter(item => item.documentNumber === document.documentNumber),
                 additionalCharges: additionalCharges.filter(charge => charge.documentNumber === document.documentNumber),
                 bankDetails: bankDetails.filter(bank => bank.documentNumber === document.documentNumber),
-                termsCondition: termsCondition ? termsCondition.termsCondition : null
+                termsCondition: termsCondition 
+                ? JSON.parse(termsCondition.termsCondition) 
+                : null
+
             }));
 
             res.status(200).json(formattedResult);
@@ -458,7 +451,8 @@ function getDocuments(req, res) {
 function getDocumentById(req, res) {
     const { documentNumber, companyId } = req.body;
 
-    models.Documents.findOne({ where: { documentNumber } })
+    models.Documents.findOne({ where: { documentNumber },
+      include: [{ model: models.LogisticDetails, as: 'logisticDetails' }]})
     .then(document => {
         if (!document) {
             return res.status(404).json({ message: "Document not found" });
@@ -468,17 +462,21 @@ function getDocumentById(req, res) {
             models.DocumentItems.findAll({ where: { documentNumber } }),
             models.DocumentAdditionalCharges.findAll({ where: { documentNumber } }),
             models.DocumentBankDetails.findAll({ where: { documentNumber } }),
-            models.CompanyTermsCondition.findOne({ where: { companyId } }),
+            models.CompanyTermsCondition.findOne({ where: { companyId, documentNumber } }),
             models.DocumentAttachments.findAll({ where: { documentNumber } }),
+            models.LogisticDetails.findByPk(document.logisticDetailsId),
         ])
-        .then(([items, additionalCharges, bankDetails, termsCondition, attachments]) => {
+        .then(([items, additionalCharges, bankDetails, termsCondition, attachments, logisticDetails]) => {
             const response = {
                 ...document.toJSON(),
                 items,
                 additionalCharges,
                 bankDetails,
-                termsCondition: termsCondition ? termsCondition.termsCondition : null,
+                termsCondition: termsCondition 
+                  ? JSON.parse(termsCondition.termsCondition)
+                  : [],
                 attachments: attachments.map(attachment => attachment.attachmentName),
+                logisticDetails: logisticDetails ? logisticDetails.toJSON() : null,
             };
 
             res.status(200).json(response);
