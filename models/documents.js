@@ -97,6 +97,9 @@ module.exports = (sequelize, DataTypes) => {
     purchaseOrderDate: DataTypes.STRING,
     grn_number: DataTypes.STRING,
     grn_Date: DataTypes.STRING,
+    receivedQuantity: DataTypes.STRING,
+    receivedToday:  DataTypes.STRING,
+    pendingQuantity:  DataTypes.STRING,
     companyTermsConditionId: {
       type: DataTypes.INTEGER,
       allowNull: true,

@@ -69,6 +69,9 @@ async function createDocument(req, res) {
         pay_to_transporter = null,
         inspection_date = null,
         attachments = [],
+        receivedQuantity = null,
+        receivedToday = null,
+        pendingQuantity = null,
     } = req.body;
 
     const document = await models.Documents.create({
@@ -134,6 +137,9 @@ async function createDocument(req, res) {
         debit_note_number,
         pay_to_transporter,
         inspection_date,
+        receivedQuantity,
+        receivedToday,
+        pendingQuantity,
     });
 
     const companyTermsCondition = await models.CompanyTermsCondition.create({
