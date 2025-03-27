@@ -246,7 +246,8 @@ async function getDocumentById(req, res) {
 
         const document = await models.Documents.findOne({
             where: { documentNumber },
-            include: [{ model: models.LogisticDetails, as: 'logisticDetails' }]
+            include: [{ model: models.LogisticDetails, as: 'logisticDetails' },
+                      { model: models.DocumentTemplates, as: 'documentTemplate' }]
         });
 
         if (!document) {
@@ -270,7 +271,8 @@ async function getDocumentById(req, res) {
                 ? JSON.parse(termsCondition.termsCondition)
                 : [],
             attachments: attachments.map(att => att.attachmentName),
-            logisticDetails: document.logisticDetails || null
+            logisticDetails: document.logisticDetails || null,
+            template: document.documentTemplate?.template || null,
         };
 
         return res.status(200).json(response);
