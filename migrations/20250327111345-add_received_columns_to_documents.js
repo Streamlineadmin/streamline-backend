@@ -3,25 +3,25 @@
 /** @type {import('sequelize-cli').Migration} */
 module.exports = {
   async up(queryInterface, Sequelize) {
-    await queryInterface.addColumn('Documents', 'receivedQuantity', {
+    await queryInterface.addColumn('DocumentItems', 'receivedQuantity', {
       type: Sequelize.INTEGER,
       allowNull: true,
     });
 
-    await queryInterface.addColumn('Documents', 'receivedToday', {
+    await queryInterface.addColumn('DocumentItems', 'receivedToday', {
       type: Sequelize.INTEGER,
       allowNull: true,
     });
 
-    await queryInterface.addColumn('Documents', 'pendingQuantity', {
+    await queryInterface.addColumn('DocumentItems', 'pendingQuantity', {
       type: Sequelize.INTEGER,
       allowNull: true,
     });
   },
 
   async down(queryInterface, Sequelize) {
-    await queryInterface.removeColumn('Documents', 'receivedQuantity');
-    await queryInterface.removeColumn('Documents', 'receivedToday');
-    await queryInterface.removeColumn('Documents', 'pendingQuantity');
+    await queryInterface.removeColumn('DocumentItems', 'receivedQuantity');
+    await queryInterface.removeColumn('DocumentItems', 'receivedToday');
+    await queryInterface.removeColumn('DocumentItems', 'pendingQuantity');
   }
 };

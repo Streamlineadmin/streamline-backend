@@ -28,10 +28,13 @@ module.exports = (sequelize, DataTypes) => {
     tax: DataTypes.STRING,
     totalTax: DataTypes.STRING,
     totalBeforeTax: DataTypes.STRING,
-    totalAfterTax: DataTypes.STRING
+    totalAfterTax: DataTypes.STRING,
+    receivedQuantity: DataTypes.STRING,
+    receivedToday:  DataTypes.STRING,
+    pendingQuantity:  DataTypes.STRING,
   }, {
     sequelize,
     modelName: 'DocumentItems',
   });
   return DocumentItems;
-};
+}; 
