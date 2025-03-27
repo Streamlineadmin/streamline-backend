@@ -56,7 +56,7 @@ function addItem(req, res) {
                 };
 
                 models.Items.create(itemData)
-                    .then(result => {
+                    .then(async (result) => {
                         const newItemId = result.id; // Use the primary key generated for the new item
 
                         // Add entry to StoresItem table
@@ -65,8 +65,22 @@ function addItem(req, res) {
                             itemId: newItemId,  // Use the generated item ID
                             quantity: req.body.currentStock || 0, // Default quantity; adjust if needed
                             addedBy: req.body.userId,
-                            status: 1
+                            status: 1,
+                            price: req.body.price || 0
                         };
+
+                        req.body.currentStock && await models.StockTransfer.create({
+                            transferNumber: '',
+                            fromStoreId: null,
+                            itemId: newItemId,
+                            quantity: req.body.currentStock,
+                            toStoreId: req.body.storeId,
+                            transferDate: new Date().toISOString(),
+                            transferredBy: req.body.userId,
+                            comment: '',
+                            companyId,
+                            price: req.body.price
+                        });
 
                         models.StoreItems.create(storeItemData)
                             .then(() => {
@@ -185,12 +199,21 @@ async function editItem(req, res) {
     }
 }
 
-function deleteItem(req, res) {
+async function deleteItem(req, res) {
     const itemId = req.body.itemId;  // Assuming the team ID is passed as a URL parameter
-
     models.Items.destroy({ where: { id: itemId } })
-        .then(result => {
+        .then(async (result) => {
             if (result) {
+                await models.StoreItems.destroy({
+                    where: {
+                        itemId
+                    }
+                });
+                await models.StockTransfer.destroy({
+                    where: {
+                        itemId
+                    }
+                });
                 res.status(200).json({
                     message: "Item deleted successfully"
                 });
@@ -683,7 +706,7 @@ async function bulkUploadAlternateUnit(req, res) {
             }
 
             newAlternateUnits.push({
-                itemId:itemMap.get(itemId.toString())?.id,
+                itemId: itemMap.get(itemId.toString())?.id,
                 alternateUnits: uomMap.get(alternateUnitCode),
                 conversionfactor: conversionFactor,
                 status: 1,

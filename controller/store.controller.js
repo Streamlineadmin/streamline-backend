@@ -106,9 +106,26 @@ function editStore(req, res) {
 }
 
 
-function deleteStore(req, res) {
-  const storeId = req.body.storeId; // Assuming the store ID is passed as a URL parameter
+async function deleteStore(req, res) {
+  const storeId = req.body.storeId;
+  const store = await models.Store.findOne({
+    where: {
+      id: storeId
+    }
+  });
+  if (!store) return res.status(404).json({
+    message: "Store Not found.",
+  });
 
+  const storeItems = await models.StoreItems.findAll({
+    where: {
+      storeId,
+      quantity: { [Op.gt]: 0 }
+    }
+  });
+  if (storeItems?.length > 0) return res.status(409).json({
+    message: "Store contain one or more Items. You can not delete this Store."
+  });
   models.Store.destroy({ where: { id: storeId } })
     .then((result) => {
       if (result) {
@@ -267,73 +284,107 @@ async function getStoresByItem(req, res) {
   }
 }
 
+async function stockTransfer(req, res) {
+  const { transferNumber, stockData, transferDate, transferredBy, companyId, useFIFO, addReduce } = req.body;
 
+  try {
+    // Iterate through each stock transfer item
+    for (const element of stockData) {
+      let price = 0;
+      let remainingQuantity = element.quantity;
+      const item = await models.Items.findOne({
+        where: {
+          id: element.itemId
+        }
+      });
+      if (useFIFO && addReduce == 2) {
+        // Fetch existing stock based on FIFO (oldest stock first)
+        const existingStock = await models.StoreItems.findAll({
+          where: { storeId: element.toStore, itemId: element.itemId },
+          order: [['createdAt', 'ASC']], // Oldest entries first
+        });
+        for (const stock of existingStock) {
+          if (remainingQuantity <= 0) break;
+          if (stock.quantity <= 0) continue;
+          const deductQty = Math.min(stock.quantity, remainingQuantity);
+          remainingQuantity -= deductQty;
 
-function stockTransfer(req, res) {
-  const { transferNumber, stockData, transferDate, transferredBy, companyId, addReduce } = req.body;
-  let storeItemResults = [];
-  // Use Promise.all to handle asynchronous create calls for StockTransfer entries
-  Promise.all(
-    stockData.map(element =>
-      models.StockTransfer.create({
-        transferNumber: transferNumber,
-        fromStoreId: element.fromStore,
+          // Reduce quantity from source store
+          await models.StoreItems.update(
+            { quantity: (stock.quantity - deductQty) },
+            { where: { id: stock.id } }
+          );
+          await models.StockTransfer.create({
+            transferNumber,
+            fromStoreId: element?.fromStore || null,
+            itemId: element.itemId,
+            quantity: -deductQty,
+            toStoreId: element.toStore,
+            transferDate,
+            transferredBy,
+            comment: stockData.comment,
+            companyId,
+            price: stock.price
+          });
+          price += (stock.price * deductQty);
+        }
+      } else {
+        // Direct deduction if FIFO is not enabled
+        (element.fromStore || addReduce == 2) && await models.StoreItems.create({
+          storeId: element.fromStore || element.toStore,
+          itemId: element.itemId,
+          quantity: element.quantity * -1,
+          status: 1,
+          addedBy: transferredBy,
+          price: item?.price
+        });
+      }
+
+      // Create StockTransfer entry
+      addReduce != 2 && await models.StockTransfer.create({
+        transferNumber,
+        fromStoreId: element?.fromStore || null,
         itemId: element.itemId,
-        quantity: addReduce == 2 ? element.quantity * -1 : element.quantity,
+        quantity: addReduce == 2 ? -element.quantity : element.quantity,
         toStoreId: element.toStore,
-        transferDate: transferDate,
-        transferredBy: transferredBy,
+        transferDate,
+        transferredBy,
         comment: stockData.comment,
-        companyId: companyId
-      })
-    )
-  )
-    .then(results => {
-      // After StockTransfer entries are created, insert data into StoreItems
-      return Promise.all(
-        stockData.flatMap(element => [
-          // Insert into StoreItems for the `fromStore` (reducing quantity)
-          models.StoreItems.create({
-            storeId: element.fromStore,
-            itemId: element.itemId,
-            quantity: -element.quantity, // Deduct quantity from the source store
-            status: 1, // Assuming 1 is the status for successful transfer
-            addedBy: transferredBy, // Replace with actual user ID from request context
-          }),
-          // Insert into StoreItems for the `toStore` (adding quantity)
-          models.StoreItems.create({
-            storeId: element.toStore,
-            itemId: element.itemId,
-            quantity: addReduce == 2 ? -element.quantity : element.quantity, // Add quantity to the destination store
-            status: 1,
-            addedBy: transferredBy,
-          }),
-        ])
-      );
-    })
-    .then((storeItemResult) => {
-      storeItemResults = storeItemResult;
-      return Promise.all(
-        stockData.map(data =>
-          models.Items.update(
-            { currentStock: addReduce == 2 ? -data.quantity : data.quantity },
-            { where: { itemId: data.itemId } }
-          )
-        )
-      );
-    })
-    .then(() => {
-      res.status(201).json({
-        message: "Stock transfer entries and store items updated successfully",
-        stockTransfers: storeItemResults,
+        companyId,
+        price: element.price
       });
-    })
-    .catch(error => {
-      res.status(500).json({
-        message: "Something went wrong, please try again later!",
-        error: error,
+
+      // Add quantity to destination store
+      addReduce != 2 && await models.StoreItems.create({
+        storeId: element.toStore,
+        itemId: element.itemId,
+        quantity: element.quantity,
+        status: 1,
+        addedBy: transferredBy,
+        price: element?.price
       });
+
+      if (!element.fromStore) {
+        await models.Items.update(
+          {
+            currentStock: item.currentStock + (addReduce != 2 ? element.quantity : element.quantity * -1),
+            price: addReduce == 2 ? ((item.price * item.currentStock) - price) / (item.currentStock - element.quantity) : (((item.currentStock * item.price) + (element.quantity * element.price)) / (item.currentStock + element.quantity))
+          },
+          { where: { id: element.itemId, companyId } }
+        );
+      }
+    }
+
+    res.status(201).json({
+      message: "Stock transfer completed successfully with FIFO handling",
     });
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({
+      message: "Something went wrong, please try again later!",
+      error,
+    });
+  }
 }
 
 async function getItemStockTransferHistory(req, res) {
@@ -357,13 +408,12 @@ async function getItemStockTransferHistory(req, res) {
         'fromStoreId',
         'toStoreId',
         'transferredBy',
-        'comment'
+        'comment',
+        'price'
       ],
       order: [['createdAt', 'ASC']], // Order by date for cumulative calculations
       raw: true,  // Ensures data is returned as plain objects
     });
-
-    console.log(stockTransfers);
 
     if (!stockTransfers.length) {
       return res.status(200).json({
@@ -459,7 +509,8 @@ async function getItemStockTransferHistory(req, res) {
           currentQuantity: toStoreCurrentQuantity,
         },
         transferredBy: userMap[transfer.transferredBy] || 'Unknown User',  // Enrich with user name
-        comment: transfer.comment
+        comment: transfer.comment,
+        price: transfer.price
       };
     });
 
@@ -596,7 +647,60 @@ async function getStockTransferHistory(req, res) {
 }
 
 
-
+async function getStoreItemsByStoreId(req, res) {
+  const { storeId } = req.body;
+  if (!storeId) return res.status(404).json({ message: "Store Not found." });
+  try {
+    let [storeItems, uomData] = await Promise.all([models.StoreItems.findAll({
+      where: {
+        storeId,
+      }
+    }), models.UOM.findAll({})]);
+    const myMap = new Map();
+    uomData.map((uom => myMap.set(uom.id, uom.code)));
+    const stores = {};
+    let arr = [];
+    for (const storeItem of storeItems) {
+      if (stores[storeItem?.itemId] || stores[storeItem?.itemId]==0) {
+        stores[storeItem.itemId] += storeItem?.quantity;
+      }
+      else {
+        stores[storeItem.itemId] = storeItem?.quantity;
+        arr.push(storeItem);
+      }
+    }
+    storeItems = [];
+    for (const storeItem of arr) {
+      storeItem.quantity = stores[storeItem.itemId];
+      const item = await models.Items.findOne({
+        where: {
+          id: storeItem.itemId
+        }
+      });
+      if (item) {
+        const alternateUnit = await models.AlternateUnits.findAll({
+          where: {
+            itemId: item.id
+          }
+        });
+        const units = [];
+        for (const unit of alternateUnit) {
+          let obj = { ...unit?.dataValues };
+          const code = myMap.get(unit.alternateUnits);
+          obj.code = code;
+          units.push(obj);
+        }
+        item.alternateUnit = units;
+        storeItem.itemId = item;
+        storeItems.push(storeItem);
+      }
+    }
+    res.status(200).json({ storeItems });
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({ message: "Something went Wrong." });
+  }
+}
 
 module.exports = {
   addStore: addStore,
@@ -607,5 +711,6 @@ module.exports = {
   getStoresByItem: getStoresByItem,
   stockTransfer: stockTransfer,
   getItemStockTransferHistory: getItemStockTransferHistory,
-  getStockTransferHistory: getStockTransferHistory
+  getStockTransferHistory: getStockTransferHistory,
+  getStoreItemsByStoreId: getStoreItemsByStoreId
 };
