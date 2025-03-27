@@ -1,7 +1,5 @@
 'use strict';
-const {
-  Model
-} = require('sequelize');
+const { Model } = require('sequelize');
 module.exports = (sequelize, DataTypes) => {
   class DocumentTemplates extends Model {
     /**
@@ -10,7 +8,13 @@ module.exports = (sequelize, DataTypes) => {
      * The `models/index` file will call this method automatically.
      */
     static associate(models) {
-      // define association here
+      // Define association: One DocumentTemplate can be associated with multiple Documents
+      DocumentTemplates.hasMany(models.Documents, {
+        foreignKey: 'documentTemplateId',
+        as: 'documents',
+        onDelete: 'SET NULL',
+        onUpdate: 'CASCADE',
+      });
     }
   }
   DocumentTemplates.init({
