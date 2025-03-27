@@ -21,6 +21,13 @@ module.exports = (sequelize, DataTypes) => {
         onDelete: 'SET NULL',
         onUpdate: 'CASCADE',
       });
+
+      Documents.belongsTo(models.DocumentTemplates, {
+        foreignKey: 'documentTemplateId',
+        as: 'documentTemplate',
+        onDelete: 'SET NULL',
+        onUpdate: 'CASCADE',
+      });
     }
   }
 
@@ -102,6 +109,14 @@ module.exports = (sequelize, DataTypes) => {
       allowNull: true,
       references: {
         model: 'CompanyTermsConditions',
+        key: 'id'
+      }
+    },
+    documentTemplateId: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      references: {
+        model: 'DocumentTemplates',
         key: 'id'
       }
     }
