@@ -2,6 +2,7 @@ const models = require('../models');
 
 async function createDocument(req, res) {
     const {
+        documentTemplateId = null,
         documentType = null,
         documentNumber = null,
         buyerName = null,
@@ -72,6 +73,7 @@ async function createDocument(req, res) {
     } = req.body;
 
     const document = await models.Documents.create({
+        documentTemplateId,
         documentType,
         documentNumber,
         buyerName,
@@ -264,6 +266,7 @@ async function getDocumentById(req, res) {
 
         const response = {
             ...document.toJSON(),
+            documentTemplateId: document.documentTemplateId,
             items,
             additionalCharges,
             bankDetails: bankDetails || {},
