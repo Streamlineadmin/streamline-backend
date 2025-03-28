@@ -201,6 +201,33 @@ async function createDocument(req, res) {
         )
     ]);
 
+    await Promise.all([
+      models.StoreItems.bulkCreate(
+        items.map(item => ({
+          storeId: store,
+          itemId: item.itemId,
+          quantity: item.quantity,
+          status: 1,
+          addedBy: transferredBy,
+          price: item?.price
+        }))
+      ),
+      models.StockTransfer.bulkCreate(
+        items.map(item => ({
+          transferNumber: null,
+          fromStoreId: null,
+          itemId: item.itemId,
+          quantity: item.quantity,
+          toStoreId: store,
+          transferDate,
+          transferredBy,
+          comment: stockData.comment,
+          companyId,
+          price: item.price
+        }))
+      ),
+    ]);
+
     res.status(201).json({
         message: "Document and related data created successfully!"
     });
