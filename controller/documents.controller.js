@@ -69,6 +69,7 @@ async function createDocument(req, res) {
         pay_to_transporter = null,
         inspection_date = null,
         attachments = [],
+        documentComments = null,
     } = req.body;
 
     const document = await models.Documents.create({
@@ -198,7 +199,15 @@ async function createDocument(req, res) {
                 documentNumber: document.documentNumber,
                 attachmentName: attachment
             }))
-        )
+        ),
+        models.DocumentComments.create(
+          {
+            documentId: document.id,   // Ensure documentId is used as FK
+            commentText: documentComments, 
+            createdBy: createdBy,
+            createdAt: new Date(),
+            updatedAt: new Date() 
+        }),
     ]);
 
     res.status(201).json({
@@ -219,13 +228,15 @@ async function getDocuments(req, res) {
     }
 
     const documentNumbers = documents.map(doc => doc.documentNumber);
+    const documentIds = documents.map(doc => doc.id);
 
-    const [items, additionalCharges, bankDetails, termsConditions, attachments] = await Promise.all([
+    const [items, additionalCharges, bankDetails, termsConditions, attachments, documentComments] = await Promise.all([
         models.DocumentItems.findAll({ where: { documentNumber: documentNumbers } }),
         models.DocumentAdditionalCharges.findAll({ where: { documentNumber: documentNumbers } }),
         models.DocumentBankDetails.findAll({ where: { documentNumber: documentNumbers } }),
         models.CompanyTermsCondition.findAll({ where: { documentNumber: documentNumbers } }),
-        models.DocumentAttachments.findAll({ where: { documentNumber: documentNumbers } })
+        models.DocumentAttachments.findAll({ where: { documentNumber: documentNumbers } }),
+        models.DocumentComments.findAll({ where: { documentId: documentIds } }),
     ]);
 
     const formattedResult = documents.map(document => ({
@@ -234,7 +245,8 @@ async function getDocuments(req, res) {
         additionalCharges: additionalCharges.filter(charge => charge.documentNumber === document.documentNumber),
         bankDetails: bankDetails.find(bank => bank.documentNumber === document.documentNumber) || {},
         termsCondition: termsConditions.find(tc => tc.documentNumber === document.documentNumber) || {},
-        attachments: attachments.filter(att => att.documentNumber === document.documentNumber)
+        attachments: attachments.filter(att => att.documentNumber === document.documentNumber),
+        documentComments: documentComments.filter(comment => comment.documentId === document.id),
     }));
 
     res.status(200).json(formattedResult);
@@ -253,12 +265,13 @@ async function getDocumentById(req, res) {
             return res.status(404).json({ message: "Document not found" });
         }
 
-        const [items, additionalCharges, bankDetails, termsCondition, attachments] = await Promise.all([
+        const [items, additionalCharges, bankDetails, termsCondition, attachments, documentComments] = await Promise.all([
             models.DocumentItems.findAll({ where: { documentNumber } }),
             models.DocumentAdditionalCharges.findAll({ where: { documentNumber } }),
             models.DocumentBankDetails.findOne({ where: { documentNumber } }),
             models.CompanyTermsCondition.findOne({ where: { companyId, documentNumber } }),
-            models.DocumentAttachments.findAll({ where: { documentNumber } })
+            models.DocumentAttachments.findAll({ where: { documentNumber } }),
+            models.DocumentComments.findAll({ where: { documentId: document.id } })
         ]);
 
         const response = {
@@ -270,7 +283,8 @@ async function getDocumentById(req, res) {
                 ? JSON.parse(termsCondition.termsCondition)
                 : [],
             attachments: attachments.map(att => att.attachmentName),
-            logisticDetails: document.logisticDetails || null
+            logisticDetails: document.logisticDetails || null,
+            documentComments,
         };
 
         return res.status(200).json(response);
