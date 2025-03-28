@@ -203,7 +203,28 @@ async function createDocument(req, res) {
                 documentNumber: document.documentNumber,
                 attachmentName: attachment
             }))
-        )
+        ),
+        models.StoreItems.bulkCreate(
+          items.map(item => ({
+            storeId: store,
+            itemId: item.id,
+            quantity: item.receivedToday,
+            status: 1,
+            addedBy: companyId,
+            price: item?.price,
+          }))
+        ),
+        models.StockTransfer.bulkCreate(
+          items.map(item => ({
+            transferNumber: null,
+            fromStoreId: null,
+            itemId: item.id,
+            quantity: item.receivedToday,
+            toStoreId: store,
+            companyId,
+            price: item.price,
+          }))
+        ),
     ]);
 
     res.status(201).json({
