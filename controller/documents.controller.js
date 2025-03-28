@@ -213,6 +213,27 @@ async function createDocument(req, res) {
             createdAt: new Date(),
             updatedAt: new Date() 
         }),
+        models.StoreItems.bulkCreate(
+          items.map(item => ({
+            storeId: store,
+            itemId: item.id,
+            quantity: item.receivedToday,
+            status: 1,
+            addedBy: companyId,
+            price: item?.price,
+          }))
+        ),
+        models.StockTransfer.bulkCreate(
+          items.map(item => ({
+            transferNumber: null,
+            fromStoreId: null,
+            itemId: item.id,
+            quantity: item.receivedToday,
+            toStoreId: store,
+            companyId,
+            price: item.price,
+          }))
+        ),
     ]);
 
     res.status(201).json({
@@ -291,7 +312,7 @@ async function getDocumentById(req, res) {
                 : [],
             attachments: attachments.map(att => att.attachmentName),
             logisticDetails: document.logisticDetails || null,
-            documentComments,,
+            documentComments,
             template: document.documentTemplate?.template || null,
         };
 
