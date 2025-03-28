@@ -23,7 +23,7 @@ module.exports = (sequelize, DataTypes) => {
     conversionFactor: DataTypes.FLOAT,
     metricsUnit: DataTypes.INTEGER,
     HSNCode: DataTypes.STRING,
-    price: DataTypes.INTEGER,
+    price: DataTypes.FLOAT,
     taxType: DataTypes.INTEGER,
     tax: {
       type: DataTypes.FLOAT,
