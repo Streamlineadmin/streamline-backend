@@ -215,9 +215,9 @@ async function createDocument(req, res) {
         }),
         models.StoreItems.bulkCreate(
           items.map(item => ({
-            storeId: store,
-            itemId: item.id,
-            quantity: item.receivedToday,
+            storeId: item.store,
+            itemId: item.itemId,
+            quantity: item.quantity,
             status: 1,
             addedBy: companyId,
             price: item?.price,
@@ -225,11 +225,11 @@ async function createDocument(req, res) {
         ),
         models.StockTransfer.bulkCreate(
           items.map(item => ({
-            transferNumber: null,
+            transferNumber:item.transferNumber,
             fromStoreId: null,
-            itemId: item.id,
-            quantity: item.receivedToday,
-            toStoreId: store,
+            itemId: item.itemId,
+            quantity: item.quantity,
+            toStoreId: item.toStore,
             companyId,
             price: item.price,
           }))
