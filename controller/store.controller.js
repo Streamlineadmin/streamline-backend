@@ -341,7 +341,7 @@ async function stockTransfer(req, res) {
       }
 
       // Create StockTransfer entry
-      addReduce != 2 && await models.StockTransfer.create({
+      await models.StockTransfer.create({
         transferNumber,
         fromStoreId: element?.fromStore || null,
         itemId: element.itemId,
@@ -368,7 +368,7 @@ async function stockTransfer(req, res) {
         await models.Items.update(
           {
             currentStock: item.currentStock + (addReduce != 2 ? element.quantity : element.quantity * -1),
-            price: addReduce == 2 ? ((item.price * item.currentStock) - price) / (item.currentStock - element.quantity) : (((item.currentStock * item.price) + (element.quantity * element.price)) / (item.currentStock + element.quantity))
+            price: addReduce == 2 ? useFIFO ? ((item.price * item.currentStock) - price) / (item.currentStock - element.quantity) : item.price : (((item.currentStock * item.price) + (element.quantity * element.price)) / (item.currentStock + element.quantity))
           },
           { where: { id: element.itemId, companyId } }
         );

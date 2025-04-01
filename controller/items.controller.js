@@ -384,14 +384,17 @@ async function addBulkItem(req, res) {
         const subCategoryMap = new Map(subCategories.map(sub => [sub.name, sub]));
         const microCategoryMap = new Map(microCategories.map(micro => [micro.name, micro]));
 
+        const uoms = await models.UOM.findAll({});
+        const uomMap = new Map(uoms.map(uom=>[uom.name,uom.id]));
+
         const itemsData = [];
 
         for (const item of data) {
-            const { '* Item ID': itemId, '* Item Name': itemName, '* Item Type': itemType } = item;
+            const { '* Item ID': itemId, '* Item Name': itemName, '* Item Type': itemType, '* Metrics Unit':metricsUnit } = item;
             if (existingItemMap.has(itemId?.toString())) {
                 err = 'Item ID already exists. ';
             }
-            if (!itemId || !itemName || !itemType) {
+            if (!itemId || !itemName || !itemType || !metricsUnit) {
                 err += 'Required fields are missing. ';
             }
 
@@ -408,6 +411,7 @@ async function addBulkItem(req, res) {
             let category = categoryMap.get(item.Category) || null;
             let subCategory = subCategoryMap.get(item['Sub Category']) || null;
             let microCategory = microCategoryMap.get(item['Micro Category']) || null;
+            let uom = uomMap.get(metricsUnit?.split(" ")[0]) || null;
 
             if (item.Category && !category) {
                 err += "Category Not Found. ";
@@ -435,7 +439,7 @@ async function addBulkItem(req, res) {
                 itemId,
                 itemName,
                 itemType,
-                metricsUnit: 'uom.id',
+                metricsUnit: uom,
                 category: category?.id || null,
                 subCategory: subCategory?.id || null,
                 microCategory: microCategory?.id || null,
@@ -604,7 +608,7 @@ async function stockReconcilation(req, res) {
             let err = '';
             const existingItem = await models.Items.findOne({
                 where: {
-                    itemId: Number(itemId),
+                    itemId: itemId,
                     companyId: Number(req.body.companyId)
                 }
             });
@@ -632,7 +636,7 @@ async function stockReconcilation(req, res) {
                 const storeItemData = {
                     storeId: Number(req.body.storeId),
                     itemId: existingItem.id,
-                    quantity: Number(item['Final Stock']),
+                    quantity: Number(item['Final Stock'] || 0),
                     addedBy: Number(req.body.companyId),
                     status: 1
                 };
