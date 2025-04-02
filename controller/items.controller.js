@@ -52,7 +52,8 @@ function addItem(req, res) {
                     maxStock: req.body.maxStock,
                     description: req.body.description,
                     companyId,
-                    status: 1
+                    status: 1,
+                    customFields: req.body.customField
                 };
 
                 models.Items.create(itemData)
@@ -155,6 +156,7 @@ async function editItem(req, res) {
                     minStock: req.body.minStock,
                     maxStock: req.body.maxStock,
                     description: req.body.description,
+                    customFields: req.body.customField
                 },
                 { where: { id }, transaction }
             );
@@ -385,12 +387,12 @@ async function addBulkItem(req, res) {
         const microCategoryMap = new Map(microCategories.map(micro => [micro.name, micro]));
 
         const uoms = await models.UOM.findAll({});
-        const uomMap = new Map(uoms.map(uom=>[uom.name,uom.id]));
+        const uomMap = new Map(uoms.map(uom => [uom.name, uom.id]));
 
         const itemsData = [];
 
         for (const item of data) {
-            const { '* Item ID': itemId, '* Item Name': itemName, '* Item Type': itemType, '* Metrics Unit':metricsUnit } = item;
+            const { '* Item ID': itemId, '* Item Name': itemName, '* Item Type': itemType, '* Metrics Unit': metricsUnit } = item;
             if (existingItemMap.has(itemId?.toString())) {
                 err = 'Item ID already exists. ';
             }

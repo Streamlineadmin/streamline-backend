@@ -120,7 +120,7 @@ async function deleteStore(req, res) {
   const storeItems = await models.StoreItems.findAll({
     where: {
       storeId,
-      quantity: { [Op.gt]: 0 }
+      quantity: { [models.Sequelize.Op.gt]: 0 }
     }
   });
   if (storeItems?.length > 0) return res.status(409).json({
@@ -661,7 +661,7 @@ async function getStoreItemsByStoreId(req, res) {
     const stores = {};
     let arr = [];
     for (const storeItem of storeItems) {
-      if (stores[storeItem?.itemId] || stores[storeItem?.itemId]==0) {
+      if (stores[storeItem?.itemId] || stores[storeItem?.itemId] == 0) {
         stores[storeItem.itemId] += storeItem?.quantity;
       }
       else {

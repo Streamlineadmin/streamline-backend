@@ -22,7 +22,13 @@ module.exports = (sequelize, DataTypes) => {
     companyId: DataTypes.INTEGER,
     userId: DataTypes.INTEGER,
     ip_address: DataTypes.STRING,
-    status: DataTypes.INTEGER
+    status: DataTypes.INTEGER,
+    required: DataTypes.BOOLEAN,
+    showByDefault: DataTypes.BOOLEAN,
+    options: {
+      type: DataTypes.JSON,
+      defaultValue: []
+    }
   }, {
     sequelize,
     modelName: 'CustomFields',
