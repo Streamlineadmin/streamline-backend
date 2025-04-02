@@ -214,25 +214,31 @@ async function createDocument(req, res) {
             updatedAt: new Date() 
         }),
         models.StoreItems.bulkCreate(
-          items.map(item => ({
-            storeId: item.store,
-            itemId: item.itemId,
-            quantity: item.quantity,
-            status: 1,
-            addedBy: companyId,
-            price: item?.price,
-          }))
+          items.map(item => {
+            console.log("Mapping StoreItems:", item);
+            return {
+              storeId: item.store,
+              itemId: item.itemId,
+              quantity: item.quantity,
+              status: 1,
+              addedBy: companyId,
+              price: item?.price,
+            };
+          })
         ),
         models.StockTransfer.bulkCreate(
-          items.map(item => ({
-            transferNumber:item.transferNumber,
-            fromStoreId: null,
-            itemId: item.itemId,
-            quantity: item.quantity,
-            toStoreId: item.toStore,
-            companyId,
-            price: item.price,
-          }))
+          items.map(item => {
+            console.log("Mapping StockTransfer:", item);
+            return {
+              transferNumber: item.transferNumber,
+              fromStoreId: null,
+              itemId: item.itemId,
+              quantity: item.quantity,
+              toStoreId: null,
+              companyId,
+              price: item.price,
+            };
+          })
         ),
     ]);
 
@@ -284,14 +290,40 @@ async function getDocumentById(req, res) {
 
         const document = await models.Documents.findOne({
             where: { documentNumber },
-            include: [{ model: models.LogisticDetails, as: 'logisticDetails' },
-                      { model: models.DocumentTemplates, as: 'documentTemplate' }]
+            include: [
+                { model: models.LogisticDetails, as: 'logisticDetails' },
+                { model: models.DocumentTemplates, as: 'documentTemplate' }
+            ]
         });
 
         if (!document) {
             return res.status(404).json({ message: "Document not found" });
         }
 
+        // Initialize variables for the latest GRN and its items
+        let latestGRN = null;
+        let latestGRNItems = [];
+
+        // Check if the current document is a Purchase Order
+        if (document.documentType === 'Purchase Order') {
+            // Find the latest GRN linked to this PO
+            latestGRN = await models.Documents.findOne({
+                where: {
+                    documentType: 'Goods Receive Notes',
+                    purchaseOrderNumber: document.documentNumber
+                },
+                order: [['createdAt', 'DESC']] 
+            });
+
+            // Fetch items from the latest GRN if found
+            if (latestGRN) {
+                latestGRNItems = await models.DocumentItems.findAll({
+                    where: { documentNumber: latestGRN.documentNumber }
+                });
+            }
+        }
+
+        // Fetch other related data (original items, charges, etc.)
         const [items, additionalCharges, bankDetails, termsCondition, attachments, documentComments] = await Promise.all([
             models.DocumentItems.findAll({ where: { documentNumber } }),
             models.DocumentAdditionalCharges.findAll({ where: { documentNumber } }),
@@ -301,15 +333,15 @@ async function getDocumentById(req, res) {
             models.DocumentComments.findAll({ where: { documentId: document.id } })
         ]);
 
+        // Construct the response including the latest GRN items
         const response = {
             ...document.toJSON(),
             documentTemplateId: document.documentTemplateId,
-            items,
+            items, // Original PO items
+            latestGRNItems, // Items from the latest GRN
             additionalCharges,
             bankDetails: bankDetails || {},
-            termsCondition: termsCondition
-                ? JSON.parse(termsCondition.termsCondition)
-                : [],
+            termsCondition: termsCondition ? JSON.parse(termsCondition.termsCondition) : [],
             attachments: attachments.map(att => att.attachmentName),
             logisticDetails: document.logisticDetails || null,
             documentComments,
