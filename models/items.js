@@ -35,12 +35,16 @@ module.exports = (sequelize, DataTypes) => {
     description: DataTypes.TEXT,
     companyId: DataTypes.INTEGER,
     itemId: DataTypes.INTEGER,
-    status: DataTypes.INTEGER
+    status: DataTypes.INTEGER,
+    customFields: {
+      type: DataTypes.JSON,
+      defaultValue: []
+    }
   }, {
-  sequelize,
-  modelName: 'Items',
-});
+    sequelize,
+    modelName: 'Items',
+  });
 
 
-return Items;
+  return Items;
 };
