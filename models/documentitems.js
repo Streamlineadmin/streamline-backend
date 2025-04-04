@@ -28,7 +28,8 @@ module.exports = (sequelize, DataTypes) => {
     tax: DataTypes.STRING,
     totalTax: DataTypes.STRING,
     totalBeforeTax: DataTypes.STRING,
-    totalAfterTax: DataTypes.STRING
+    totalAfterTax: DataTypes.STRING,
+    receivedToday: DataTypes.INTEGER
   }, {
     sequelize,
     modelName: 'DocumentItems',

@@ -13,7 +13,8 @@ function addBuyerSupplier(req, res) {
         GSTNumber: req.body.gstNumber,
         GSTType: req.body.gstType,
         ip_address: req.body.ip_address,
-        status: 1
+        status: 1,
+        customerType: req.body?.customerType || "company"
     }
 
     models.BuyerSupplier.create(buyerSupplierData).then(result => {

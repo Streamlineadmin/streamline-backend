@@ -24,7 +24,12 @@ module.exports = (sequelize, DataTypes) => {
     GSTNumber: DataTypes.STRING,
     GSTType: DataTypes.INTEGER,
     status: DataTypes.INTEGER,
-    ip_address: DataTypes.STRING
+    ip_address: DataTypes.STRING,
+    customerType: {
+      type: DataTypes.STRING,
+      defaultValue: 'company',
+    }
+
   }, {
     sequelize,
     modelName: 'BuyerSupplier',

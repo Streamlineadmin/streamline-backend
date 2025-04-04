@@ -1,298 +1,346 @@
+const { Op } = require('sequelize');
 const models = require('../models');
 
 async function createDocument(req, res) {
+  try {
     const {
-        documentType = null,
-        documentNumber = null,
-        buyerName = null,
-        buyerBillingAddress = null,
-        buyerDeliveryAddress = null,
-        buyerContactNumber = null,
-        buyerEmail = null,
-        supplierName = null,
-        supplierBillingAddress = null,
-        supplierDeliverAddress = null,
-        supplierContactNo = null,
-        supplierEmail = null,
-        documentDate = null,
-        ammendment = null,
-        deliveryDate = null,
-        paymentTerm = null,
-        store = null,
-        enquiryNumber = null,
-        enquiryDate = null,
-        logisticDetailsId = null,
-        additionalDetails = null,
-        signature = null,
-        companyId = null,
-        createdBy = null,
-        status = null,
-        ip_address = null,
-        paymentDate = null,
-        POCName = null,
-        POCNumber = null,
-        POCDate = null,
-        OCNumber = null,
-        OCDate = null,
-        transporterName = null,
-        TGNumber = null,
-        TDNumber = null,
-        TDDate = null,
-        VehicleNumber = null,
-        replyDate = null,
-        Attention = null,
-        invoiceNumber = null,
-        invoiceDate = null,
-        billDate = null,
-        returnRecieveDate = null,
-        creditNoteNumber = null,
-        creditNotedate = null,
-        items = [],
-        additionalCharges = [],
-        bankDetails = {},
-        termsCondition = null,
-        quotationNumber = null,
-        quotationDate = null,
-        orderConfirmationNumber = null,
-        orderConfirmationDate = null,
-        purchaseOrderNumber = null,
-        purchaseOrderDate = null,
-        grn_number = null,
-        grn_Date = null,
-        indent_number = null,
-        indent_date = null,
-        supplier_invoice_number = null,
-        supplier_invoice_date = null,
-        challan_number = null,
-        challan_date = null,
-        debit_note_number = null,
-        pay_to_transporter = null,
-        inspection_date = null,
-        attachments = [],
-        documentComments = null,
+      documentType = null,
+      documentNumber = null,
+      buyerName = null,
+      buyerBillingAddress = null,
+      buyerDeliveryAddress = null,
+      buyerContactNumber = null,
+      buyerEmail = null,
+      supplierName = null,
+      supplierBillingAddress = null,
+      supplierDeliverAddress = null,
+      supplierContactNo = null,
+      supplierEmail = null,
+      documentDate = null,
+      ammendment = null,
+      deliveryDate = null,
+      paymentTerm = null,
+      store = null,
+      enquiryNumber = null,
+      enquiryDate = null,
+      logisticDetailsId = null,
+      additionalDetails = null,
+      signature = null,
+      companyId = null,
+      createdBy = null,
+      status = null,
+      ip_address = null,
+      paymentDate = null,
+      POCName = null,
+      POCNumber = null,
+      POCDate = null,
+      OCNumber = null,
+      OCDate = null,
+      transporterName = null,
+      TGNumber = null,
+      TDNumber = null,
+      TDDate = null,
+      VehicleNumber = null,
+      replyDate = null,
+      Attention = null,
+      invoiceNumber = null,
+      invoiceDate = null,
+      billDate = null,
+      returnRecieveDate = null,
+      creditNoteNumber = null,
+      creditNotedate = null,
+      items = [],
+      additionalCharges = [],
+      bankDetails = {},
+      termsCondition = null,
+      quotationNumber = null,
+      quotationDate = null,
+      orderConfirmationNumber = null,
+      orderConfirmationDate = null,
+      purchaseOrderNumber = null,
+      purchaseOrderDate = null,
+      grn_number = null,
+      grn_Date = null,
+      indent_number = null,
+      indent_date = null,
+      supplier_invoice_number = null,
+      supplier_invoice_date = null,
+      challan_number = null,
+      challan_date = null,
+      debit_note_number = null,
+      pay_to_transporter = null,
+      inspection_date = null,
+      attachments = [],
+      documentComments = null,
+      tcsData = []
     } = req.body;
 
     const document = await models.Documents.create({
-        documentType,
-        documentNumber,
-        buyerName,
-        buyerBillingAddress,
-        buyerDeliveryAddress,
-        buyerContactNumber,
-        buyerEmail,
-        supplierName,
-        supplierBillingAddress,
-        supplierDeliverAddress,
-        supplierContactNo,
-        supplierEmail,
-        documentDate,
-        ammendment,
-        deliveryDate,
-        paymentTerm,
-        store,
-        enquiryNumber,
-        enquiryDate,
-        logisticDetailsId,
-        additionalDetails,
-        signature,
-        companyId,
-        createdBy,
-        status,
-        ip_address,
-        paymentDate,
-        POCName,
-        POCNumber,
-        POCDate,
-        OCNumber,
-        OCDate,
-        transporterName,
-        TGNumber,
-        TDNumber,
-        TDDate,
-        VehicleNumber,
-        replyDate,
-        Attention,
-        invoiceNumber,
-        invoiceDate,
-        billDate,
-        returnRecieveDate,
-        creditNoteNumber,
-        creditNotedate,
-        quotationNumber,
-        quotationDate,
-        orderConfirmationNumber,
-        orderConfirmationDate,
-        purchaseOrderNumber,
-        purchaseOrderDate,
-        grn_number,
-        grn_Date,
-        indent_number,
-        indent_date,
-        supplier_invoice_number,
-        supplier_invoice_date,
-        challan_number,
-        challan_date,
-        debit_note_number,
-        pay_to_transporter,
-        inspection_date,
+      documentType,
+      documentNumber,
+      buyerName,
+      buyerBillingAddress,
+      buyerDeliveryAddress,
+      buyerContactNumber,
+      buyerEmail,
+      supplierName,
+      supplierBillingAddress,
+      supplierDeliverAddress,
+      supplierContactNo,
+      supplierEmail,
+      documentDate,
+      ammendment,
+      deliveryDate,
+      paymentTerm,
+      store,
+      enquiryNumber,
+      enquiryDate,
+      logisticDetailsId,
+      additionalDetails,
+      signature,
+      companyId,
+      createdBy,
+      status,
+      ip_address,
+      paymentDate,
+      POCName,
+      POCNumber,
+      POCDate,
+      OCNumber,
+      OCDate,
+      transporterName,
+      TGNumber,
+      TDNumber,
+      TDDate,
+      VehicleNumber,
+      replyDate,
+      Attention,
+      invoiceNumber,
+      invoiceDate,
+      billDate,
+      returnRecieveDate,
+      creditNoteNumber,
+      creditNotedate,
+      quotationNumber,
+      quotationDate,
+      orderConfirmationNumber,
+      orderConfirmationDate,
+      purchaseOrderNumber,
+      purchaseOrderDate,
+      grn_number,
+      grn_Date,
+      indent_number,
+      indent_date,
+      supplier_invoice_number,
+      supplier_invoice_date,
+      challan_number,
+      challan_date,
+      debit_note_number,
+      pay_to_transporter,
+      inspection_date,
+      tcsData
     });
 
     const companyTermsCondition = await models.CompanyTermsCondition.create({
-        companyId: companyId,
-        termsCondition: termsCondition || [],
-        ip_address: ip_address,
-        documentNumber: document.documentNumber,
-        createdAt: new Date(),
-        updatedAt: new Date()
+      companyId: companyId,
+      termsCondition: termsCondition || [],
+      ip_address: ip_address,
+      documentNumber: document.documentNumber,
+      createdAt: new Date(),
+      updatedAt: new Date()
     });
 
     await document.update({
-        companyTermsConditionId: companyTermsCondition.id
+      companyTermsConditionId: companyTermsCondition.id
     });
 
     await Promise.all([
-        models.DocumentItems.bulkCreate(
-            items.map(item => ({
-                documentNumber: document.documentNumber,
-                itemId: item.itemId,
-                itemName: item.itemName,
-                HSN: item.HSN,
-                UOM: item.UOM,
-                quantity: item.quantity,
-                price: item.price,
-                discountOne: item.discountOne,
-                discountTwo: item.discountTwo,
-                totalDiscount: item.totalDiscount,
-                taxType: item.taxType,
-                tax: item.tax,
-                totalTax: item.totalTax,
-                totalBeforeTax: item.totalBeforeTax,
-                totalAfterTax: item.totalAfterTax
-            }))
-        ),
-        models.DocumentAdditionalCharges.bulkCreate(
-            additionalCharges.map(charge => ({
-                documentNumber: document.documentNumber,
-                chargingFor: charge.chargingFor,
-                price: charge.price,
-                tax: charge.tax,
-                total: charge.total,
-                status: charge.status,
-                ip_address: charge.ip_address
-            }))
-        ),
-        models.DocumentBankDetails.create({
+      models.DocumentItems.bulkCreate(
+        items.map(item => {
+          return ({
             documentNumber: document.documentNumber,
-            bankName: bankDetails.bankName || null,
-            accountName: bankDetails.accountName || null,
-            accountNumber: bankDetails.accountNumber || null,
-            branch: bankDetails.branch || null,
-            IFSCCode: bankDetails.IFSCCode || null,
-            MICRCode: bankDetails.MICRCode || null,
-            address: bankDetails.address || null,
-            SWIFTCode: bankDetails.SWIFTCode || null,
-            status: bankDetails.status || 1,
-            ip_address: bankDetails.ip_address || null,
-        }),
-        models.DocumentAttachments.bulkCreate(
-            attachments.map(attachment => ({
-                documentNumber: document.documentNumber,
-                attachmentName: attachment
-            }))
-        ),
-        models.DocumentComments.create(
-          {
-            documentId: document.id,   // Ensure documentId is used as FK
-            commentText: documentComments, 
-            createdBy: createdBy,
-            createdAt: new Date(),
-            updatedAt: new Date() 
+            itemId: item.itemId,
+            itemName: item.itemName,
+            HSN: item.HSN,
+            UOM: item.UOM,
+            quantity: item.quantity,
+            price: item.price,
+            discountOne: item.discountOne,
+            discountTwo: item.discountTwo,
+            totalDiscount: item.totalDiscount,
+            taxType: item.taxType,
+            tax: item.tax,
+            totalTax: item.totalTax,
+            totalBeforeTax: item.totalBeforeTax,
+            totalAfterTax: item.totalAfterTax,
+            receivedToday: item.receivedToday || 0
+          })
+        })
+      ),
+      models.DocumentAdditionalCharges.bulkCreate(
+        additionalCharges.map(charge => ({
+          documentNumber: document.documentNumber,
+          chargingFor: charge.chargingFor,
+          price: charge.price,
+          tax: charge.tax,
+          total: charge.total,
+          status: charge.status,
+          ip_address: charge.ip_address
+        }))
+      ),
+      models.DocumentBankDetails.create({
+        documentNumber: document.documentNumber,
+        bankName: bankDetails.bankName || null,
+        accountName: bankDetails.accountName || null,
+        accountNumber: bankDetails.accountNumber || null,
+        branch: bankDetails.branch || null,
+        IFSCCode: bankDetails.IFSCCode || null,
+        MICRCode: bankDetails.MICRCode || null,
+        address: bankDetails.address || null,
+        SWIFTCode: bankDetails.SWIFTCode || null,
+        status: bankDetails.status || 1,
+        ip_address: bankDetails.ip_address || null,
+      }),
+      models.DocumentAttachments.bulkCreate(
+        attachments.map(attachment => ({
+          documentNumber: document.documentNumber,
+          attachmentName: attachment
+        }))
+      ),
+      models.DocumentComments.create(
+        {
+          documentId: document.id,   // Ensure documentId is used as FK
+          commentText: documentComments,
+          createdBy: createdBy,
+          createdAt: new Date(),
+          updatedAt: new Date()
         }),
     ]);
 
+    if (documentType === "Goods Receive Notes") {
+      const existingItems = await models.Items.findAll({});
+      const stores = await models.Store.findAll({});
+      const itemsMap = new Map(existingItems.map(existingItem => [existingItem.itemId, existingItem.id]));
+      const storesMap = new Map(stores.map(store => [store.name, store.id]));
+      await Promise.all([models.StoreItems.bulkCreate(items.map(item => {
+        const itemId = itemsMap.get(item.itemId) || null;
+        const storeId = storesMap.get(store) || null;
+        return {
+          storeId,
+          itemId,
+          quantity: item?.receivedToday || 0,
+          status: 1,
+          addedBy: createdBy,
+          price: item?.price
+        }
+      })
+      ),
+      models.StockTransfer.bulkCreate(items.map(item => {
+        const itemId = itemsMap.get(item.itemId) || null;
+        const storeId = storesMap.get(store) || null;
+        return {
+          transferNumber: 0,
+          fromStoreId: null,
+          itemId,
+          quantity: item?.receivedToday || 0,
+          toStoreId: storeId,
+          transferDate: new Date().toISOString(),
+          transferredBy: createdBy,
+          comment: '',
+          companyId,
+          price: item?.price
+        }
+      }))]
+      );
+    }
+
     res.status(201).json({
-        message: "Document and related data created successfully!"
+      message: "Document and related data created successfully!"
     });
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({ message: 'Something went wrong', error });
+  }
 }
 
 async function getDocuments(req, res) {
-    const { companyId } = req.body;
+  const { companyId } = req.body;
 
-    const documents = await models.Documents.findAll({
-        where: { companyId },
-        include: [{ model: models.LogisticDetails, as: 'logisticDetails' }]
-    });
+  const documents = await models.Documents.findAll({
+    where: { companyId },
+    include: [{ model: models.LogisticDetails, as: 'logisticDetails' }]
+  });
 
-    if (!documents || documents.length === 0) {
-        return res.status(200).json([]);
-    }
+  if (!documents || documents.length === 0) {
+    return res.status(200).json([]);
+  }
 
-    const documentNumbers = documents.map(doc => doc.documentNumber);
-    const documentIds = documents.map(doc => doc.id);
+  const documentNumbers = documents.map(doc => doc.documentNumber);
+  const documentIds = documents.map(doc => doc.id);
 
-    const [items, additionalCharges, bankDetails, termsConditions, attachments, documentComments] = await Promise.all([
-        models.DocumentItems.findAll({ where: { documentNumber: documentNumbers } }),
-        models.DocumentAdditionalCharges.findAll({ where: { documentNumber: documentNumbers } }),
-        models.DocumentBankDetails.findAll({ where: { documentNumber: documentNumbers } }),
-        models.CompanyTermsCondition.findAll({ where: { documentNumber: documentNumbers } }),
-        models.DocumentAttachments.findAll({ where: { documentNumber: documentNumbers } }),
-        models.DocumentComments.findAll({ where: { documentId: documentIds } }),
-    ]);
+  const [items, additionalCharges, bankDetails, termsConditions, attachments, documentComments] = await Promise.all([
+    models.DocumentItems.findAll({ where: { documentNumber: documentNumbers } }),
+    models.DocumentAdditionalCharges.findAll({ where: { documentNumber: documentNumbers } }),
+    models.DocumentBankDetails.findAll({ where: { documentNumber: documentNumbers } }),
+    models.CompanyTermsCondition.findAll({ where: { documentNumber: documentNumbers } }),
+    models.DocumentAttachments.findAll({ where: { documentNumber: documentNumbers } }),
+    models.DocumentComments.findAll({ where: { documentId: documentIds } }),
+  ]);
 
-    const formattedResult = documents.map(document => ({
-        ...document.toJSON(),
-        items: items.filter(item => item.documentNumber === document.documentNumber),
-        additionalCharges: additionalCharges.filter(charge => charge.documentNumber === document.documentNumber),
-        bankDetails: bankDetails.find(bank => bank.documentNumber === document.documentNumber) || {},
-        termsCondition: termsConditions.find(tc => tc.documentNumber === document.documentNumber) || {},
-        attachments: attachments.filter(att => att.documentNumber === document.documentNumber),
-        documentComments: documentComments.filter(comment => comment.documentId === document.id),
-    }));
+  const formattedResult = documents.map(document => ({
+    ...document.toJSON(),
+    items: items.filter(item => item.documentNumber === document.documentNumber),
+    additionalCharges: additionalCharges.filter(charge => charge.documentNumber === document.documentNumber),
+    bankDetails: bankDetails.find(bank => bank.documentNumber === document.documentNumber) || {},
+    termsCondition: termsConditions.find(tc => tc.documentNumber === document.documentNumber) || {},
+    attachments: attachments.filter(att => att.documentNumber === document.documentNumber),
+    documentComments: documentComments.filter(comment => comment.documentId === document.id),
+  }));
 
-    res.status(200).json(formattedResult);
+  res.status(200).json(formattedResult);
 }
 
 async function getDocumentById(req, res) {
-    try {
-        const { documentNumber, companyId } = req.body;
+  try {
+    const { documentNumber, companyId } = req.body;
 
-        const document = await models.Documents.findOne({
-            where: { documentNumber },
-            include: [{ model: models.LogisticDetails, as: 'logisticDetails' }]
-        });
+    const document = await models.Documents.findOne({
+      where: { documentNumber },
+      include: [{ model: models.LogisticDetails, as: 'logisticDetails' }]
+    });
 
-        if (!document) {
-            return res.status(404).json({ message: "Document not found" });
-        }
-
-        const [items, additionalCharges, bankDetails, termsCondition, attachments, documentComments] = await Promise.all([
-            models.DocumentItems.findAll({ where: { documentNumber } }),
-            models.DocumentAdditionalCharges.findAll({ where: { documentNumber } }),
-            models.DocumentBankDetails.findOne({ where: { documentNumber } }),
-            models.CompanyTermsCondition.findOne({ where: { companyId, documentNumber } }),
-            models.DocumentAttachments.findAll({ where: { documentNumber } }),
-            models.DocumentComments.findAll({ where: { documentId: document.id } })
-        ]);
-
-        const response = {
-            ...document.toJSON(),
-            items,
-            additionalCharges,
-            bankDetails: bankDetails || {},
-            termsCondition: termsCondition
-                ? JSON.parse(termsCondition.termsCondition)
-                : [],
-            attachments: attachments.map(att => att.attachmentName),
-            logisticDetails: document.logisticDetails || null,
-            documentComments,
-        };
-
-        return res.status(200).json(response);
-
-    } catch (error) {
-        console.error("Error fetching document:", error);
-        return res.status(500).json({ message: "Something went wrong, please try again later!" });
+    if (!document) {
+      return res.status(404).json({ message: "Document not found" });
     }
+
+    const [items, additionalCharges, bankDetails, termsCondition, attachments, documentComments] = await Promise.all([
+      models.DocumentItems.findAll({ where: { documentNumber } }),
+      models.DocumentAdditionalCharges.findAll({ where: { documentNumber } }),
+      models.DocumentBankDetails.findOne({ where: { documentNumber } }),
+      models.CompanyTermsCondition.findOne({ where: { companyId, documentNumber } }),
+      models.DocumentAttachments.findAll({ where: { documentNumber } }),
+      models.DocumentComments.findAll({ where: { documentId: document.id } })
+    ]);
+
+    const response = {
+      ...document.toJSON(),
+      items,
+      additionalCharges,
+      bankDetails: bankDetails || {},
+      termsCondition: termsCondition
+        ? JSON.parse(termsCondition.termsCondition)
+        : [],
+      attachments: attachments.map(att => att.attachmentName),
+      logisticDetails: document.logisticDetails || null,
+      documentComments,
+    };
+
+    return res.status(200).json(response);
+
+  } catch (error) {
+    console.error("Error fetching document:", error);
+    return res.status(500).json({ message: "Something went wrong, please try again later!" });
+  }
 }
 
 async function discardDocument(req, res) {
@@ -315,7 +363,7 @@ async function discardDocument(req, res) {
     try {
       // Mark the specified document as discarded
       await models.Documents.update(
-        { status: 2 },  
+        { status: 2 },
         { where: { id: documentId }, transaction }
       );
 
@@ -399,13 +447,52 @@ function getPreviewDocuments(req, res) {
         .status(500)
         .json({ message: "Something went wrong, please try again later!" });
     });
-}  
+}
+
+async function getDocumentItems(req, res) {
+  try {
+    const { purchaseOrderNumber } = req.body;
+    if (!purchaseOrderNumber) {
+      return res.status(404).json({ message: 'Purchase order not found.' });
+    }
+
+    const purchaseOrders = await models.Documents.findAll({
+      where: { purchaseOrderNumber },
+      attributes: ['documentNumber']
+    });
+
+    if (!purchaseOrders.length) {
+      return res.status(200).json({ receivedByItem: {} });
+    }
+
+    const documentNumbers = purchaseOrders.map(doc => doc.documentNumber);
+
+    const documentItems = await models.DocumentItems.findAll({
+      where: {
+        documentNumber: { [Op.in]: documentNumbers }
+      },
+      attributes: ['itemId', 'receivedToday']
+    });
+
+    const receivedByItem = documentItems.reduce((acc, item) => {
+      acc[item.itemId] = (acc[item.itemId] || 0) + item.receivedToday;
+      return acc;
+    }, {});
+
+    res.status(200).json({ receivedByItem });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Something went wrong.' });
+  }
+}
+
 
 module.exports = {
-    getDocuments,
-    getDocumentById,
-    createDocument,
-    discardDocument,
-    deleteDocument,
-    getPreviewDocuments,
+  getDocuments,
+  getDocumentById,
+  createDocument,
+  discardDocument,
+  deleteDocument,
+  getPreviewDocuments,
+  getDocumentItems
 };

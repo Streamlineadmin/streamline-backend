@@ -191,6 +191,8 @@ async function getStores(req, res) {
           where: {
             storeId: store.id,
           },
+          distinct: true,
+            col: 'itemId'
         });
 
         // Add store data along with item count to the response
@@ -661,7 +663,7 @@ async function getStoreItemsByStoreId(req, res) {
     const stores = {};
     let arr = [];
     for (const storeItem of storeItems) {
-      if (stores[storeItem?.itemId] || stores[storeItem?.itemId]==0) {
+      if (stores[storeItem?.itemId] || stores[storeItem?.itemId] == 0) {
         stores[storeItem.itemId] += storeItem?.quantity;
       }
       else {

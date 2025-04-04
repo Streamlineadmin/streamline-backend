@@ -9,5 +9,6 @@ router.post('/createDocument', documentsController.createDocument);
 router.post('/discardDocument', documentsController.discardDocument);
 router.post('/deleteDocument', documentsController.deleteDocument);
 router.post('/getPreviewDocuments', documentsController.getPreviewDocuments);
+router.post('/getDocumentItems', documentsController.getDocumentItems);
 
 module.exports = router;
