@@ -191,6 +191,8 @@ async function getStores(req, res) {
           where: {
             storeId: store.id,
           },
+          distinct: true,
+            col: 'itemId'
         });
 
         // Add store data along with item count to the response

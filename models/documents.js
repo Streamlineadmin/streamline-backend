@@ -104,6 +104,10 @@ module.exports = (sequelize, DataTypes) => {
         model: 'CompanyTermsConditions',
         key: 'id'
       }
+    },
+    tcsData: {
+      type: DataTypes.JSON,
+      defaultValue: []
     }
   }, {
     sequelize,
