@@ -28,14 +28,26 @@ module.exports = (sequelize, DataTypes) => {
     documentType: DataTypes.STRING,
     documentNumber: DataTypes.STRING,
     buyerName: DataTypes.STRING,
-    buyerBillingAddress: DataTypes.STRING,
-    buyerDeliveryAddress: DataTypes.STRING,
+    buyerBillingAddress: {
+      type: DataTypes.JSON,
+      allowNull: true
+    },
+    buyerDeliveryAddress: {
+      type: DataTypes.JSON,
+      allowNull: true
+    },
     buyerContactNumber: DataTypes.STRING,
     buyerEmail: DataTypes.STRING,
     BuyerPANNumber: DataTypes.STRING,
     supplierName: DataTypes.STRING,
-    supplierBillingAddress: DataTypes.STRING,
-    supplierDeliverAddress: DataTypes.STRING,
+    supplierBillingAddress: {
+      type: DataTypes.JSON,
+      allowNull: true
+    },
+    supplierDeliverAddress: {
+      type: DataTypes.JSON,
+      allowNull: true
+    },
     supplierContactNo: DataTypes.STRING,
     supplierEmail: DataTypes.STRING,
     documentDate: DataTypes.STRING,
