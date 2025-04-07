@@ -32,6 +32,7 @@ module.exports = (sequelize, DataTypes) => {
     buyerDeliveryAddress: DataTypes.STRING,
     buyerContactNumber: DataTypes.STRING,
     buyerEmail: DataTypes.STRING,
+    BuyerPANNumber: DataTypes.STRING,
     supplierName: DataTypes.STRING,
     supplierBillingAddress: DataTypes.STRING,
     supplierDeliverAddress: DataTypes.STRING,

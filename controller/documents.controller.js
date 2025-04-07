@@ -73,6 +73,7 @@ async function createDocument(req, res) {
       attachments = [],
       documentComments = null,
       tcsData = [],
+      BuyerPANNumber = null,
     } = req.body;
 
     const document = await models.Documents.create({
@@ -138,6 +139,7 @@ async function createDocument(req, res) {
       debit_note_number,
       pay_to_transporter,
       inspection_date,
+      BuyerPANNumber,
       tcsData
     });
 

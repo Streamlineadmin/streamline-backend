@@ -11,6 +11,7 @@ function addBuyerSupplier(req, res) {
         companyEmail: req.body.companyEmail,
         companyType: req.body.companyType,
         GSTNumber: req.body.gstNumber,
+        PAN: req.body.pan,
         GSTType: req.body.gstType,
         ip_address: req.body.ip_address,
         status: 1,
