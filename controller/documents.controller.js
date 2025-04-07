@@ -74,6 +74,7 @@ async function createDocument(req, res) {
       documentComments = null,
       tcsData = [],
       BuyerPANNumber = null,
+      isRounded = null,
     } = req.body;
 
     const document = await models.Documents.create({
@@ -140,6 +141,7 @@ async function createDocument(req, res) {
       pay_to_transporter,
       inspection_date,
       BuyerPANNumber,
+      isRounded,
       tcsData
     });
 
