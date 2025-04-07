@@ -72,7 +72,7 @@ async function createDocument(req, res) {
       inspection_date = null,
       attachments = [],
       documentComments = null,
-      tcsData = []
+      tcsData = [],
     } = req.body;
 
     const document = await models.Documents.create({
