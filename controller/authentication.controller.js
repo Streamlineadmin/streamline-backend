@@ -129,7 +129,10 @@ function login(req, res) {
                         name: user.name,
                         contactPersonNumber: user.contactNo,
                         email: user.email,
-                        role: user.role
+                        role: user.role,
+                        pan: user.pan,
+                        gstNumber: user.gstNumber,
+                        cin: user.cin,
                     }, 'secret', function (err, token) {
                         res.status(200).json({
                             message: "Login successful.",

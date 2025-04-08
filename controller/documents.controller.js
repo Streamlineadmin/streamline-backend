@@ -72,7 +72,9 @@ async function createDocument(req, res) {
       inspection_date = null,
       attachments = [],
       documentComments = null,
-      tcsData = []
+      tcsData = [],
+      BuyerPANNumber = null,
+      isRounded = null,
     } = req.body;
 
     const document = await models.Documents.create({
@@ -138,6 +140,8 @@ async function createDocument(req, res) {
       debit_note_number,
       pay_to_transporter,
       inspection_date,
+      BuyerPANNumber,
+      isRounded,
       tcsData
     });
 
@@ -159,6 +163,7 @@ async function createDocument(req, res) {
         items.map(item => {
           return ({
             documentNumber: document.documentNumber,
+            companyId: companyId,
             itemId: item.itemId,
             itemName: item.itemName,
             HSN: item.HSN,
@@ -179,6 +184,7 @@ async function createDocument(req, res) {
       ),
       models.DocumentAdditionalCharges.bulkCreate(
         additionalCharges.map(charge => ({
+          companyId: companyId,
           documentNumber: document.documentNumber,
           chargingFor: charge.chargingFor,
           price: charge.price,
@@ -190,6 +196,7 @@ async function createDocument(req, res) {
       ),
       models.DocumentBankDetails.create({
         documentNumber: document.documentNumber,
+        companyId: companyId,
         bankName: bankDetails.bankName || null,
         accountName: bankDetails.accountName || null,
         accountNumber: bankDetails.accountNumber || null,
@@ -305,7 +312,7 @@ async function getDocumentById(req, res) {
     const { documentNumber, companyId } = req.body;
 
     const document = await models.Documents.findOne({
-      where: { documentNumber },
+      where: { documentNumber, companyId },
       include: [{ model: models.LogisticDetails, as: 'logisticDetails' }]
     });
 
@@ -314,9 +321,9 @@ async function getDocumentById(req, res) {
     }
 
     const [items, additionalCharges, bankDetails, termsCondition, attachments, documentComments] = await Promise.all([
-      models.DocumentItems.findAll({ where: { documentNumber } }),
-      models.DocumentAdditionalCharges.findAll({ where: { documentNumber } }),
-      models.DocumentBankDetails.findOne({ where: { documentNumber } }),
+      models.DocumentItems.findAll({ where: { documentNumber, companyId } }),
+      models.DocumentAdditionalCharges.findAll({ where: { documentNumber, companyId } }),
+      models.DocumentBankDetails.findOne({ where: { documentNumber, companyId } }),
       models.CompanyTermsCondition.findOne({ where: { companyId, documentNumber } }),
       models.DocumentAttachments.findAll({ where: { documentNumber } }),
       models.DocumentComments.findAll({ where: { documentId: document.id } })

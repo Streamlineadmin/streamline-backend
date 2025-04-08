@@ -114,8 +114,6 @@ async function addUser(req, res) {
     }
 }
 
-
-
 function editUser(req, res) {
     const userId = req.body.userId;
     const { companyName,
@@ -192,7 +190,6 @@ function editUser(req, res) {
         });
 }
 
-
 function deleteUser(req, res) {
     const userId = req.body.userId;  // Assuming the blog ID is passed as a URL parameter
 
@@ -248,7 +245,10 @@ async function updateProfile(req, res) {
             name, 
             businessType,
             contactNo,
-            role
+            role,
+            pan,
+            gstNumber,
+            cin
         } = req.body;
 
         if (!userId) {
@@ -264,7 +264,10 @@ async function updateProfile(req, res) {
                 name, 
                 businessType,
                 contactNo,
-                role 
+                role,
+                pan,
+                gstNumber,
+                cin, 
             },
             { where: { id: userId } }
         );
@@ -276,7 +279,7 @@ async function updateProfile(req, res) {
         // Fetch the updated user details
         const updatedUser = await models.Users.findOne({ 
             where: { id: userId }, 
-            attributes: ['id', 'name', 'email', 'companyName', 'companyId', 'contactNo', 'role', 'website' ]
+            attributes: ['id', 'name', 'email', 'companyName', 'companyId', 'contactNo', 'role', 'website', 'businessType', 'pan', 'gstNumber', 'cin']
         });
 
         // Format response
@@ -290,7 +293,10 @@ async function updateProfile(req, res) {
             contactNo: updatedUser.contactNo,
             role: updatedUser.role,
             website: updatedUser.website,
-            companyBusinessType: updatedUser.businessType
+            companyBusinessType: updatedUser.businessType,
+            pan: updatedUser.pan,
+            gstNumber: updatedUser.gstNumber,
+            cin: updatedUser.cin,
         });
 
     } catch (error) {
