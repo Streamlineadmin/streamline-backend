@@ -15,6 +15,7 @@ module.exports = (sequelize, DataTypes) => {
   }
   DocumentItems.init({
     documentNumber: DataTypes.STRING,
+    companyId: DataTypes.INTEGER,
     itemId: DataTypes.STRING,
     itemName: DataTypes.STRING,
     HSN: DataTypes.STRING,

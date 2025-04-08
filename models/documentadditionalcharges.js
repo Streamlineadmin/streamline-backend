@@ -15,6 +15,7 @@ module.exports = (sequelize, DataTypes) => {
   }
   DocumentAdditionalCharges.init({
     documentNumber: DataTypes.STRING,
+    companyId: DataTypes.INTEGER,
     chargingFor: DataTypes.STRING,
     price: DataTypes.FLOAT,
     tax: DataTypes.FLOAT,
