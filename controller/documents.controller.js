@@ -290,8 +290,8 @@ async function getDocuments(req, res) {
     models.DocumentItems.findAll({ where: { documentNumber: documentNumbers, companyId } }),
     models.DocumentAdditionalCharges.findAll({ where: { documentNumber: documentNumbers, companyId } }),
     models.DocumentBankDetails.findAll({ where: { documentNumber: documentNumbers, companyId } }),
-    models.CompanyTermsCondition.findAll({ where: { documentNumber: documentNumbers } }),
-    models.DocumentAttachments.findAll({ where: { documentNumber: documentNumbers,    companyId } }),
+    models.CompanyTermsCondition.findAll({ where: { documentNumber: documentNumbers, companyId } }),
+    models.DocumentAttachments.findAll({ where: { documentNumber: documentNumbers, companyId } }),
     models.DocumentComments.findAll({ where: { documentId: documentIds } }),
   ]);
 
