@@ -14,6 +14,7 @@ module.exports = (sequelize, DataTypes) => {
     }
   }
   DocumentAttachments.init({
+    companyId: DataTypes.INTEGER,
     documentNumber: DataTypes.STRING,
     attachmentName: DataTypes.STRING
   }, {
