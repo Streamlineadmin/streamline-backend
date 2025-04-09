@@ -110,6 +110,8 @@ module.exports = (sequelize, DataTypes) => {
     purchaseOrderDate: DataTypes.STRING,
     grn_number: DataTypes.STRING,
     grn_Date: DataTypes.STRING,
+    performaInvoiceNumber: DataTypes.STRING,
+    performaInvoiceDate: DataTypes.STRING,
     isRounded: {
       type: DataTypes.BOOLEAN,
       allowNull: true, 
