@@ -212,6 +212,7 @@ async function createDocument(req, res) {
       models.DocumentAttachments.bulkCreate(
         attachments.map(attachment => ({
           documentNumber: document.documentNumber,
+          companyId: companyId,
           attachmentName: attachment
         }))
       ),
@@ -287,11 +288,11 @@ async function getDocuments(req, res) {
   const documentIds = documents.map(doc => doc.id);
 
   const [items, additionalCharges, bankDetails, termsConditions, attachments, documentComments] = await Promise.all([
-    models.DocumentItems.findAll({ where: { documentNumber: documentNumbers } }),
-    models.DocumentAdditionalCharges.findAll({ where: { documentNumber: documentNumbers } }),
-    models.DocumentBankDetails.findAll({ where: { documentNumber: documentNumbers } }),
-    models.CompanyTermsCondition.findAll({ where: { documentNumber: documentNumbers } }),
-    models.DocumentAttachments.findAll({ where: { documentNumber: documentNumbers } }),
+    models.DocumentItems.findAll({ where: { documentNumber: documentNumbers, companyId } }),
+    models.DocumentAdditionalCharges.findAll({ where: { documentNumber: documentNumbers, companyId } }),
+    models.DocumentBankDetails.findAll({ where: { documentNumber: documentNumbers, companyId } }),
+    models.CompanyTermsCondition.findAll({ where: { documentNumber: documentNumbers, companyId } }),
+    models.DocumentAttachments.findAll({ where: { documentNumber: documentNumbers, companyId } }),
     models.DocumentComments.findAll({ where: { documentId: documentIds } }),
   ]);
 
@@ -326,7 +327,7 @@ async function getDocumentById(req, res) {
       models.DocumentAdditionalCharges.findAll({ where: { documentNumber, companyId } }),
       models.DocumentBankDetails.findOne({ where: { documentNumber, companyId } }),
       models.CompanyTermsCondition.findOne({ where: { companyId, documentNumber } }),
-      models.DocumentAttachments.findAll({ where: { documentNumber } }),
+      models.DocumentAttachments.findAll({ where: { documentNumber, companyId } }),
       models.DocumentComments.findAll({ where: { documentId: document.id } })
     ]);
 
