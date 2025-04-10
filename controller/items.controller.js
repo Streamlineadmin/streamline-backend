@@ -147,6 +147,8 @@ async function editItem(req, res) {
                     itemName,
                     itemType: req.body.itemType,
                     category: req.body.category,
+                    subCategory: req.body.subCategory,
+                    microCategory: req.body.microCategory,
                     metricsUnit: req.body.metricsUnit,
                     HSNCode: req.body.HSNCode,
                     price: req.body.price,
@@ -156,7 +158,7 @@ async function editItem(req, res) {
                     minStock: req.body.minStock,
                     maxStock: req.body.maxStock,
                     description: req.body.description,
-                    customFields: req.body.customField
+                    customFields: req.body.customField,
                 },
                 { where: { id }, transaction }
             );

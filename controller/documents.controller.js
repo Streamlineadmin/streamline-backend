@@ -1,5 +1,6 @@
 const { Op } = require('sequelize');
 const models = require('../models');
+const { documentTypes } = require('../helpers/document-type');
 
 async function createDocument(req, res) {
   try {
@@ -224,7 +225,7 @@ async function createDocument(req, res) {
         }),
     ]);
 
-    if (documentType === "Goods Receive Notes") {
+    if (documentType === documentTypes.goodsReceive) {
       const existingItems = await models.Items.findAll({});
       const stores = await models.Store.findAll({});
       const itemsMap = new Map(existingItems.map(existingItem => [existingItem.itemId, existingItem.id]));
