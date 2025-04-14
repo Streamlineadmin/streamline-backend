@@ -30,7 +30,9 @@ module.exports = (sequelize, DataTypes) => {
     totalTax: DataTypes.STRING,
     totalBeforeTax: DataTypes.STRING,
     totalAfterTax: DataTypes.STRING,
-    receivedToday: DataTypes.INTEGER
+    receivedToday: DataTypes.INTEGER,
+    pendingQuantity: DataTypes.INTEGER,
+    receivedQuantity: DataTypes.INTEGER
   }, {
     sequelize,
     modelName: 'DocumentItems',

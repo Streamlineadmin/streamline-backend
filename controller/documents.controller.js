@@ -185,7 +185,9 @@ async function createDocument(req, res) {
             totalTax: item.totalTax,
             totalBeforeTax: item.totalBeforeTax,
             totalAfterTax: item.totalAfterTax,
-            receivedToday: item.receivedToday || 0
+            receivedToday: item.receivedToday || 0,
+            pendingQuantity: item.pendingQuantity || 0,
+            receivedQuantity: item.receivedQuantity || 0
           })
         })
       ),
