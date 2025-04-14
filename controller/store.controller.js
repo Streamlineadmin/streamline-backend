@@ -192,7 +192,7 @@ async function getStores(req, res) {
             storeId: store.id,
           },
           distinct: true,
-            col: 'itemId'
+          col: 'itemId'
         });
 
         // Add store data along with item count to the response
@@ -411,7 +411,8 @@ async function getItemStockTransferHistory(req, res) {
         'toStoreId',
         'transferredBy',
         'comment',
-        'price'
+        'price',
+        'documentNumber'
       ],
       order: [['createdAt', 'ASC']], // Order by date for cumulative calculations
       raw: true,  // Ensures data is returned as plain objects
@@ -485,12 +486,12 @@ async function getItemStockTransferHistory(req, res) {
 
       // Previous and current quantities for `fromStore`
       const fromStorePreviousQuantity = storeQuantities[transfer.fromStoreId];
-      storeQuantities[transfer.fromStoreId] -= transfer.quantity;
+      storeQuantities[transfer.fromStoreId] = transfer.quantity < 0 ? (storeQuantities[transfer.fromStoreId] + transfer.quantity) : (storeQuantities[transfer.fromStoreId] - transfer.quantity);
       const fromStoreCurrentQuantity = storeQuantities[transfer.fromStoreId];
 
       // Previous and current quantities for `toStore`
       const toStorePreviousQuantity = storeQuantities[transfer.toStoreId];
-      storeQuantities[transfer.toStoreId] += transfer.quantity;
+      storeQuantities[transfer.toStoreId] = transfer.quantity > 0 ? (storeQuantities[transfer.toStoreId] + transfer.quantity) : (storeQuantities[transfer.toStoreId] - transfer.quantity);
       const toStoreCurrentQuantity = storeQuantities[transfer.toStoreId];
 
       // Enrich the transfer record
@@ -512,7 +513,8 @@ async function getItemStockTransferHistory(req, res) {
         },
         transferredBy: userMap[transfer.transferredBy] || 'Unknown User',  // Enrich with user name
         comment: transfer.comment,
-        price: transfer.price
+        price: transfer.price,
+        documentNumber: transfer.documentNumber || ''
       };
     });
 

@@ -27,7 +27,8 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.STRING,
       allowNull: true,
     },
-    price: DataTypes.FLOAT
+    price: DataTypes.FLOAT,
+    documentNumber: DataTypes.STRING
   }, {
     sequelize,
     modelName: 'StockTransfer',
