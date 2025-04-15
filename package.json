@@ -25,6 +25,7 @@
     "nodemailer": "^6.10.0",
     "pdf-parse": "^1.1.1",
     "sequelize": "^6.37.3",
+    "simple-statistics": "^7.8.8",
     "swagger-jsdoc": "^6.2.8",
     "swagger-ui-express": "^5.0.1",
     "xlsx": "^0.18.5"
