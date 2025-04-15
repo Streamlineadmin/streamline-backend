@@ -7,6 +7,7 @@ async function createDocument(req, res) {
     const {
       documentType = null,
       documentNumber = null,
+      documentTo = null,
       buyerName = null,
       buyerBillingAddress = null,
       buyerDeliveryAddress = null,
@@ -85,6 +86,7 @@ async function createDocument(req, res) {
       documentType,
       documentNumber,
       buyerName,
+      documentTo,
       buyerBillingAddress,
       buyerDeliveryAddress,
       buyerContactNumber,

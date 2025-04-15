@@ -112,6 +112,7 @@ module.exports = (sequelize, DataTypes) => {
     grn_Date: DataTypes.STRING,
     performaInvoiceNumber: DataTypes.STRING,
     performaInvoiceDate: DataTypes.STRING,
+    documentTo: DataTypes.STRING,
     isRounded: {
       type: DataTypes.BOOLEAN,
       allowNull: true, 
