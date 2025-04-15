@@ -1,6 +1,7 @@
 documentTypes = {
     goodsReceive: 'Goods Receive Notes',
-    invoice: 'Invoice'
+    invoice: 'Invoice',
+    deliveryChallan: 'Delivery Challan'
 };
 
 module.exports = { documentTypes };

@@ -80,6 +80,8 @@ async function createDocument(req, res) {
       tcsData = [],
       BuyerPANNumber = null,
       isRounded = null,
+      reduceStockOnDC = '',
+      reduceStockOnIV = ''
     } = req.body;
 
     const document = await models.Documents.create({
@@ -187,7 +189,9 @@ async function createDocument(req, res) {
             totalTax: item.totalTax,
             totalBeforeTax: item.totalBeforeTax,
             totalAfterTax: item.totalAfterTax,
-            receivedToday: item.receivedToday || 0
+            receivedToday: item.receivedToday || 0,
+            pendingQuantity: item.pendingQuantity || 0,
+            receivedQuantity: item.receivedQuantity || 0
           })
         })
       ),
@@ -256,7 +260,7 @@ async function createDocument(req, res) {
         const itemId = itemsMap.get(item.itemId) || null;
         const storeId = storesMap.get(store) || null;
         return {
-          transferNumber: 0,
+          transferNumber: item?.transferNumber,
           fromStoreId: null,
           itemId,
           quantity: item?.receivedToday || 0,
@@ -265,10 +269,86 @@ async function createDocument(req, res) {
           transferredBy: createdBy,
           comment: '',
           companyId,
-          price: item?.price
+          price: item?.price,
+          documentNumber: document.documentNumber
         }
-      }))]
+      })),
+      ]
       );
+      for (const item of items) {
+        const existItem = await models.Items.findOne({
+          where: {
+            id: itemsMap.get(item.itemId)
+          }
+        });
+        if (existItem) {
+          await models.Items.update(
+            { currentStock: (item.currentStock || 0) + item.receivedToday },
+            {
+              where: {
+                id: itemsMap.get(item.itemId)
+              }
+            }
+          );
+        }
+
+      }
+    }
+
+    if ((documentType === documentTypes.invoice && reduceStockOnIV === "true") || (documentType === documentTypes.deliveryChallan && reduceStockOnDC === "true")) {
+      const storeId = await models.Store.findOne({
+        where: {
+          name: store,
+          companyId
+        }
+      });
+      console.log('storeId', storeId.id, storeId.name);
+      for (const element of items) {
+        let price = 0;
+        let remainingQuantity = element.quantity;
+        const item = await models.Items.findOne({
+          where: {
+            itemId: element.itemId
+          }
+        });
+        const existingStock = await models.StoreItems.findAll({
+          where: { storeId: storeId.id, itemId: item.id },
+          order: [['createdAt', 'ASC']],
+        });
+        for (const stock of existingStock) {
+          if (remainingQuantity <= 0) break;
+          if (stock.quantity <= 0) continue;
+          const deductQty = Math.min(stock.quantity, remainingQuantity);
+          remainingQuantity -= deductQty;
+
+          await models.StoreItems.update(
+            { quantity: (stock.quantity - deductQty) },
+            { where: { id: stock.id } }
+          );
+          await models.StockTransfer.create({
+            transferNumber: element.transferNumber,
+            fromStoreId: storeId.id || null,
+            itemId: item.id,
+            quantity: -deductQty,
+            toStoreId: null,
+            transferDate: new Date().toISOString(),
+            transferredBy: createdBy,
+            comment: '',
+            companyId,
+            price: element.price,
+            documentNumber: document.documentNumber
+          });
+          price += (stock.price * deductQty);
+        }
+
+        await models.Items.update(
+          {
+            currentStock: item.currentStock - element.quantity,
+            price: ((item.price * item.currentStock) - price) / (item.currentStock - element.quantity)
+          },
+          { where: { id: item.id, companyId } }
+        );
+      }
     }
 
     res.status(201).json({
