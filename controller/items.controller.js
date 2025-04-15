@@ -1,4 +1,5 @@
 const convertXlsxToJson = require('../helpers/bulk-upload');
+const { generateTransferNumber } = require('../helpers/transfer-number');
 const models = require('../models');
 const { Op } = require("sequelize");
 
@@ -71,7 +72,7 @@ function addItem(req, res) {
                         };
 
                         req.body.currentStock && await models.StockTransfer.create({
-                            transferNumber: '',
+                            transferNumber: generateTransferNumber(),
                             fromStoreId: null,
                             itemId: newItemId,
                             quantity: req.body.currentStock,
@@ -415,7 +416,7 @@ async function addBulkItem(req, res) {
             let category = categoryMap.get(item.Category) || null;
             let subCategory = subCategoryMap.get(item['Sub Category']) || null;
             let microCategory = microCategoryMap.get(item['Micro Category']) || null;
-            let uom = uomMap.get(metricsUnit?.split(" ")[0]) || null;
+            let uom = uomMap.get(metricsUnit?.split(" ").slice(0, -1).join(" ")) || null;
 
             if (item.Category && !category) {
                 err += "Category Not Found. ";
@@ -609,6 +610,7 @@ async function stockReconcilation(req, res) {
     try {
         for (const item of items) {
             const { 'Item ID': itemId, 'Price/Unit': price } = item;
+            if (!item['Final Stock']) continue;
             let err = '';
             const existingItem = await models.Items.findOne({
                 where: {
@@ -629,28 +631,36 @@ async function stockReconcilation(req, res) {
                 errorArray.push({ ...item, Error: err });
                 continue;
             }
-            const storeItem = await models.StoreItems.findOne({
+            await models.Items.update({ currentStock: existingItem.currentStock + item['Final Stock'] }, {
                 where: {
-                    storeId: Number(req.body.storeId),
-                    itemId: existingItem.id,
-                    addedBy: Number(req.body.companyId)
+                    id: existingItem.id
                 }
-            });
-            if (!storeItem) {
-                const storeItemData = {
-                    storeId: Number(req.body.storeId),
-                    itemId: existingItem.id,
-                    quantity: Number(item['Final Stock'] || 0),
-                    addedBy: Number(req.body.companyId),
-                    status: 1
-                };
-
-                await models.StoreItems.create(storeItemData)
             }
-            else {
-                const updated = await storeItem.update({ quantity: Number(item['Final Stock']) });
+            )
+            const storeItemData = {
+                storeId: Number(req.body.storeId),
+                itemId: existingItem.id,
+                quantity: Number(item['Final Stock'] || 0),
+                addedBy: Number(req.body.companyId),
+                status: 1,
+                addedBy: Number(req.body.userId)
+            };
+
+            const stockTransfer = {
+                transferNumber: generateTransferNumber(),
+                fromStoreId: null,
+                itemId: existingItem.id,
+                quantity: Number(item['Final Stock'] || 0),
+                toStoreId: Number(req.body.storeId),
+                transferDate: new Date().toISOString(),
+                transferredBy: Number(req.body.companyId),
+                comment: '',
+                companyId: Number(req.body.companyId),
+                price: price || 10
             }
 
+            await models.StoreItems.create(storeItemData);
+            await models.StockTransfer.create(stockTransfer);
         }
         msg = !errorArray.length ? 'Stocks Reconcile Successfully.' : errorArray.length != items.length ? 'Few Items are Not Found. We Download Those Rows for you.' : 'All Items are Not Found. We Download Those Rows for you.'
         return res.status(200).json({ message: msg, invalidData: errorArray });

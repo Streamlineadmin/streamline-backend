@@ -412,7 +412,8 @@ async function getItemStockTransferHistory(req, res) {
         'transferredBy',
         'comment',
         'price',
-        'documentNumber'
+        'documentNumber',
+        'documentType'
       ],
       order: [['createdAt', 'ASC']], // Order by date for cumulative calculations
       raw: true,  // Ensures data is returned as plain objects
@@ -514,7 +515,8 @@ async function getItemStockTransferHistory(req, res) {
         transferredBy: userMap[transfer.transferredBy] || 'Unknown User',  // Enrich with user name
         comment: transfer.comment,
         price: transfer.price,
-        documentNumber: transfer.documentNumber || ''
+        documentNumber: transfer.documentNumber || '',
+        documentType: transfer.documentType || ''
       };
     });
 

@@ -268,7 +268,8 @@ async function createDocument(req, res) {
           comment: '',
           companyId,
           price: item?.price,
-          documentNumber: document.documentNumber
+          documentNumber: document.documentNumber,
+          documentType
         }
       })),
       ]
@@ -334,7 +335,8 @@ async function createDocument(req, res) {
             comment: '',
             companyId,
             price: element.price,
-            documentNumber: document.documentNumber
+            documentNumber: document.documentNumber,
+            documentType
           });
           price += (stock.price * deductQty);
         }
