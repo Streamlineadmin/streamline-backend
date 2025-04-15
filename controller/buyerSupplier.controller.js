@@ -1,6 +1,7 @@
 const { json } = require('body-parser');
 const models = require('../models');
 
+
 function addBuyerSupplier(req, res) {
     const buyerSupplierData = {
         name: req.body.name,
