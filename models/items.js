@@ -10,8 +10,11 @@ module.exports = (sequelize, DataTypes) => {
      * The `models/index` file will call this method automatically.
      */
     static associate(models) {
-      // define association here
-    }
+      Items.hasMany(models.DocumentItems, {
+        foreignKey: 'itemId',
+        as: 'documentItems',
+      });
+    }    
   }
   Items.init({
     itemName: DataTypes.STRING,
@@ -34,7 +37,11 @@ module.exports = (sequelize, DataTypes) => {
     maxStock: DataTypes.INTEGER,
     description: DataTypes.TEXT,
     companyId: DataTypes.INTEGER,
-    itemId: DataTypes.INTEGER,
+    itemId: {
+      type: DataTypes.INTEGER,
+      primaryKey: true,
+      autoIncrement: true
+    },
     status: DataTypes.INTEGER,
     customFields: {
       type: DataTypes.JSON,

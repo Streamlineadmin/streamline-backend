@@ -14,6 +14,10 @@ module.exports = (sequelize, DataTypes) => {
         onDelete: 'CASCADE',
         onUpdate: 'CASCADE',
       });
+      Documents.belongsTo(models.Users, {
+        foreignKey: 'createdBy',
+        as: 'creator' // alias for cleaner querying
+      });   
 
       Documents.belongsTo(models.CompanyTermsCondition, {
         foreignKey: 'companyTermsConditionId',
@@ -118,6 +122,24 @@ module.exports = (sequelize, DataTypes) => {
       allowNull: true, 
       defaultValue: false,
     },
+    advancePayment: {
+      type: DataTypes.DECIMAL(10, 2),
+      allowNull: true,
+      defaultValue: 0.00,
+    }, 
+    GSTValue: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    }, 
+    buyerGSTNumber: {
+      type: DataTypes.STRING,
+      allowNull: true, 
+    },  
+    is_refered: {
+      type: DataTypes.BOOLEAN,
+      allowNull: true, 
+      defaultValue: false,
+    },    
     companyTermsConditionId: {
       type: DataTypes.INTEGER,
       allowNull: true,

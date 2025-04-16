@@ -10,6 +10,7 @@ async function createDocument(req, res) {
       documentTo = null,
       buyerName = null,
       buyerBillingAddress = null,
+      advancePayment = null,
       buyerDeliveryAddress = null,
       buyerContactNumber = null,
       buyerEmail = null,
@@ -81,7 +82,10 @@ async function createDocument(req, res) {
       BuyerPANNumber = null,
       isRounded = null,
       reduceStockOnDC = '',
-      reduceStockOnIV = ''
+      reduceStockOnIV = '',
+      GSTValue = null,
+      buyerGSTNumber = null,
+      is_refered = null,
     } = req.body;
 
     const document = await models.Documents.create({
@@ -90,6 +94,10 @@ async function createDocument(req, res) {
       buyerName,
       documentTo,
       buyerBillingAddress,
+      advancePayment,
+      GSTValue,
+      buyerGSTNumber,
+      is_refered,
       buyerDeliveryAddress,
       buyerContactNumber,
       buyerEmail,
@@ -156,6 +164,19 @@ async function createDocument(req, res) {
       tcsData
     });
 
+    if (documentType === documentTypes.salesQuotation && enquiryNumber) {
+      const existingDocument = await models.Documents.findOne({
+        where: { documentNumber: enquiryNumber },
+      });
+    
+      if (existingDocument) {
+        await existingDocument.update({
+          quotationNumber: documentNumber,
+          is_refered: true,
+        });
+      }
+    }
+    
     const companyTermsCondition = await models.CompanyTermsCondition.create({
       companyId: companyId,
       termsCondition: termsCondition || [],
@@ -365,7 +386,18 @@ async function getDocuments(req, res) {
 
   const documents = await models.Documents.findAll({
     where: { companyId },
-    include: [{ model: models.LogisticDetails, as: 'logisticDetails' }]
+    include: [
+      {
+        model: models.LogisticDetails,
+        as: 'logisticDetails'
+      },
+      {
+        model: models.Users,
+        as: 'creator',
+        attributes: ['id', 'name']
+      },
+    ],
+    distinct: true
   });
 
   if (!documents || documents.length === 0) {
@@ -376,7 +408,17 @@ async function getDocuments(req, res) {
   const documentIds = documents.map(doc => doc.id);
 
   const [items, additionalCharges, bankDetails, termsConditions, attachments, documentComments] = await Promise.all([
-    models.DocumentItems.findAll({ where: { documentNumber: documentNumbers, companyId } }),
+    models.DocumentItems.findAll({ where: { documentNumber: documentNumbers, companyId },
+    include: [
+      {
+        model: models.Items,
+        as: 'categories',
+        attributes: ['category', 'subCategory', 'microCategory'],
+      },
+    ],
+    group: ['DocumentItems.id'],
+    distinct: true,
+     }),
     models.DocumentAdditionalCharges.findAll({ where: { documentNumber: documentNumbers, companyId } }),
     models.DocumentBankDetails.findAll({ where: { documentNumber: documentNumbers, companyId } }),
     models.CompanyTermsCondition.findAll({ where: { documentNumber: documentNumbers, companyId } }),
