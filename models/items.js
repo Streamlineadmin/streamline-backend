@@ -8,13 +8,7 @@ module.exports = (sequelize, DataTypes) => {
      * Helper method for defining associations.
      * This method is not a part of Sequelize lifecycle.
      * The `models/index` file will call this method automatically.
-     */
-    static associate(models) {
-      Items.hasMany(models.DocumentItems, {
-        foreignKey: 'itemId',
-        as: 'documentItems',
-      });
-    }    
+     */   
   }
   Items.init({
     itemName: DataTypes.STRING,
@@ -37,11 +31,7 @@ module.exports = (sequelize, DataTypes) => {
     maxStock: DataTypes.INTEGER,
     description: DataTypes.TEXT,
     companyId: DataTypes.INTEGER,
-    itemId: {
-      type: DataTypes.INTEGER,
-      primaryKey: true,
-      autoIncrement: true
-    },
+    itemId: DataTypes.STRING,
     status: DataTypes.INTEGER,
     customFields: {
       type: DataTypes.JSON,

@@ -408,16 +408,14 @@ async function getDocuments(req, res) {
   const documentIds = documents.map(doc => doc.id);
 
   const [items, additionalCharges, bankDetails, termsConditions, attachments, documentComments] = await Promise.all([
-    models.DocumentItems.findAll({ where: { documentNumber: documentNumbers, companyId },
-    include: [
-      {
-        model: models.Items,
-        as: 'categories',
-        attributes: ['category', 'subCategory', 'microCategory'],
-      },
-    ],
-    group: ['DocumentItems.id'],
-    distinct: true,
+    models.DocumentItems.findAll({ where: { documentNumber: documentNumbers, companyId }, 
+      include: [
+        {
+          model: models.Items,
+          as: 'itemDetails',
+          attributes: ['itemId', 'category', 'subCategory', 'microCategory']
+        }
+      ] 
      }),
     models.DocumentAdditionalCharges.findAll({ where: { documentNumber: documentNumbers, companyId } }),
     models.DocumentBankDetails.findAll({ where: { documentNumber: documentNumbers, companyId } }),

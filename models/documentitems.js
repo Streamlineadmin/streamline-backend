@@ -13,7 +13,8 @@ module.exports = (sequelize, DataTypes) => {
       // define association here
       DocumentItems.belongsTo(models.Items, {
         foreignKey: 'itemId',
-        as: 'categories',
+        targetKey: 'itemId',
+        as: 'itemDetails'
       });
     }
   }
