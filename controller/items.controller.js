@@ -236,8 +236,8 @@ async function deleteItem(req, res) {
         });
 }
 
-function deleteItems(req, res) {
-    const { items } = req.body; // Extract item IDs from the payload
+async function deleteItems(req, res) {
+    const { items } = req.body;
 
     if (!Array.isArray(items) || items.length === 0) {
         return res.status(400).json({
@@ -245,28 +245,39 @@ function deleteItems(req, res) {
         });
     }
 
-    models.Items.destroy({
-        where: { id: items },
-    })
-        .then(deletedCount => {
-            if (deletedCount > 0) {
-                res.status(200).json({
-                    message: `${deletedCount} item(s) deleted successfully.`,
-                });
-            } else {
-                res.status(404).json({
-                    message: "No items found with the provided IDs.",
-                });
-            }
-        })
-        .catch(error => {
-            console.error("Error deleting items:", error);
-            res.status(500).json({
-                message: "Something went wrong, please try again later!",
-                error: error.message,
-            });
+    try {
+        const deletedCount = await models.Items.destroy({
+            where: { id: items },
         });
+
+        if (deletedCount > 0) {
+            // Delete related StoreItems and StockTransfer entries
+            await Promise.all([
+                models.StoreItems.destroy({
+                    where: { itemId: items },
+                }),
+                models.StockTransfer.destroy({
+                    where: { itemId: items },
+                }),
+            ]);
+
+            return res.status(200).json({
+                message: `${deletedCount} item(s) and related data deleted successfully.`,
+            });
+        } else {
+            return res.status(404).json({
+                message: "No items found with the provided IDs.",
+            });
+        }
+    } catch (error) {
+        console.error("Error deleting items and related data:", error);
+        return res.status(500).json({
+            message: "Something went wrong, please try again later!",
+            error: error.message,
+        });
+    }
 }
+
 
 
 async function getItems(req, res) {
@@ -449,9 +460,9 @@ async function addBulkItem(req, res) {
                 subCategory: subCategory?.id || null,
                 microCategory: microCategory?.id || null,
                 HSNCode: item.HSN || null,
-                price: item.Price || null,
-                taxType: item['Tax Type'] ? item['Tax Type'] == 'Inclusive' ? 1 : 2 : null,
-                tax: item['Tax'] || null,
+                price: item.Price || 0,
+                taxType: item['Tax Type'] ? item['Tax Type'] == 'Inclusive' ? 1 : 2 : 1,
+                tax: Number(item['Tax']) || 0,
                 minStock: item['Min Stock'] || null,
                 maxStock: item['Max Stock'] || null,
                 description: item['Description'] || null,
@@ -631,7 +642,7 @@ async function stockReconcilation(req, res) {
                 errorArray.push({ ...item, Error: err });
                 continue;
             }
-            await models.Items.update({ currentStock: existingItem.currentStock + item['Final Stock'] }, {
+            await models.Items.update({ currentStock: (existingItem.currentStock || 0) + item['Final Stock'] }, {
                 where: {
                     id: existingItem.id
                 }

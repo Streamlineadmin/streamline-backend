@@ -7,7 +7,12 @@ async function dashboard(req, res) {
 
 async function getBuyerSupplierCount(req, res) {
     try {
+        const { companyId } = req.body;
+        if (!companyId) return res.status(400).send({ message: 'Company Id is required.' });
         const counts = await models.BuyerSupplier.findAll({
+            where: {
+                companyId
+            },
             attributes: [
                 'customerType',
                 [models.sequelize.fn('COUNT', models.sequelize.col('id')), 'count']
@@ -35,7 +40,7 @@ async function getBuyerSupplierCount(req, res) {
 
 async function getItemSalesSummary(req, res) {
     try {
-        const salesData = await models.Item.findAll({
+        const salesData = await models.Items.findAll({
             attributes: [
                 'name',
                 'category',
@@ -73,8 +78,8 @@ async function getDocumentsInvoiceSummary(req, res) {
             attributes: [
                 'invoiceNumber',
                 'buyerName',
-                [sequelize.literal('COALESCE(totalValue, 0)'), 'totalValue'], // You can add this field in DB or compute dynamically
-                [sequelize.literal('COALESCE(paidAmount, 0)'), 'paid'],
+                [models.sequelize.literal('COALESCE(totalValue, 0)'), 'totalValue'], // You can add this field in DB or compute dynamically
+                [models.sequelize.literal('COALESCE(paidAmount, 0)'), 'paid'],
                 'status',
                 ['paymentTerm', 'payment'],
                 'createdBy',
@@ -118,7 +123,7 @@ async function predictNext30DaysTotalValue(req, res) {
             ],
             where: {
                 createdAt: {
-                    [sequelize.Op.gte]: sequelize.fn('NOW', '-30 days') // Get invoices from the last 30 days
+                    [models.sequelize.Op.gte]: models.sequelize.fn('NOW', '-30 days') // Get invoices from the last 30 days
                 }
             },
             order: [['createdAt', 'ASC']]
@@ -149,7 +154,13 @@ async function predictNext30DaysTotalValue(req, res) {
 
 async function getTotalItems(req, res) {
     try {
-        const itemCount = await models.Item.count(); // Adjust model name if needed
+        const { companyId } = req.body;
+        if (!companyId) return res.status(400).send({ message: 'Company Id is required.' });
+        const itemCount = await models.Items.count({
+            where: {
+                companyId
+            }
+        }); // Adjust model name if needed
 
         res.status(200).json({
             message: "Total number of items fetched successfully",
@@ -166,7 +177,13 @@ async function getTotalItems(req, res) {
 
 async function getTotalStores(req, res) {
     try {
-        const storeCount = await models.Store.count(); // Replace with models.Stores if that's your model name
+        const { companyId } = req.body;
+        if (!companyId) return res.status(400).send({ message: 'Company Id is required.' });
+        const storeCount = await models.Store.count({
+            where: {
+                companyId
+            }
+        });
 
         res.status(200).json({
             message: "Total number of stores fetched successfully",
@@ -183,7 +200,13 @@ async function getTotalStores(req, res) {
 
 async function getTotalDocuments(req, res) {
     try {
-        const documentCount = await models.Documents.count();
+        const { companyId } = req.body;
+        if (!companyId) return res.status(400).send({ message: 'Company Id is required.' });
+        const documentCount = await models.Documents.count({
+            where: {
+                companyId
+            }
+        });
 
         res.status(200).json({
             message: "Total number of documents fetched successfully",
@@ -208,7 +231,7 @@ async function getTotalUsersByCompany(req, res) {
             });
         }
 
-        const userCount = await models.User.count({
+        const userCount = await models.Users.count({
             where: { companyId: companyId }
         });
 
@@ -229,7 +252,7 @@ async function getTotalUsersByCompany(req, res) {
 async function getItemSalesSummaryWithPrediction(req, res) {
     try {
         // Fetch the sales data for all items
-        const salesData = await models.Item.findAll({
+        const salesData = await models.Items.findAll({
             attributes: [
                 'name',
                 'category',
@@ -310,7 +333,7 @@ async function getItemSalesSummaryWithPrediction(req, res) {
 async function predictSales(req, res) {
     try {
         const { companyId } = req.body;
-        
+
         if (!companyId) {
             return res.status(400).json({ message: "companyId is required" });
         }
@@ -359,8 +382,6 @@ async function predictSales(req, res) {
     }
 }
 
-
-
 // Optional: convert status codes to readable labels
 function convertStatus(statusCode) {
     switch (statusCode) {
@@ -373,5 +394,15 @@ function convertStatus(statusCode) {
 }
 
 module.exports = {
-    dashboard: dashboard
+    dashboard: dashboard,
+    getBuyerSupplierCount: getBuyerSupplierCount,
+    predictNext30DaysTotalValue: predictNext30DaysTotalValue,
+    getDocumentsInvoiceSummary: getDocumentsInvoiceSummary,
+    getItemSalesSummary: getItemSalesSummary,
+    getTotalStores: getTotalStores,
+    getTotalItems: getTotalItems,
+    getTotalDocuments: getTotalDocuments,
+    getTotalUsersByCompany: getTotalUsersByCompany,
+    getItemSalesSummaryWithPrediction: getItemSalesSummaryWithPrediction,
+    predictSales: predictSales
 };
