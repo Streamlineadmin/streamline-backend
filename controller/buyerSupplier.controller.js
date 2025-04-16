@@ -15,7 +15,7 @@ function addBuyerSupplier(req, res) {
         PAN: req.body.pan,
         GSTType: req.body.gstType,
         ip_address: req.body.ip_address,
-        status: 1,
+        status: eq.body.status,
         customerType: req.body?.customerType || "company"
     }
 
@@ -31,8 +31,7 @@ function addBuyerSupplier(req, res) {
                 pincode: elem.pincode,
                 state: elem.state,
                 ip_address: req.body.ip_address,
-                default: elem.default || false,
-                status: 1
+                status: elem.status,
             }
             models.BuyerSupplierAddress.create(addressData);
         })
@@ -88,7 +87,7 @@ async function editBuyerSupplier(req, res) {
                         pincode: address.pincode,
                         state: address.state,
                         ip_address,
-                        default: address.default || false,
+                        status: address.status,
                     });
 
                     existingAddressMap.delete(address.id);
@@ -103,8 +102,7 @@ async function editBuyerSupplier(req, res) {
                         pincode: address.pincode,
                         state: address.state,
                         ip_address,
-                        status: 1,
-                        default: address.default || false,
+                        status:  address.status || 1,
                     });
                 }
             }
