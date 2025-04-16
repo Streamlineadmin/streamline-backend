@@ -31,6 +31,7 @@ function addBuyerSupplier(req, res) {
                 pincode: elem.pincode,
                 state: elem.state,
                 ip_address: req.body.ip_address,
+                default: elem.default || false,
                 status: 1
             }
             models.BuyerSupplierAddress.create(addressData);
@@ -87,6 +88,7 @@ async function editBuyerSupplier(req, res) {
                         pincode: address.pincode,
                         state: address.state,
                         ip_address,
+                        default: address.default || false,
                     });
 
                     existingAddressMap.delete(address.id);
@@ -102,6 +104,7 @@ async function editBuyerSupplier(req, res) {
                         state: address.state,
                         ip_address,
                         status: 1,
+                        default: address.default || false,
                     });
                 }
             }
