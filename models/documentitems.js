@@ -11,6 +11,11 @@ module.exports = (sequelize, DataTypes) => {
      */
     static associate(models) {
       // define association here
+      DocumentItems.belongsTo(models.Items, {
+        foreignKey: 'itemId',
+        targetKey: 'itemId',
+        as: 'itemDetails'
+      });
     }
   }
   DocumentItems.init({
