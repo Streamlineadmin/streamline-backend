@@ -23,7 +23,7 @@ module.exports = (sequelize, DataTypes) => {
     country: DataTypes.STRING,
     pincode: DataTypes.STRING,
     status: DataTypes.INTEGER,
-    ip_address: DataTypes.STRING
+    ip_address: DataTypes.STRING,
   }, {
     sequelize,
     modelName: 'BuyerSupplierAddress',
