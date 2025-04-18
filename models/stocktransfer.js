@@ -29,7 +29,8 @@ module.exports = (sequelize, DataTypes) => {
     },
     price: DataTypes.FLOAT,
     documentNumber: DataTypes.STRING,
-    documentType: DataTypes.STRING
+    documentType: DataTypes.STRING,
+    isRejected: DataTypes.BOOLEAN
   }, {
     sequelize,
     modelName: 'StockTransfer',

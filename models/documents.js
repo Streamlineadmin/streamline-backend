@@ -151,7 +151,8 @@ module.exports = (sequelize, DataTypes) => {
     tcsData: {
       type: DataTypes.JSON,
       defaultValue: []
-    }
+    },
+    addStockOn: DataTypes.STRING
   }, {
     sequelize,
     modelName: 'Documents',

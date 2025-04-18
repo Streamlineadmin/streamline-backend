@@ -3,7 +3,8 @@ documentTypes = {
     invoice: 'Invoice',
     deliveryChallan: 'Delivery Challan',
     salesQuotation: 'Sales Quotation',
-    salesEnquiry: 'Sales Enquiry'
+    salesEnquiry: 'Sales Enquiry',
+    qualityReport: 'Quality Report'
 };
 
 module.exports = { documentTypes };
