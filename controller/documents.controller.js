@@ -1,6 +1,7 @@
 const { Op } = require('sequelize');
 const models = require('../models');
 const { documentTypes } = require('../helpers/document-type');
+const { generateTransferNumber } = require('../helpers/transfer-number');
 
 async function createDocument(req, res) {
   try {
@@ -24,6 +25,7 @@ async function createDocument(req, res) {
       deliveryDate = null,
       paymentTerm = null,
       store = null,
+      rejectedStore = null,
       enquiryNumber = null,
       enquiryDate = null,
       logisticDetailsId = null,
@@ -86,6 +88,7 @@ async function createDocument(req, res) {
       GSTValue = null,
       buyerGSTNumber = null,
       is_refered = null,
+      addStockOn = ''
     } = req.body;
 
     const document = await models.Documents.create({
@@ -161,14 +164,15 @@ async function createDocument(req, res) {
       inspection_date,
       BuyerPANNumber,
       isRounded,
-      tcsData
+      tcsData,
+      addStockOn
     });
 
     if (documentType === documentTypes.salesQuotation && enquiryNumber) {
       const existingDocument = await models.Documents.findOne({
         where: { documentNumber: enquiryNumber },
       });
-    
+
       if (existingDocument) {
         await existingDocument.update({
           quotationNumber: documentNumber,
@@ -176,7 +180,7 @@ async function createDocument(req, res) {
         });
       }
     }
-    
+
     const companyTermsCondition = await models.CompanyTermsCondition.create({
       companyId: companyId,
       termsCondition: termsCondition || [],
@@ -259,61 +263,123 @@ async function createDocument(req, res) {
         }),
     ]);
 
-    if (documentType === documentTypes.goodsReceive) {
+    if (documentType == documentTypes.goodsReceive || documentType == documentTypes.qualityReport) {
+      let purchase_order = '';
+      if (documentType === documentTypes.goodsReceive) {
+        purchase_order = await models.Documents.findOne({
+          where: {
+            documentNumber: purchaseOrderNumber,
+            companyId
+          }
+        });
+      }
+      else {
+        const grn = await models.Documents.findOne({
+          where: {
+            documentNumber: grn_number,
+            companyId
+          }
+        });
+        purchase_order = await models.Documents.findOne({
+          where: {
+            documentNumber: grn.purchaseOrderNumber,
+            companyId
+          }
+        });
+      }
       const existingItems = await models.Items.findAll({});
       const stores = await models.Store.findAll({});
       const itemsMap = new Map(existingItems.map(existingItem => [existingItem.itemId, existingItem.id]));
       const storesMap = new Map(stores.map(store => [store.name, store.id]));
-      await Promise.all([models.StoreItems.bulkCreate(items.map(item => {
-        const itemId = itemsMap.get(item.itemId) || null;
-        const storeId = storesMap.get(store) || null;
-        return {
-          storeId,
-          itemId,
-          quantity: item?.receivedToday || 0,
-          status: 1,
-          addedBy: createdBy,
-          price: item?.price
-        }
-      })
-      ),
-      models.StockTransfer.bulkCreate(items.map(item => {
-        const itemId = itemsMap.get(item.itemId) || null;
-        const storeId = storesMap.get(store) || null;
-        return {
-          transferNumber: item?.transferNumber,
-          fromStoreId: null,
-          itemId,
-          quantity: item?.receivedToday || 0,
-          toStoreId: storeId,
-          transferDate: new Date().toISOString(),
-          transferredBy: createdBy,
-          comment: '',
-          companyId,
-          price: item?.price,
-          documentNumber: document.documentNumber,
-          documentType
-        }
-      })),
-      ]
-      );
-      for (const item of items) {
-        const existItem = await models.Items.findOne({
-          where: {
-            id: itemsMap.get(item.itemId)
+      if ((documentType === documentTypes.goodsReceive && purchase_order.addStockOn == 'GRN') || (documentType === documentTypes.qualityReport && purchase_order.addStockOn == 'QR')) {
+        await Promise.all([models.StoreItems.bulkCreate(items?.filter(item => item?.receivedToday).map(item => {
+          const itemId = itemsMap.get(item.itemId) || null;
+          const storeId = storesMap.get(store) || null;
+          return {
+            storeId,
+            itemId,
+            quantity: item?.receivedToday || 0,
+            status: 1,
+            addedBy: createdBy,
+            price: item?.price
           }
-        });
-        if (existItem) {
-          await models.Items.update(
-            { currentStock: (item.currentStock || 0) + item.receivedToday },
-            {
-              where: {
-                id: itemsMap.get(item.itemId)
-              }
-            }
-          );
-        }
+        })
+        ),
+        models.StockTransfer.bulkCreate(items?.filter(item => item?.receivedToday).map(item => {
+          const itemId = itemsMap.get(item.itemId) || null;
+          const storeId = storesMap.get(store) || null;
+          return {
+            transferNumber: item?.transferNumber,
+            fromStoreId: null,
+            itemId,
+            quantity: item?.receivedToday || 0,
+            toStoreId: storeId,
+            transferDate: new Date().toISOString(),
+            transferredBy: createdBy,
+            comment: '',
+            companyId,
+            price: item?.price,
+            documentNumber: document.documentNumber,
+            documentType
+          }
+        })),
+        ]
+        );
 
+        for (const item of items) {
+          const existItem = await models.Items.findOne({
+            where: {
+              id: itemsMap.get(item.itemId)
+            }
+          });
+          if (existItem) {
+            await models.Items.update(
+              { currentStock: (item.currentStock || 0) + (item.receivedToday || 0) },
+              {
+                where: {
+                  id: itemsMap.get(item.itemId)
+                }
+              }
+            );
+          }
+
+        }
+      }
+      if (documentType === documentTypes.qualityReport) {
+        await Promise.all([models.StoreItems.bulkCreate(items?.filter(item => item.pendingQuantity).map(item => {
+          const itemId = itemsMap.get(item.itemId) || null;
+          const storeId = storesMap.get(rejectedStore) || null;
+          return {
+            storeId,
+            itemId,
+            quantity: item.pendingQuantity || 0,
+            status: 1,
+            addedBy: createdBy,
+            price: item?.price,
+            isRejected: true
+          }
+        })
+        ),
+        models.StockTransfer.bulkCreate(items?.filter(item => item.pendingQuantity).map(item => {
+          const itemId = itemsMap.get(item.itemId) || null;
+          const storeId = storesMap.get(rejectedStore) || null;
+          return {
+            transferNumber: generateTransferNumber(),
+            fromStoreId: null,
+            itemId,
+            quantity: item.pendingQuantity || 0,
+            toStoreId: storeId,
+            transferDate: new Date().toISOString(),
+            transferredBy: createdBy,
+            comment: '',
+            companyId,
+            price: item?.price,
+            documentNumber: document.documentNumber,
+            documentType,
+            isRejected: true
+          }
+        })),
+        ]);
       }
     }
 
@@ -324,7 +390,6 @@ async function createDocument(req, res) {
           companyId
         }
       });
-      console.log('storeId', storeId.id, storeId.name);
       for (const element of items) {
         let price = 0;
         let remainingQuantity = element.quantity;
@@ -410,15 +475,16 @@ async function getDocuments(req, res) {
   const documentIds = documents.map(doc => doc.id);
 
   const [items, additionalCharges, bankDetails, termsConditions, attachments, documentComments] = await Promise.all([
-    models.DocumentItems.findAll({ where: { documentNumber: documentNumbers, companyId }, 
+    models.DocumentItems.findAll({
+      where: { documentNumber: documentNumbers, companyId },
       include: [
         {
           model: models.Items,
           as: 'itemDetails',
           attributes: ['itemId', 'category', 'subCategory', 'microCategory']
         }
-      ] 
-     }),
+      ]
+    }),
     models.DocumentAdditionalCharges.findAll({ where: { documentNumber: documentNumbers, companyId } }),
     models.DocumentBankDetails.findAll({ where: { documentNumber: documentNumbers, companyId } }),
     models.CompanyTermsCondition.findAll({ where: { documentNumber: documentNumbers, companyId } }),

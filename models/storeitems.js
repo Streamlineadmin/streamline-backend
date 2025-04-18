@@ -19,7 +19,8 @@ module.exports = (sequelize, DataTypes) => {
     quantity: DataTypes.INTEGER,
     status: DataTypes.INTEGER,
     addedBy: DataTypes.INTEGER,
-    price: DataTypes.FLOAT
+    price: DataTypes.FLOAT,
+    isRejected: DataTypes.BOOLEAN
   }, {
     sequelize,
     modelName: 'StoreItems',

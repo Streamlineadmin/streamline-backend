@@ -190,6 +190,15 @@ async function getStores(req, res) {
         const itemCount = await models.StoreItems.count({
           where: {
             storeId: store.id,
+            isRejected: false
+          },
+          distinct: true,
+          col: 'itemId'
+        });
+        const rejectedItemCount = await models.StoreItems.count({
+          where: {
+            storeId: store.id,
+            isRejected: true
           },
           distinct: true,
           col: 'itemId'
@@ -199,6 +208,7 @@ async function getStores(req, res) {
         storesWithItemCount.push({
           ...store.toJSON(), // Spread the store object to include all columns
           itemCount: itemCount, // This is the number of items in the store
+          rejectedItemCount
         });
       } catch (err) {
         // Log and continue if there's an error counting items for a particular store
@@ -206,6 +216,7 @@ async function getStores(req, res) {
         storesWithItemCount.push({
           ...store.toJSON(),
           itemCount: 0, // Default to 0 if there's an issue counting items
+          rejectedItemCount: 0
         });
       }
     }
@@ -234,7 +245,7 @@ async function getStoresByItem(req, res) {
   try {
     // Step 2: Find all storeIds that have the given itemId in StoreItems
     const storeItems = await models.StoreItems.findAll({
-      where: { itemId },
+      where: { itemId, isRejected: false },
       attributes: ['storeId', 'quantity'], // Only retrieve storeId and quantity
     });
 
@@ -302,7 +313,7 @@ async function stockTransfer(req, res) {
       if (useFIFO && addReduce == 2) {
         // Fetch existing stock based on FIFO (oldest stock first)
         const existingStock = await models.StoreItems.findAll({
-          where: { storeId: element.toStore, itemId: element.itemId },
+          where: { storeId: element.toStore, itemId: element.itemId, isRejected: false },
           order: [['createdAt', 'ASC']], // Oldest entries first
         });
         for (const stock of existingStock) {
@@ -401,7 +412,7 @@ async function getItemStockTransferHistory(req, res) {
   try {
     // Fetch stock transfers for the given itemId
     const stockTransfers = await models.StockTransfer.findAll({
-      where: { itemId },
+      where: { itemId, isRejected: req.body.isRejected || false },
       attributes: [
         'createdAt',
         'transferNumber',
@@ -660,6 +671,7 @@ async function getStoreItemsByStoreId(req, res) {
     let [storeItems, uomData] = await Promise.all([models.StoreItems.findAll({
       where: {
         storeId,
+        isRejected: req.body.isRejected || false
       }
     }), models.UOM.findAll({})]);
     const myMap = new Map();
