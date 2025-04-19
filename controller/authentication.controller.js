@@ -109,7 +109,14 @@ async function signUp(req, res) {
 }
 
 function login(req, res) {
-    models.Users.findOne({ where: { email: req.body.email } }).then(user => {
+    models.Users.findOne({ 
+        where: { 
+            [Op.or]: [
+                { email: req.body.email },
+                { username: req.body.email }
+            ]
+        } 
+    }).then(user => {
         if (user === null) {
             res.status(401).json({
                 message: "Invalid Credentials!",
