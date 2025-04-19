@@ -135,6 +135,10 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.STRING,
       allowNull: true, 
     },  
+    buyerSupplierKYCDetails: {
+      type: DataTypes.JSON,
+      allowNull: true, 
+    },  
     is_refered: {
       type: DataTypes.BOOLEAN,
       allowNull: true, 
