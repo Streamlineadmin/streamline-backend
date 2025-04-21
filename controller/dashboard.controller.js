@@ -1,8 +1,8 @@
 const models = require("../models");
 const simpleStats = require('simple-statistics'); // Simple stats library for regression
+const moment = require('moment');
 
 async function dashboard(req, res) {
-
 }
 
 async function getBuyerSupplierCount(req, res) {
@@ -34,120 +34,6 @@ async function getBuyerSupplierCount(req, res) {
         res.status(500).json({
             message: "Something went wrong while fetching data!",
             error: error
-        });
-    }
-}
-
-async function getItemSalesSummary(req, res) {
-    try {
-        const salesData = await models.Items.findAll({
-            attributes: [
-                'name',
-                'category',
-                [models.sequelize.fn('SUM', models.sequelize.col('quantity')), 'quantitySold'],
-                [models.sequelize.fn('AVG', models.sequelize.col('unitPrice')), 'unitPrice'],
-                [models.sequelize.literal('SUM(quantity * unitPrice)'), 'totalRevenue']
-            ],
-            group: ['name', 'category']
-        });
-
-        const formattedData = salesData.map(item => ({
-            itemName: item.name,
-            category: item.category,
-            quantitySold: parseFloat(item.dataValues.quantitySold),
-            unitPriceINR: parseFloat(item.dataValues.unitPrice).toFixed(2),
-            totalRevenueINR: parseFloat(item.dataValues.totalRevenue).toFixed(2)
-        }));
-
-        res.status(200).json({
-            message: "Item sales summary fetched successfully",
-            data: formattedData
-        });
-    } catch (error) {
-        console.error("Error fetching item sales summary:", error);
-        res.status(500).json({
-            message: "Failed to fetch item sales summary",
-            error
-        });
-    }
-}
-
-async function getDocumentsInvoiceSummary(req, res) {
-    try {
-        const documents = await models.Documents.findAll({
-            attributes: [
-                'invoiceNumber',
-                'buyerName',
-                [models.sequelize.literal('COALESCE(totalValue, 0)'), 'totalValue'], // You can add this field in DB or compute dynamically
-                [models.sequelize.literal('COALESCE(paidAmount, 0)'), 'paid'],
-                'status',
-                ['paymentTerm', 'payment'],
-                'createdBy',
-                ['createdAt', 'createdDate']
-            ],
-            order: [['createdAt', 'DESC']]
-        });
-
-        const summary = documents.map(doc => ({
-            invoiceNumber: doc.invoiceNumber,
-            company: doc.buyerName,
-            totalValue: parseFloat(doc.get('totalValue')).toFixed(2),
-            paid: parseFloat(doc.get('paid')).toFixed(2),
-            status: convertStatus(doc.status), // optional, convert integer to label
-            payment: doc.payment,
-            createdBy: doc.createdBy,
-            createdDate: new Date(doc.createdDate).toISOString().split('T')[0]
-        }));
-
-        res.status(200).json({
-            message: "Invoice summary from documents fetched successfully",
-            data: summary
-        });
-    } catch (err) {
-        console.error("Error in getDocumentsInvoiceSummary:", err);
-        res.status(500).json({
-            message: "Failed to fetch invoice data",
-            error: err
-        });
-    }
-}
-
-async function predictNext30DaysTotalValue(req, res) {
-    try {
-        // Fetch documents (invoices) from the last 30 days or as needed
-        const documents = await models.Documents.findAll({
-            attributes: [
-                'invoiceNumber',
-                'totalValue', // Ensure totalValue is being fetched correctly
-                'createdAt'
-            ],
-            where: {
-                createdAt: {
-                    [models.sequelize.Op.gte]: models.sequelize.fn('NOW', '-30 days') // Get invoices from the last 30 days
-                }
-            },
-            order: [['createdAt', 'ASC']]
-        });
-
-        // Calculate the total value from the documents fetched
-        const totalValueCurrentPeriod = documents.reduce((acc, doc) => acc + parseFloat(doc.totalValue || 0), 0);
-
-        // Calculate the average daily total value from the last period (for example, last 30 days)
-        const daysInCurrentPeriod = documents.length > 0 ? documents.length : 1; // To prevent divide by zero
-        const avgDailyTotalValue = totalValueCurrentPeriod / daysInCurrentPeriod;
-
-        // Predict the total value for the next 30 days based on the average daily value
-        const predictedTotalValueNext30Days = avgDailyTotalValue * 30;
-
-        res.status(200).json({
-            message: "Next 30 days total value prediction",
-            predictedTotalValueNext30Days: predictedTotalValueNext30Days.toFixed(2)
-        });
-    } catch (err) {
-        console.error("Error in predictNext30DaysTotalValue:", err);
-        res.status(500).json({
-            message: "Failed to predict next 30 days' total value",
-            error: err
         });
     }
 }
@@ -250,85 +136,88 @@ async function getTotalUsersByCompany(req, res) {
 }
 
 async function getItemSalesSummaryWithPrediction(req, res) {
+    const { companyId } = req.body;
+
+    if (!companyId) {
+        return res.status(400).json({
+            message: "Missing required parameter: companyId"
+        });
+    }
+
     try {
-        // Fetch the sales data for all items
+        // Fetch aggregated sales data
         const salesData = await models.Items.findAll({
             attributes: [
-                'name',
+                'itemName',
                 'category',
-                [models.sequelize.fn('SUM', models.sequelize.col('quantity')), 'quantitySold'],
-                [models.sequelize.fn('AVG', models.sequelize.col('unitPrice')), 'unitPrice'],
-                [models.sequelize.literal('SUM(quantity * unitPrice)'), 'totalRevenue']
+                [models.sequelize.fn('SUM', models.sequelize.col('currentStock')), 'quantitySold'],
+                [models.sequelize.fn('AVG', models.sequelize.col('price')), 'unitPrice'],
+                [models.sequelize.literal('SUM("currentStock" * "price")'), 'totalRevenue']
             ],
-            group: ['name', 'category']
+            where: { companyId },
+            group: ['itemName', 'category']
         });
 
-        // Process the sales data
         const itemSales = salesData.map(item => ({
-            itemName: item.name,
+            itemName: item.itemName,
             category: item.category,
             quantitySold: parseFloat(item.dataValues.quantitySold),
             unitPriceINR: parseFloat(item.dataValues.unitPrice),
             totalRevenueINR: parseFloat(item.dataValues.totalRevenue)
         }));
 
-        // Predict sales for the next 30 days using simple linear regression
+        // Determine days left in current month
+        const today = moment();
+        const endOfMonth = moment().endOf('month');
+        const daysLeft = endOfMonth.diff(today, 'days');
+
         const predictionResults = itemSales.map(item => {
-            // Generate data for linear regression (Days vs Quantity Sold)
+            // Simulate sales over past 10 days to build regression
             const days = [];
             const quantities = [];
-
-            // For simplicity, assume quantity sold for each item follows a linear trend
-            for (let i = 1; i <= 30; i++) {
-                days.push(i); // Day number (1 to 30)
-                quantities.push(item.quantitySold * (1 + (Math.random() * 0.1))); // Simulated quantity (random fluctuation)
+            for (let i = 1; i <= 10; i++) {
+                days.push(i);
+                // Slightly fluctuate quantity to simulate trend
+                quantities.push(item.quantitySold * (0.8 + Math.random() * 0.4));
             }
 
-            // Perform linear regression on the data
-            const regression = simpleStats.linearRegression(days.map((day, idx) => [day, quantities[idx]]));
+            const regression = simpleStats.linearRegression(days.map((d, i) => [d, quantities[i]]));
             const regressionLine = simpleStats.linearRegressionLine(regression);
 
-            // Predict sales for the next 30 days
-            const predictedSalesNext30Days = [];
-            for (let i = 1; i <= 30; i++) {
-                const predictedSales = regressionLine(i); // Predict for each day
-                predictedSalesNext30Days.push({
-                    day: i,
-                    predictedSales: parseFloat(predictedSales).toFixed(2)
-                });
+            // Predict sales for each remaining day in the month
+            let predictedTotal = 0;
+            for (let i = 11; i <= 10 + daysLeft; i++) {
+                predictedTotal += regressionLine(i);
             }
 
             return {
-                ...item,
-                predictedSalesNext30Days
+                itemName: item.itemName,
+                category: item.category,
+                unitPriceINR: item.unitPriceINR.toFixed(2),
+                currentSalesQuantity: item.quantitySold,
+                predictedQuantityTillMonthEnd: parseFloat(predictedTotal).toFixed(2),
+                predictedRevenueINR: (predictedTotal * item.unitPriceINR).toFixed(2)
             };
         });
 
-        // Number of items
-        const numberOfItems = itemSales.length;
-
-        // Filter or rank items by predicted sales (for example, top 5 items predicted to sell the most)
-        const topSellingItems = predictionResults.sort((a, b) => {
-            const totalPredictedSalesA = a.predictedSalesNext30Days.reduce((acc, curr) => acc + parseFloat(curr.predictedSales), 0);
-            const totalPredictedSalesB = b.predictedSalesNext30Days.reduce((acc, curr) => acc + parseFloat(curr.predictedSales), 0);
-            return totalPredictedSalesB - totalPredictedSalesA; // Sort descending
-        }).slice(0, 5); // Get top 5 items
+        const topSellingItems = predictionResults
+            .sort((a, b) => b.predictedQuantityTillMonthEnd - a.predictedQuantityTillMonthEnd)
+            .slice(0, 5);
 
         res.status(200).json({
-            message: "Item sales summary with prediction for next 30 days fetched successfully",
-            numberOfItems,
+            message: "Predicted item sales till end of the month fetched successfully",
+            numberOfItems: itemSales.length,
             topSellingItems
         });
 
     } catch (error) {
-        console.error("Error fetching item sales summary with prediction:", error);
+        console.error("Error in monthly prediction:", error);
         res.status(500).json({
-            message: "Failed to fetch item sales summary with prediction",
-            error
+            message: "Failed to generate prediction summary",
+            error: error.message
         });
     }
 }
-
 
 async function predictSales(req, res) {
     try {
@@ -338,49 +227,266 @@ async function predictSales(req, res) {
             return res.status(400).json({ message: "companyId is required" });
         }
 
-        // Fetch sales data for the last 30 days for the given company
-        const salesData = await models.Sales.findAll({
-            where: { companyId },
-            attributes: ['date', 'totalValue'],
-            order: [['date', 'ASC']]
+        // Fetch last 30 days of document entries with invoiceDate and advancePayment
+        const documents = await models.Documents.findAll({
+            where: {
+                companyId,
+                invoiceDate: {
+                    [models.Sequelize.Op.ne]: null
+                },
+                advancePayment: {
+                    [models.Sequelize.Op.ne]: null
+                }
+            },
+            attributes: ['invoiceDate', 'advancePayment'],
+            order: [['invoiceDate', 'ASC']]
         });
 
-        if (salesData.length < 30) {
-            return res.status(400).json({ message: "Insufficient data for prediction (need at least 30 days)" });
+        if (documents.length < 30) {
+            return res.status(400).json({
+                message: "Insufficient data for prediction (need at least 30 documents with valid invoiceDate and advancePayment)"
+            });
         }
 
-        // Prepare the data for regression (Date -> number of days, Total Sales Value)
-        const dates = salesData.map((data) => (new Date(data.date) - new Date(salesData[0].date)) / (1000 * 3600 * 24)); // Days since first sale
-        const salesValues = salesData.map((data) => data.totalValue);
+        // Normalize dates to number of days since first invoice
+        const baseDate = new Date(documents[0].invoiceDate);
+        const days = documents.map(doc => {
+            return (new Date(doc.invoiceDate) - baseDate) / (1000 * 3600 * 24);
+        });
 
-        // Train a linear regression model
-        const regression = simpleStats.linearRegression(dates.map((date, idx) => [date, salesValues[idx]]));
+        const values = documents.map(doc => parseFloat(doc.advancePayment || 0));
+
+        // Run linear regression
+        const regression = simpleStats.linearRegression(days.map((d, i) => [d, values[i]]));
         const regressionLine = simpleStats.linearRegressionLine(regression);
 
-        // Predict the next 7 days and 30 days
+        const lastDay = days[days.length - 1];
+
+        // Predict next 7 and 30 days
         const next7Days = [];
         const next30Days = [];
-        for (let i = 1; i <= 30; i++) {
-            const predictedValue7 = regressionLine(dates[dates.length - 1] + i); // Prediction for next 7 days
-            if (i <= 7) next7Days.push({ day: i, predictedSales: predictedValue7.toFixed(2) });
 
-            const predictedValue30 = regressionLine(dates[dates.length - 1] + i); // Prediction for next 30 days
-            next30Days.push({ day: i, predictedSales: predictedValue30.toFixed(2) });
+        for (let i = 1; i <= 30; i++) {
+            const futureDay = lastDay + i;
+            const predictedSales = regressionLine(futureDay);
+            const prediction = {
+                day: i,
+                predictedSales: predictedSales.toFixed(2)
+            };
+
+            if (i <= 7) next7Days.push(prediction);
+            next30Days.push(prediction);
         }
 
         res.status(200).json({
-            message: "Sales prediction for the next 7 and 30 days",
+            message: "Sales prediction for the next 7 and 30 days using Documents table",
             next7Days,
             next30Days
         });
+
     } catch (error) {
         console.error("Error in predictSales function:", error);
         res.status(500).json({
             message: "Error in predicting sales",
-            error
+            error: error.message
         });
     }
 }
+
+async function getItemSalesSummary(req, res) {
+    const { companyId } = req.body;
+
+    if (!companyId) {
+        return res.status(400).json({
+            message: "Missing required parameter: companyId"
+        });
+    }
+
+    try {
+        const items = await models.Items.findAll({
+            attributes: [
+                'itemName',
+                'category',
+                'price',          // unit price
+                'currentStock',   // quantity
+                [models.sequelize.literal('(currentStock * price)'), 'stockValue']
+            ],
+            where: {
+                companyId
+            }
+        });
+
+        const formattedData = items.map(item => ({
+            itemName: item.itemName,
+            category: item.category,
+            unitPriceINR: parseFloat(item.price || 0).toFixed(2),
+            quantity: item.currentStock ?? 0,
+            stockValueINR: parseFloat(item.get('stockValue') || 0).toFixed(2)
+        }));
+
+        res.status(200).json({
+            message: "Item stock summary fetched successfully",
+            data: formattedData
+        });
+    } catch (error) {
+        console.error("Error fetching item summary:", error);
+        res.status(500).json({
+            message: "Failed to fetch item summary",
+            error: error.message
+        });
+    }
+}
+
+async function getDocumentsInvoiceSummary(req, res) {
+    try {
+        const { companyId } = req.body;  // Get companyId from the request body
+
+        if (!companyId) {
+            return res.status(400).json({ message: "companyId is required" });
+        }
+
+        // Fetch documents where companyId matches and documentType is 'invoice'
+        const documents = await models.Documents.findAll({
+            where: {
+                companyId,           // Filter documents by companyId
+                documentType: 'invoice'  // Filter documents by documentType being 'invoice'
+            },
+            attributes: [
+                'documentNumber',  // Use documentNumber as the invoice number
+                'buyerName',
+                [models.sequelize.literal('COALESCE(advancePayment, 0)'), 'totalValue'], // Adjusted based on available field
+                [models.sequelize.literal('COALESCE(advancePayment, 0)'), 'paid'], // Adjusted based on available field
+                'status',
+                ['paymentTerm', 'payment'],
+                'createdBy',
+                ['createdAt', 'createdDate']
+            ],
+            order: [['createdAt', 'DESC']]
+        });
+
+        if (documents.length === 0) {
+            return res.status(404).json({ message: "No invoice documents found for the given companyId" });
+        }
+
+        const summary = documents.map(doc => {
+            // Ensure valid date parsing
+            const createdDate = doc.createdDate ? new Date(doc.createdDate) : null;
+            const formattedDate = createdDate && !isNaN(createdDate.getTime()) 
+                ? createdDate.toISOString().split('T')[0]  // Correct date format (YYYY-MM-DD)
+                : "Invalid Date";  // If invalid date, set fallback value
+
+            return {
+                invoiceNumber: doc.documentNumber || "N/A",  // Use documentNumber as invoiceNumber
+                company: doc.buyerName,
+                totalValue: parseFloat(doc.get('totalValue')).toFixed(2),
+                paid: parseFloat(doc.get('paid')).toFixed(2),
+                status: convertStatus(doc.status), // Optional: convert integer status to label
+                payment: doc.payment,
+                createdBy: doc.createdBy,
+                createdDate: formattedDate
+            };
+        });
+
+        res.status(200).json({
+            message: "Invoice summary from documents fetched successfully",
+            data: summary
+        });
+    } catch (err) {
+        console.error("Error in getDocumentsInvoiceSummary:", err);
+        res.status(500).json({
+            message: "Failed to fetch invoice data",
+            error: err.message || err
+        });
+    }
+}
+
+async function predictNext30DaysTotalValue(req, res) {
+    try {
+        // Get the companyId from the request body
+        const { companyId } = req.body;
+
+        // Ensure companyId is provided and is a valid number
+        if (!companyId || isNaN(companyId)) {
+            return res.status(400).json({
+                message: "Invalid companyId provided"
+            });
+        }
+
+        // Get the current date and the date from 30 days ago
+        const currentDate = new Date();
+        const thirtyDaysAgo = new Date(currentDate);
+        thirtyDaysAgo.setDate(currentDate.getDate() - 30);
+
+        // Convert both to ISO string (UTC) to avoid timezone discrepancies
+        const currentDateUTC = currentDate.toISOString();
+        const thirtyDaysAgoUTC = thirtyDaysAgo.toISOString();
+
+        console.log("Current Date (UTC): ", currentDateUTC);
+        console.log("30 Days Ago (UTC): ", thirtyDaysAgoUTC);
+
+        // Fetch documents (invoices) from the last 30 days based on companyId
+        const documents = await models.Documents.findAll({
+            attributes: [
+                'documentNumber', // Use documentNumber as invoice number
+                'advancePayment', // Using advancePayment as part of total invoice amount
+                'GSTValue', // Assuming GSTValue is part of the total value
+                'createdAt'
+            ],
+            where: {
+                createdAt: {
+                    [models.Sequelize.Op.gte]: thirtyDaysAgoUTC // Ensure using the correct operator
+                },
+                documentType: 'invoice', // Ensure only invoices are considered
+                companyId: companyId // Filter based on companyId
+            },
+            order: [['createdAt', 'ASC']]
+        });
+
+        console.log("Fetched Documents: ", documents);
+
+        // If no documents found, return a message
+        if (documents.length === 0) {
+            return res.status(404).json({
+                message: "No invoices found for the given company in the last 30 days"
+            });
+        }
+
+        // Calculate the total value from the documents fetched
+        const totalValueCurrentPeriod = documents.reduce((acc, doc) => {
+            // Handle cases where advancePayment or GSTValue might not be set or are not numbers
+            const advancePayment = parseFloat(doc.advancePayment) || 0;
+            const gstValue = parseFloat(doc.GSTValue) || 0;
+
+            // Assuming the total value is advancePayment + GSTValue
+            return acc + advancePayment + gstValue;
+        }, 0);
+
+        console.log("Total Value Current Period: ", totalValueCurrentPeriod);
+
+        // Calculate the average daily total value
+        const daysInCurrentPeriod = documents.length > 0 ? documents.length : 1; // Prevent divide by zero
+        const avgDailyTotalValue = totalValueCurrentPeriod / daysInCurrentPeriod;
+
+        console.log("Average Daily Total Value: ", avgDailyTotalValue);
+
+        // Predict the total value for the next 30 days based on the average daily value
+        const predictedTotalValueNext30Days = avgDailyTotalValue * 30;
+
+        res.status(200).json({
+            message: "Next 30 days total value prediction",
+            predictedTotalValueNext30Days: predictedTotalValueNext30Days.toFixed(2)
+        });
+    } catch (err) {
+        console.error("Error in predictNext30DaysTotalValue:", err);
+        res.status(500).json({
+            message: "Failed to predict next 30 days' total value",
+            error: err.message || err
+        });
+    }
+}
+
+
+
 
 // Optional: convert status codes to readable labels
 function convertStatus(statusCode) {
