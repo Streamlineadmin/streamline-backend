@@ -674,7 +674,8 @@ async function getDocumentItems(req, res) {
 
     const documentItems = await models.DocumentItems.findAll({
       where: {
-        documentNumber: { [Op.in]: documentNumbers }
+        documentNumber: { [Op.in]: documentNumbers },
+        companyId: req.body.companyId
       },
       attributes: ['itemId', 'receivedToday']
     });
