@@ -59,6 +59,7 @@ module.exports = (sequelize, DataTypes) => {
     deliveryDate: DataTypes.STRING,
     paymentTerm: DataTypes.STRING,
     store: DataTypes.STRING,
+    rejectedStore: DataTypes.STRING,
     enquiryNumber: DataTypes.STRING,
     enquiryDate: DataTypes.STRING,
     logisticDetailsId: {

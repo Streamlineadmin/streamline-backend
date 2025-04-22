@@ -116,6 +116,7 @@ async function createDocument(req, res) {
       deliveryDate,
       paymentTerm,
       store,
+      rejectedStore,
       enquiryNumber,
       enquiryDate,
       logisticDetailsId,
@@ -274,6 +275,28 @@ async function createDocument(req, res) {
             companyId
           }
         });
+        if (purchase_order) {
+          let partiallyReceived = false, accessQuantityReceived = false;
+          for (const item of items) {
+            if (item.quantity < item.receivedQuantity) {
+              accessQuantityReceived = true;
+            }
+            if (item.quantity > item.receivedQuantity) {
+              partiallyReceived = true;
+              break;
+            }
+          }
+          const status = partiallyReceived ? 4 : accessQuantityReceived ? 6 : 5;
+          await models.Documents.update(
+            { status },
+            {
+              where: {
+                id: purchase_order.id,
+                companyId
+              }
+            }
+          );
+        }
       }
       else {
         const grn = await models.Documents.findOne({
@@ -288,6 +311,15 @@ async function createDocument(req, res) {
             companyId
           }
         });
+        await models.Documents.update(
+          { status: 7 },
+          {
+            where: {
+              documentNumber: grn_number,
+              companyId
+            }
+          }
+        );
       }
       const existingItems = await models.Items.findAll({});
       const stores = await models.Store.findAll({});
@@ -664,7 +696,7 @@ async function getDocumentItems(req, res) {
     }
 
     const purchaseOrders = await models.Documents.findAll({
-      where: { purchaseOrderNumber },
+      where: { purchaseOrderNumber, companyId: Number(req.body.companyId) },
       attributes: ['documentNumber']
     });
 
@@ -676,7 +708,8 @@ async function getDocumentItems(req, res) {
 
     const documentItems = await models.DocumentItems.findAll({
       where: {
-        documentNumber: { [Op.in]: documentNumbers }
+        documentNumber: { [Op.in]: documentNumbers },
+        companyId: req.body.companyId
       },
       attributes: ['itemId', 'receivedToday']
     });
