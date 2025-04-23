@@ -4,7 +4,8 @@ documentTypes = {
     deliveryChallan: 'Delivery Challan',
     salesQuotation: 'Sales Quotation',
     salesEnquiry: 'Sales Enquiry',
-    qualityReport: 'Quality Report'
+    qualityReport: 'Quality Report',
+    orderConfirmation : 'Order Confirmation'
 };
 
 module.exports = { documentTypes };
