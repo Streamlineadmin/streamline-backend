@@ -82,6 +82,7 @@ async function createDocument(req, res) {
       documentComments = null,
       tcsData = [],
       BuyerPANNumber = null,
+      buyerSupplierKYCDetails = null,
       isRounded = null,
       reduceStockOnDC = '',
       reduceStockOnIV = '',
@@ -102,6 +103,7 @@ async function createDocument(req, res) {
       advancePayment,
       GSTValue,
       buyerGSTNumber,
+      buyerSupplierKYCDetails,
       is_refered,
       buyerDeliveryAddress,
       buyerContactNumber,
@@ -744,9 +746,18 @@ async function getDocuments(req, res) {
     models.DocumentComments.findAll({ where: { documentId: documentIds } }),
   ]);
 
+  const uniqueItemsMap = new Map();
+    for (const item of items) {
+      const key = `${item.documentNumber}_${item.itemId}`;
+      if (!uniqueItemsMap.has(key)) {
+        uniqueItemsMap.set(key, item);
+      }
+    }
+  const uniqueItems = Array.from(uniqueItemsMap.values());
+
   const formattedResult = documents.map(document => ({
     ...document.toJSON(),
-    items: items.filter(item => item.documentNumber === document.documentNumber),
+    items: uniqueItems.filter(item => item.documentNumber === document.documentNumber),
     additionalCharges: additionalCharges.filter(charge => charge.documentNumber === document.documentNumber),
     bankDetails: bankDetails.find(bank => bank.documentNumber === document.documentNumber) || {},
     termsCondition: termsConditions.find(tc => tc.documentNumber === document.documentNumber) || {},
