@@ -88,10 +88,12 @@ async function createDocument(req, res) {
       GSTValue = null,
       buyerGSTNumber = null,
       is_refered = null,
-      addStockOn = ''
+      addStockOn = '',
+      isDraft = false
     } = req.body;
 
-    const document = await models.Documents.create({
+    let document = null;
+    if (!isDraft) document = await models.Documents.create({
       documentType,
       documentNumber,
       buyerName,
@@ -169,7 +171,99 @@ async function createDocument(req, res) {
       addStockOn
     });
 
-    if (documentType === documentTypes.salesQuotation && enquiryNumber) {
+    else {
+      document = await models.Documents.findOne({
+        where: {
+          companyId,
+          documentNumber
+        }
+      });
+    }
+
+    if (isDraft) document.update({
+      documentType,
+      documentNumber,
+      buyerName,
+      documentTo,
+      buyerBillingAddress,
+      advancePayment,
+      GSTValue,
+      buyerGSTNumber,
+      is_refered,
+      buyerDeliveryAddress,
+      buyerContactNumber,
+      buyerEmail,
+      supplierName,
+      supplierBillingAddress,
+      supplierDeliverAddress,
+      supplierContactNo,
+      supplierEmail,
+      documentDate,
+      ammendment,
+      deliveryDate,
+      paymentTerm,
+      store,
+      rejectedStore,
+      enquiryNumber,
+      enquiryDate,
+      logisticDetailsId,
+      additionalDetails,
+      signature,
+      companyId,
+      createdBy,
+      status,
+      ip_address,
+      paymentDate,
+      POCName,
+      POCNumber,
+      POCDate,
+      OCNumber,
+      OCDate,
+      transporterName,
+      TGNumber,
+      TDNumber,
+      TDDate,
+      VehicleNumber,
+      replyDate,
+      Attention,
+      invoiceNumber,
+      invoiceDate,
+      billDate,
+      returnRecieveDate,
+      creditNoteNumber,
+      creditNotedate,
+      quotationNumber,
+      quotationDate,
+      orderConfirmationNumber,
+      orderConfirmationDate,
+      purchaseOrderNumber,
+      purchaseOrderDate,
+      grn_number,
+      grn_Date,
+      indent_number,
+      indent_date,
+      supplier_invoice_number,
+      supplier_invoice_date,
+      challan_number,
+      challan_date,
+      debit_note_number,
+      debit_note_date,
+      performaInvoiceNumber,
+      performaInvoiceDate,
+      pay_to_transporter,
+      inspection_date,
+      BuyerPANNumber,
+      isRounded,
+      tcsData,
+      addStockOn
+    }, {
+      where: {
+        companyId,
+        documentNumber
+      }
+    });
+
+    if (status && (documentType === documentTypes.salesQuotation && enquiryNumber)) {
       const existingDocument = await models.Documents.findOne({
         where: { documentNumber: enquiryNumber, companyId },
       });
@@ -183,7 +277,7 @@ async function createDocument(req, res) {
       }
     }
 
-    if (documentType === documentTypes.orderConfirmation) {
+    if (status && documentType === documentTypes.orderConfirmation) {
       const existingDocument = await models.Documents.findOne({
         where: { documentNumber: quotationNumber, companyId },
       });
@@ -195,7 +289,7 @@ async function createDocument(req, res) {
       }
     }
 
-    if ((documentType === documentTypes.deliveryChallan || documentType === documentTypes.invoice) && orderConfirmationNumber) {
+    if (status && ((documentType === documentTypes.deliveryChallan || documentType === documentTypes.invoice) && orderConfirmationNumber)) {
       const existingDocument = await models.Documents.findOne({
         where: { documentNumber: orderConfirmationNumber, companyId },
       });
@@ -262,6 +356,14 @@ async function createDocument(req, res) {
       }
     }
 
+    if (isDraft) {
+      await models.CompanyTermsCondition.destroy({
+        where: {
+          companyId,
+          documentNumber
+        }
+      });
+    }
     const companyTermsCondition = await models.CompanyTermsCondition.create({
       companyId: companyId,
       termsCondition: termsCondition || [],
@@ -271,9 +373,47 @@ async function createDocument(req, res) {
       updatedAt: new Date()
     });
 
-    await document.update({
+    companyTermsCondition?.id && await models.Documents.update({
       companyTermsConditionId: companyTermsCondition.id
+    }, {
+      where: {
+        companyId,
+        documentNumber
+      }
     });
+
+    if (isDraft) {
+      await Promise.all([
+        models.DocumentItems.destroy({
+          where: {
+            companyId,
+            documentNumber
+          }
+        }),
+        models.DocumentAdditionalCharges.destroy({
+          where: {
+            companyId,
+            documentNumber
+          }
+        }),
+        models.DocumentBankDetails.destroy({
+          where: {
+            companyId,
+            documentNumber
+          }
+        }),
+        models.DocumentAttachments.destroy({
+          where: {
+            companyId,
+            documentNumber
+          }
+        }),
+        models.DocumentComments.destroy(
+          {
+            where: { documentId: document.id },
+          })
+      ]);
+    }
 
     await Promise.all([
       models.DocumentItems.bulkCreate(
@@ -344,7 +484,7 @@ async function createDocument(req, res) {
         }),
     ]);
 
-    if (documentType == documentTypes.goodsReceive || documentType == documentTypes.qualityReport) {
+    if (status && (documentType == documentTypes.goodsReceive || documentType == documentTypes.qualityReport)) {
       let purchase_order = '';
       if (documentType === documentTypes.goodsReceive) {
         purchase_order = await models.Documents.findOne({
@@ -495,7 +635,7 @@ async function createDocument(req, res) {
       }
     }
 
-    if ((documentType === documentTypes.invoice && reduceStockOnIV === "true") || (documentType === documentTypes.deliveryChallan && reduceStockOnDC === "true")) {
+    if (status && ((documentType === documentTypes.invoice && reduceStockOnIV === "true") || (documentType === documentTypes.deliveryChallan && reduceStockOnDC === "true"))) {
       const storeId = await models.Store.findOne({
         where: {
           name: store,
