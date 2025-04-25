@@ -173,13 +173,93 @@ async function createDocument(req, res) {
 
     if (documentType === documentTypes.salesQuotation && enquiryNumber) {
       const existingDocument = await models.Documents.findOne({
-        where: { documentNumber: enquiryNumber },
+        where: { documentNumber: enquiryNumber, companyId },
       });
 
       if (existingDocument) {
         await existingDocument.update({
           quotationNumber: documentNumber,
           is_refered: true,
+          status: 8
+        });
+      }
+    }
+
+    if (documentType === documentTypes.orderConfirmation) {
+      const existingDocument = await models.Documents.findOne({
+        where: { documentNumber: quotationNumber, companyId },
+      });
+
+      if (existingDocument) {
+        await existingDocument.update({
+          status: 9
+        });
+      }
+    }
+
+    if ((documentType === documentTypes.deliveryChallan || documentType === documentTypes.invoice) && orderConfirmationNumber) {
+      const existingDocument = await models.Documents.findOne({
+        where: { documentNumber: orderConfirmationNumber, companyId },
+      });
+      if (existingDocument) {
+        // Find all Document Items against orderConfirmationNumber 
+        const documentItems = await models.DocumentItems.findAll({
+          where: {
+            companyId,
+            documentNumber: orderConfirmationNumber
+          }
+        });
+
+        // Create a map of documentsItems with Items id as key and quantity as value
+        const documentsItemMap = documentItems?.reduce((acc, current) => {
+          acc[current.itemId] = current.quantity;
+          return acc;
+        }, {});
+
+        // find all previously created Delivery Challan against same orderConfirmationNumber
+        const deliveryChallan = await models.Documents.findAll({
+          where: {
+            orderConfirmationNumber,
+            documentType,
+            companyId
+          }
+        });
+
+        const documentNumbers = deliveryChallan.map(doc => doc.documentNumber);
+
+        // find All Document Items against previously created delivery challan 
+        const deliveryChallanItems = await models.DocumentItems.findAll({
+          where: {
+            documentNumber: documentNumbers,
+            companyId
+          }
+        });
+
+        // Create deliverychallan items map where item id is key and quantity as value
+        const deliveryChallanItemsMap = deliveryChallanItems?.reduce((acc, current) => {
+          !acc[current?.itemId] ? acc[current?.itemId] = current.quantity : acc[current?.itemId] += current.quantity;
+          return acc;
+        }, {});
+
+        // Add quantity of existing items in dellivery challan items map
+        for (const item of items) {
+          if (deliveryChallanItemsMap[item.itemId]) deliveryChallanItemsMap[item.itemId] += item.quantity;
+          else deliveryChallanItemsMap[item.itemId] = item.quantity;
+        }
+
+        let statusCode = documentType === documentTypes.invoice ? 13 : 11;
+
+        // comapare documentsItem map and delivery challam items map 
+        for (const elem of Object.keys(documentsItemMap)) {
+          if (documentsItemMap[elem] > deliveryChallanItemsMap[elem]) {
+            statusCode = documentType === documentTypes.invoice ? 12 : 10;
+            break;
+          }
+        }
+
+        // update the status accordingly
+        await existingDocument.update({
+          status: statusCode
         });
       }
     }
