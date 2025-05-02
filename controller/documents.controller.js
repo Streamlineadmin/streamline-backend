@@ -90,9 +90,26 @@ async function createDocument(req, res) {
       buyerGSTNumber = null,
       is_refered = null,
       addStockOn = '',
-      isDraft = false
+      isDraft = false,
+      purpose = '',
+      requiredDate = null,
+      requestedBy = '',
+      department = ''
     } = req.body;
 
+    if (!isDraft) {
+      const doc = await models.Documents.findOne({
+        where: {
+          documentNumber,
+          companyId
+        }
+      });
+      if (doc) {
+        return res.status(409).json({
+          message: 'Document Already Exist with this Document Number.'
+        })
+      }
+    }
     let document = null;
     if (!isDraft) document = await models.Documents.create({
       documentType,
@@ -170,7 +187,11 @@ async function createDocument(req, res) {
       BuyerPANNumber,
       isRounded,
       tcsData,
-      addStockOn
+      addStockOn,
+      purpose,
+      requiredDate,
+      requestedBy,
+      department
     });
 
     else {
@@ -257,13 +278,102 @@ async function createDocument(req, res) {
       BuyerPANNumber,
       isRounded,
       tcsData,
-      addStockOn
+      addStockOn,
+      purpose,
+      requiredDate,
+      requestedBy,
+      department
     }, {
       where: {
         companyId,
         documentNumber
       }
     });
+
+    if (status && documentType === documentTypes.purchaseOrder && indent_number) {
+      const indent_numbers = indent_number.split(',');
+      const itemsMap = items.reduce((item, current) => {
+        item[current.itemId] = current.quantity;
+        return item;
+      }, {});
+      for (const ind_number of indent_numbers) {
+        const purchaseRequest = await models.Documents.findOne({
+          where: {
+            companyId,
+            documentNumber: ind_number
+          }
+        });
+        if (purchaseRequest) {
+          const purchaseRequestItems = await models.DocumentItems.findAll({
+            where: {
+              companyId,
+              documentNumber: ind_number
+            }
+          });
+          const purchaseRequestItemsMap = {};
+
+          for (const current of purchaseRequestItems) {
+            let quantity = 0;
+            if (current.receivedToday) quantity += current.receivedToday;
+            if (itemsMap[current.itemId]) quantity += itemsMap[current.itemId];
+
+            itemsMap[current.itemId] && await current.update({ receivedToday: quantity });
+
+            if (purchaseRequestItemsMap[current.itemId]) {
+              purchaseRequestItemsMap[current.itemId] += current.quantity;
+            } else {
+              purchaseRequestItemsMap[current.itemId] = current.quantity;
+            }
+          }
+
+          const purchaseOrders = await models.Documents.findAll({
+            where: {
+              companyId,
+              indent_number: ind_number
+            }
+          });
+
+          const purchaseOrderIds = purchaseOrders.map(doc => doc.documentNumber);
+          const purchaseOrdersItems = await models.DocumentItems.findAll({
+            where: {
+              companyId,
+              documentNumber: {
+                [Op.in]: purchaseOrderIds
+              }
+            }
+          });
+          const purchaseOrdersItemsMap = purchaseOrdersItems.reduce((acc, current) => {
+            if (acc[current.itemId]) acc[current.itemId] += current.quantity;
+            acc[current.itemId] = current.quantity;
+            return acc;
+          }, {});
+
+          for (const item of items) {
+            const itemId = item?.itemId;
+            const quantity = item?.quantity ?? 0;
+            purchaseOrdersItemsMap[itemId] = (purchaseOrdersItemsMap[itemId] ?? 0) + quantity;
+          }
+
+          let status = purchaseRequest.status, isPartial = false;
+          for (const key of Object.keys(purchaseRequestItemsMap)) {
+            if (purchaseRequestItemsMap[key] > purchaseOrdersItemsMap[key]) {
+              isPartial = true;
+              if (status == 1) {
+                status = 14;
+              }
+              break;
+            }
+          }
+          if (!isPartial) {
+            if (status == 1 || status == 14) {
+              status = 16;
+            }
+            else if (status == 15) status = 17;
+          }
+          await purchaseRequest.update({ status });
+        }
+      }
+    }
 
     if (status && (documentType === documentTypes.salesQuotation && enquiryNumber)) {
       const existingDocument = await models.Documents.findOne({
@@ -693,6 +803,93 @@ async function createDocument(req, res) {
       }
     }
 
+    if (status && documentType === documentTypes.goodsReceive) {
+      // find purchase order against grn
+      const purchase_order = await models.Documents.findOne({
+        where: {
+          documentNumber: purchaseOrderNumber,
+          companyId
+        }
+      });
+
+      if (purchase_order && purchase_order.indent_number) {
+        const indent_numbers = purchase_order.indent_number.split(",");
+        for (const ind_number of indent_numbers) {
+          // find purchse request against purchase order
+          const purchase_request = await models.Documents.findOne({
+            where: {
+              companyId,
+              documentNumber: ind_number
+            }
+          });
+
+          // if purchase request status is 14 or 15 then directly update the status to 15
+          if (purchase_request.status == 14 || purchase_request.status == 15) {
+            await purchase_request.update({
+              status: 15
+            });
+          }
+          else {
+            // find all purchase orders against same purchase request 
+            const purchase_orders = await models.Documents.findAll({
+              where: {
+                companyId,
+                indent_number: ind_number
+              }
+            });
+
+            // iterate through all purchase orders
+            for (const purchase_order of purchase_orders) {
+              // find latest grn against evvery purchase order
+              const latest_grn = await models.Documents.findOne({
+                where: {
+                  companyId,
+                  documentType,
+                  purchaseOrderNumber: purchase_order.documentNumber
+                },
+                order: [['createdAt', 'DESC']]
+              });
+
+              let isBreak = false;
+              // if latest grn is not found then directly update the status to 17 and break all loops
+              if (!latest_grn) {
+                await purchase_request.update({
+                  status: 17
+                });
+                break;
+              }
+              else {
+                // find all grnItems against latest grn 
+                const grnsItems = await models.DocumentItems.findAll({
+                  where: {
+                    documentNumber: latest_grn.documentNumber,
+                    companyId
+                  }
+                });
+                // iterate through all grns
+                for (const grn of grnsItems) {
+                  // any one grn items is partially received update purchase request status to 17 and break all loops
+                  if (grn.quantity < grn.receivedQuantity) {
+                    await purchase_request.update({
+                      status: 17
+                    });
+                    isBreak = true;
+                    break;
+                  }
+                }
+              }
+              if (isBreak) break;
+            }
+            // if all purchase orders against purchase request have received full quantity then update purchase request status to 18
+            await purchase_request.update({
+              status: 18
+            });
+          }
+
+        }
+      }
+    }
+
     res.status(201).json({
       message: "Document and related data created successfully!"
     });
@@ -747,12 +944,12 @@ async function getDocuments(req, res) {
   ]);
 
   const uniqueItemsMap = new Map();
-    for (const item of items) {
-      const key = `${item.documentNumber}_${item.itemId}`;
-      if (!uniqueItemsMap.has(key)) {
-        uniqueItemsMap.set(key, item);
-      }
+  for (const item of items) {
+    const key = `${item.documentNumber}_${item.itemId}`;
+    if (!uniqueItemsMap.has(key)) {
+      uniqueItemsMap.set(key, item);
     }
+  }
   const uniqueItems = Array.from(uniqueItemsMap.values());
 
   const formattedResult = documents.map(document => ({

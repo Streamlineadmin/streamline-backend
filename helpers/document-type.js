@@ -5,7 +5,8 @@ documentTypes = {
     salesQuotation: 'Sales Quotation',
     salesEnquiry: 'Sales Enquiry',
     qualityReport: 'Quality Report',
-    orderConfirmation : 'Order Confirmation'
+    orderConfirmation: 'Order Confirmation',
+    purchaseOrder: 'Purchase Order'
 };
 
 module.exports = { documentTypes };
