@@ -30,6 +30,7 @@ const demoQueryRoutes = require('./routes/demoQuery');
 const newsLetterRoutes = require('./routes/newsLetter');
 const customfieldRoutes = require('./routes/customfields');
 const dashboardRoutes = require('./routes/dashboard');
+const productionProcessRoutes = require('./routes/productionProcess');
 
 const app = express();
 
@@ -80,5 +81,6 @@ app.use('/demoQuery', demoQueryRoutes);
 app.use('/newsLetter', newsLetterRoutes);
 app.use('/customFields', customfieldRoutes);
 app.use('/dashboard', dashboardRoutes);
+app.use('/productionProcess', productionProcessRoutes);
 
 module.exports = app;
