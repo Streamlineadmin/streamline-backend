@@ -101,7 +101,8 @@ async function createDocument(req, res) {
       const doc = await models.Documents.findOne({
         where: {
           documentNumber,
-          companyId
+          companyId,
+          documentType
         }
       });
       if (doc) {
@@ -549,7 +550,9 @@ async function createDocument(req, res) {
             totalAfterTax: item.totalAfterTax,
             receivedToday: item.receivedToday || 0,
             pendingQuantity: item.pendingQuantity || 0,
-            receivedQuantity: item.receivedQuantity || 0
+            receivedQuantity: item.receivedQuantity || 0,
+            auQuantity: item?.auQuantity,
+            alternateUnit: item?.alternateUnit
           })
         })
       ),
