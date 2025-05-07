@@ -1,6 +1,6 @@
 const express = require('express');
 
-const bomProductionProcessController = require('../controller/bomProductionProcess.controller');
+const bomProductionProcessController = require('../controller/bomProductionsProcess.controller');
 
 const router = express.Router();
 

@@ -1,5 +1,4 @@
 const models = require("../models");
-const { BOMProductionProcess, ProductionProcess } = models;
 
 async function createBOMProductionProcess(req, res) {
   try {
