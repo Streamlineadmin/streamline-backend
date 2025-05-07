@@ -94,7 +94,8 @@ async function createDocument(req, res) {
       purpose = '',
       requiredDate = null,
       requestedBy = '',
-      department = ''
+      department = '',
+      showUnits = null
     } = req.body;
 
     if (!isDraft) {
@@ -192,7 +193,8 @@ async function createDocument(req, res) {
       purpose,
       requiredDate,
       requestedBy,
-      department
+      department,
+      showUnits
     });
 
     else {
@@ -283,7 +285,8 @@ async function createDocument(req, res) {
       purpose,
       requiredDate,
       requestedBy,
-      department
+      department,
+      showUnits
     }, {
       where: {
         companyId,
@@ -552,7 +555,8 @@ async function createDocument(req, res) {
             pendingQuantity: item.pendingQuantity || 0,
             receivedQuantity: item.receivedQuantity || 0,
             auQuantity: item?.auQuantity,
-            alternateUnit: item?.alternateUnit
+            alternateUnit: item?.alternateUnit,
+            conversionFactor: item?.conversionFactor
           })
         })
       ),
@@ -665,7 +669,7 @@ async function createDocument(req, res) {
           return {
             storeId,
             itemId,
-            quantity: item?.receivedToday || 0,
+            quantity: (item?.receivedToday * (item?.conversionFactor || 1)) || 0,
             status: 1,
             addedBy: createdBy,
             price: item?.price
@@ -679,7 +683,7 @@ async function createDocument(req, res) {
             transferNumber: item?.transferNumber,
             fromStoreId: null,
             itemId,
-            quantity: item?.receivedToday || 0,
+            quantity: (item?.receivedToday * (item?.conversionFactor || 1)) || 0,
             toStoreId: storeId,
             transferDate: new Date().toISOString(),
             transferredBy: createdBy,
@@ -701,7 +705,7 @@ async function createDocument(req, res) {
           });
           if (existItem) {
             await models.Items.update(
-              { currentStock: (item.currentStock || 0) + (item.receivedToday || 0) },
+              { currentStock: (item.currentStock || 0) + ((item.receivedToday * (item.conversionFactor || 1)) || 0) },
               {
                 where: {
                   id: itemsMap.get(item.itemId)
@@ -719,7 +723,7 @@ async function createDocument(req, res) {
           return {
             storeId,
             itemId,
-            quantity: item.pendingQuantity || 0,
+            quantity: (item.pendingQuantity * (item?.conversionFactor || 1)) || 0,
             status: 1,
             addedBy: createdBy,
             price: item?.price,
@@ -734,7 +738,7 @@ async function createDocument(req, res) {
             transferNumber: generateTransferNumber(),
             fromStoreId: null,
             itemId,
-            quantity: item.pendingQuantity || 0,
+            quantity: (item.pendingQuantity * (item?.conversionFactor || 1)) || 0,
             toStoreId: storeId,
             transferDate: new Date().toISOString(),
             transferredBy: createdBy,
@@ -759,7 +763,7 @@ async function createDocument(req, res) {
       });
       for (const element of items) {
         let price = 0;
-        let remainingQuantity = element.quantity;
+        let remainingQuantity = (element.quantity * (element?.conversionFactor || 1));
         const item = await models.Items.findOne({
           where: {
             itemId: element.itemId
@@ -798,8 +802,8 @@ async function createDocument(req, res) {
 
         await models.Items.update(
           {
-            currentStock: item.currentStock - element.quantity,
-            price: ((item.price * item.currentStock) - price) / (item.currentStock - element.quantity)
+            currentStock: item.currentStock - (element.quantity * (element?.conversionFactor || 1)),
+            price: ((item.price * item.currentStock) - price) / (item.currentStock - (element.quantity * (element?.conversionFactor || 1)))
           },
           { where: { id: item.id, companyId } }
         );
