@@ -39,7 +39,8 @@ module.exports = (sequelize, DataTypes) => {
     pendingQuantity: DataTypes.INTEGER,
     receivedQuantity: DataTypes.INTEGER,
     auQuantity: DataTypes.FLOAT,
-    alternateUnit: DataTypes.STRING
+    alternateUnit: DataTypes.STRING,
+    conversionFactor: DataTypes.FLOAT
   }, {
     sequelize,
     modelName: 'DocumentItems',
