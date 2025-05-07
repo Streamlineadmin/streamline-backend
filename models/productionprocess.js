@@ -10,7 +10,11 @@ module.exports = (sequelize, DataTypes) => {
      */
     static associate(models) {
       // Define associations here
-      // Example: ProductionProcess.belongsTo(models.Company, { foreignKey: 'companyId' });
+      ProductionProcess.hasMany(models.BOMProductionProcess, {
+        foreignKey: 'processId',
+        onDelete: 'CASCADE',
+        onUpdate: 'CASCADE',
+      });
     }
   }
 

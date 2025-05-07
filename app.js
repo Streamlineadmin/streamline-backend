@@ -31,6 +31,8 @@ const newsLetterRoutes = require('./routes/newsLetter');
 const customfieldRoutes = require('./routes/customfields');
 const dashboardRoutes = require('./routes/dashboard');
 const productionProcessRoutes = require('./routes/productionProcess');
+const bomDetailsRoutes = require('./routes/bomDetails');
+const bomProductionProcessRoutes = require('./routes/bomProductionProcess');
 
 const app = express();
 
@@ -82,5 +84,7 @@ app.use('/newsLetter', newsLetterRoutes);
 app.use('/customFields', customfieldRoutes);
 app.use('/dashboard', dashboardRoutes);
 app.use('/productionProcess', productionProcessRoutes);
+app.use('/bomDetails', bomDetailsRoutes);
+app.use('/bomProductionProcess', bomProductionProcessRoutes);
 
 module.exports = app;

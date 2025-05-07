@@ -11,6 +11,12 @@ module.exports = (sequelize, DataTypes) => {
      */
     static associate(models) {
       // define association here
+      BOMAttachments.belongsTo(models.BOMDetails, {
+        foreignKey: 'BOMID',
+        targetKey: 'bomId',
+        onDelete: 'CASCADE',
+        onUpdate: 'CASCADE',
+      });
     }
   }
   BOMAttachments.init({
