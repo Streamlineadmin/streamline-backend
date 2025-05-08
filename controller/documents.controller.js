@@ -669,7 +669,7 @@ async function createDocument(req, res) {
           return {
             storeId,
             itemId,
-            quantity: (item?.receivedToday * (item?.conversionFactor || 1)) || 0,
+            quantity: (item?.receivedToday * (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1))) || 0,
             status: 1,
             addedBy: createdBy,
             price: item?.price
@@ -683,7 +683,7 @@ async function createDocument(req, res) {
             transferNumber: item?.transferNumber,
             fromStoreId: null,
             itemId,
-            quantity: (item?.receivedToday * (item?.conversionFactor || 1)) || 0,
+            quantity: (item?.receivedToday * (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1))) || 0,
             toStoreId: storeId,
             transferDate: new Date().toISOString(),
             transferredBy: createdBy,
@@ -705,7 +705,7 @@ async function createDocument(req, res) {
           });
           if (existItem) {
             await models.Items.update(
-              { currentStock: (item.currentStock || 0) + ((item.receivedToday * (item.conversionFactor || 1)) || 0) },
+              { currentStock: (item.currentStock || 0) + ((item.receivedToday * (item.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1))) || 0) },
               {
                 where: {
                   id: itemsMap.get(item.itemId)
@@ -723,7 +723,7 @@ async function createDocument(req, res) {
           return {
             storeId,
             itemId,
-            quantity: (item.pendingQuantity * (item?.conversionFactor || 1)) || 0,
+            quantity: (item.pendingQuantity * (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1))) || 0,
             status: 1,
             addedBy: createdBy,
             price: item?.price,
@@ -738,7 +738,7 @@ async function createDocument(req, res) {
             transferNumber: generateTransferNumber(),
             fromStoreId: null,
             itemId,
-            quantity: (item.pendingQuantity * (item?.conversionFactor || 1)) || 0,
+            quantity: (item.pendingQuantity * (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1))) || 0,
             toStoreId: storeId,
             transferDate: new Date().toISOString(),
             transferredBy: createdBy,
@@ -766,7 +766,8 @@ async function createDocument(req, res) {
         let remainingQuantity = (element.quantity * (element?.conversionFactor || 1));
         const item = await models.Items.findOne({
           where: {
-            itemId: element.itemId
+            itemId: element.itemId,
+            companyId
           }
         });
         const existingStock = await models.StoreItems.findAll({
@@ -802,8 +803,7 @@ async function createDocument(req, res) {
 
         await models.Items.update(
           {
-            currentStock: item.currentStock - (element.quantity * (element?.conversionFactor || 1)),
-            price: ((item.price * item.currentStock) - price) / (item.currentStock - (element.quantity * (element?.conversionFactor || 1)))
+            currentStock: item.currentStock - (element.quantity * (element?.conversionFactor || (showUnits == 0 ? element.quantity / element.auQuantity : 1))),
           },
           { where: { id: item.id, companyId } }
         );
@@ -876,7 +876,7 @@ async function createDocument(req, res) {
                 // iterate through all grns
                 for (const grn of grnsItems) {
                   // any one grn items is partially received update purchase request status to 17 and break all loops
-                  if (grn.quantity < grn.receivedQuantity) {
+                  if ((showUnits==0?grn.auQuantity:grn.quantity) < grn.receivedQuantity) {
                     await purchase_request.update({
                       status: 17
                     });
@@ -1129,7 +1129,7 @@ async function getDocumentItems(req, res) {
     }
 
     const purchaseOrders = await models.Documents.findAll({
-      where: { purchaseOrderNumber, companyId: Number(req.body.companyId) },
+      where: { purchaseOrderNumber, companyId: Number(req.body.companyId),documentType:documentTypes.goodsReceive },
       attributes: ['documentNumber']
     });
 
