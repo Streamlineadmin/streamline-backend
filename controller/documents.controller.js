@@ -763,7 +763,7 @@ async function createDocument(req, res) {
       });
       for (const element of items) {
         let price = 0;
-        let remainingQuantity = (element.quantity * (element?.conversionFactor || 1));
+        let remainingQuantity = element.quantity;
         const item = await models.Items.findOne({
           where: {
             itemId: element.itemId,
@@ -784,6 +784,8 @@ async function createDocument(req, res) {
             { quantity: (stock.quantity - deductQty) },
             { where: { id: stock.id } }
           );
+          console.log('something', deductQty, element?.conversionFactor, element?.quantity, element?.auQuantity);
+          console.log((showUnits == 0 ? element.quantity / element.auQuantity : 1));
           await models.StockTransfer.create({
             transferNumber: element.transferNumber,
             fromStoreId: storeId.id || null,
@@ -876,7 +878,7 @@ async function createDocument(req, res) {
                 // iterate through all grns
                 for (const grn of grnsItems) {
                   // any one grn items is partially received update purchase request status to 17 and break all loops
-                  if ((showUnits==0?grn.auQuantity:grn.quantity) < grn.receivedQuantity) {
+                  if ((showUnits == 0 ? grn.auQuantity : grn.quantity) < grn.receivedQuantity) {
                     await purchase_request.update({
                       status: 17
                     });
@@ -1129,7 +1131,7 @@ async function getDocumentItems(req, res) {
     }
 
     const purchaseOrders = await models.Documents.findAll({
-      where: { purchaseOrderNumber, companyId: Number(req.body.companyId),documentType:documentTypes.goodsReceive },
+      where: { purchaseOrderNumber, companyId: Number(req.body.companyId), documentType: documentTypes.goodsReceive },
       attributes: ['documentNumber']
     });
 
