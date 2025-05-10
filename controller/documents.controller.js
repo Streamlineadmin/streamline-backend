@@ -556,7 +556,8 @@ async function createDocument(req, res) {
             receivedQuantity: item.receivedQuantity || 0,
             auQuantity: item?.auQuantity,
             alternateUnit: item?.alternateUnit,
-            conversionFactor: item?.conversionFactor
+            conversionFactor: item?.conversionFactor,
+            additionalDetails: item?.additionalDetails
           })
         })
       ),
@@ -763,7 +764,7 @@ async function createDocument(req, res) {
       });
       for (const element of items) {
         let price = 0;
-        let remainingQuantity = element.quantity;
+        let remainingQuantity = (element.quantity * (element?.conversionFactor || 1));;
         const item = await models.Items.findOne({
           where: {
             itemId: element.itemId,

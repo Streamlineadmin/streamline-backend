@@ -40,7 +40,8 @@ module.exports = (sequelize, DataTypes) => {
     receivedQuantity: DataTypes.INTEGER,
     auQuantity: DataTypes.FLOAT,
     alternateUnit: DataTypes.STRING,
-    conversionFactor: DataTypes.FLOAT
+    conversionFactor: DataTypes.FLOAT,
+    additionalDetails: DataTypes.STRING
   }, {
     sequelize,
     modelName: 'DocumentItems',

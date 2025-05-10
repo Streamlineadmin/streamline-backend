@@ -414,9 +414,9 @@ async function addBulkItem(req, res) {
                 err += 'Required fields are missing. ';
             }
 
-            if (item?.Price <= 0) {
-                err += 'Price should be greater than 0. ';
-            }
+            // if (item?.Price <= 0) {
+            //     err += 'Price should be greater than 0. ';
+            // }
             if (item?.['Min Stock'] && item?.['Min Stock'] < 0) {
                 err += 'Min Stock must be non-negative. ';
             }
@@ -467,6 +467,7 @@ async function addBulkItem(req, res) {
                 maxStock: item['Max Stock'] || null,
                 description: item['Description'] || null,
                 companyId: Number(companyId),
+                customFields: item?.customFields,
                 status: 1
             });
         }
