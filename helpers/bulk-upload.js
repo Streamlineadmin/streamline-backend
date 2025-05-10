@@ -28,6 +28,13 @@ const convertXlsxToJson = async (filePath, key) => {
         const requiredColumns = requiredColumnsFun(key);
         const filteredData = jsonData.map(row => {
             let filteredRow = {};
+            filteredRow.customFields = {};
+            const keys = Object.keys(row);
+            for (const element in keys) {
+                if (!requiredColumns.includes(keys[element])) {
+                    filteredRow.customFields[keys[element]] = row[keys[element]];
+                }
+            }
             requiredColumns.forEach(col => {
                 const matchingKey = Object.keys(row).find(header => header.trim() === col.trim());
                 if (matchingKey) {
