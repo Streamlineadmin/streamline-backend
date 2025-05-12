@@ -802,17 +802,23 @@ async function getAllStoreItemsByStoresID(req, res) {
     // Aggregate quantity by storeId and itemId
     const aggregated = {};
     storeItems.forEach(si => {
-      const key = `${si.storeId}_${si.itemId}`;
-      if (!aggregated[key]) aggregated[key] = { storeId: si.storeId, itemId: si.itemId, quantity: 0 };
-      aggregated[key].quantity += si.quantity;
-    });
+    const key = `${si.storeId}_${si.itemId}_${si.isRejected}`;
+    if (!aggregated[key]) {
+      aggregated[key] = {
+        storeId: si.storeId, 
+        itemId: si.itemId,
+        isRejected: si.isRejected,
+        quantity: 0
+      };
+    }
+    aggregated[key].quantity += si.quantity;
+  });
 
-    // Prepare response per store
     const resultByStore = {};
-    for (const { storeId, itemId, quantity } of Object.values(aggregated)) {
+    for (const entry of Object.values(aggregated)) {
+      const { storeId, itemId, quantity, isRejected } = entry;
       if (!resultByStore[storeId]) resultByStore[storeId] = [];
 
-      // Fetch item details
       const item = await models.Items.findByPk(itemId);
       let alternateUnits = [];
       if (item) {
@@ -823,8 +829,11 @@ async function getAllStoreItemsByStoresID(req, res) {
         }));
         item.alternateUnit = alternateUnits;
       }
-
-      resultByStore[storeId].push({ item: item || { id: itemId, message: 'Item not found' }, quantity });
+      resultByStore[storeId].push({ 
+        item: item || { id: itemId, message: 'Item not found' }, 
+        quantity,
+        isRejected
+      });
     }
     const response = storeIds.map(id => ({ storeId: id, storeItems: resultByStore[id] || [] }));
     return res.status(200).json({ data: response });
