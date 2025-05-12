@@ -720,6 +720,120 @@ async function getStoreItemsByStoreId(req, res) {
   }
 }
 
+async function getStoreItemsByStoreId(req, res) {
+  const { storeId } = req.body;
+  if (!storeId) return res.status(404).json({ message: "Store Not found." });
+  try {
+    let [storeItems, uomData] = await Promise.all([models.StoreItems.findAll({
+      where: {
+        storeId,
+        isRejected: req.body.isRejected || false
+      }
+    }), models.UOM.findAll({})]);
+    const myMap = new Map();
+    uomData.map((uom => myMap.set(uom.id, uom.code)));
+    const stores = {};
+    let arr = [];
+    for (const storeItem of storeItems) {
+      if (stores[storeItem?.itemId] || stores[storeItem?.itemId] == 0) {
+        stores[storeItem.itemId] += storeItem?.quantity;
+      }
+      else {
+        stores[storeItem.itemId] = storeItem?.quantity;
+        arr.push(storeItem);
+      }
+    }
+    storeItems = [];
+    for (const storeItem of arr) {
+      storeItem.quantity = stores[storeItem.itemId];
+      const item = await models.Items.findOne({
+        where: {
+          id: storeItem.itemId
+        }
+      });
+      if (item) {
+        const alternateUnit = await models.AlternateUnits.findAll({
+          where: {
+            itemId: item.id
+          }
+        });
+        const units = [];
+        for (const unit of alternateUnit) {
+          let obj = { ...unit?.dataValues };
+          const code = myMap.get(unit.alternateUnits);
+          obj.code = code;
+          units.push(obj);
+        }
+        item.alternateUnit = units;
+        storeItem.itemId = item;
+        storeItems.push(storeItem);
+      }
+    }
+    res.status(200).json({ storeItems });
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({ message: "Something went Wrong." });
+  }
+}
+
+async function getAllStoreItemsByStoresID(req, res) {
+  let { storeIds, isRejected } = req.body;
+
+  try {
+    // If no storeIds provided, fetch all store IDs
+    if (!Array.isArray(storeIds) || storeIds.length === 0) {
+      const stores = await models.Store.findAll({ attributes: ['id'] });
+      storeIds = stores.map(s => s.id);
+    }
+
+    // Build filter: always include storeIds, optionally filter on isRejected
+    const whereClause = { storeId: storeIds };
+    if (typeof isRejected === 'boolean') whereClause.isRejected = isRejected;
+
+    // Fetch items and UOM data in parallel
+    const [storeItems, uomData] = await Promise.all([
+      models.StoreItems.findAll({ where: whereClause }),
+      models.UOM.findAll()
+    ]);
+
+    // Map UOM IDs to codes
+    const uomMap = new Map(uomData.map(u => [u.id, u.code]));
+
+    // Aggregate quantity by storeId and itemId
+    const aggregated = {};
+    storeItems.forEach(si => {
+      const key = `${si.storeId}_${si.itemId}`;
+      if (!aggregated[key]) aggregated[key] = { storeId: si.storeId, itemId: si.itemId, quantity: 0 };
+      aggregated[key].quantity += si.quantity;
+    });
+
+    // Prepare response per store
+    const resultByStore = {};
+    for (const { storeId, itemId, quantity } of Object.values(aggregated)) {
+      if (!resultByStore[storeId]) resultByStore[storeId] = [];
+
+      // Fetch item details
+      const item = await models.Items.findByPk(itemId);
+      let alternateUnits = [];
+      if (item) {
+        const altUnits = await models.AlternateUnits.findAll({ where: { itemId } });
+        alternateUnits = altUnits.map(au => ({
+          ...au.dataValues,
+          code: uomMap.get(au.alternateUnits) || null
+        }));
+        item.alternateUnit = alternateUnits;
+      }
+
+      resultByStore[storeId].push({ item: item || { id: itemId, message: 'Item not found' }, quantity });
+    }
+    const response = storeIds.map(id => ({ storeId: id, storeItems: resultByStore[id] || [] }));
+    return res.status(200).json({ data: response });
+  } catch (error) {
+    console.error('Error in getAllStoreItemsByStoresID:', error);
+    return res.status(500).json({ message: 'Something went wrong.', error: error.message });
+  }
+}
+
 module.exports = {
   addStore: addStore,
   getStoresById: getStoresById,
@@ -730,5 +844,7 @@ module.exports = {
   stockTransfer: stockTransfer,
   getItemStockTransferHistory: getItemStockTransferHistory,
   getStockTransferHistory: getStockTransferHistory,
-  getStoreItemsByStoreId: getStoreItemsByStoreId
+  getStoreItemsByStoreId: getStoreItemsByStoreId,
+  getAllStoreItemsByStoresID: getAllStoreItemsByStoresID,
+
 };
