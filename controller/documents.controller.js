@@ -613,6 +613,16 @@ async function createDocument(req, res) {
           }
         });
         if (purchase_order) {
+          if (purchase_order?.addStockOn === 'GRN') {
+            await models.Documents.update({ addStockOn: 'GRN' },
+              {
+                where: {
+                  documentNumber,
+                  companyId
+                }
+              }
+            );
+          }
           let partiallyReceived = false, accessQuantityReceived = false;
           for (const item of items) {
             if (item.quantity < item.receivedQuantity) {
