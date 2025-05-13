@@ -1,5 +1,5 @@
 documentTypes = {
-    goodsReceive: 'Goods Received Note',
+    goodsReceive:'Goods Received Note',
     invoice: 'Invoice',
     deliveryChallan: 'Delivery Challan',
     salesQuotation: 'Sales Quotation',
