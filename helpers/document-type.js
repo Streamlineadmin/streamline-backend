@@ -6,6 +6,11 @@ documentTypes = {
     salesEnquiry: 'Sales Enquiry',
     qualityReport: 'Quality Report',
     orderConfirmation: 'Order Confirmation',
+    proformaInvoice: "Performa Invoice",
+    debitNote: "Debit Note",
+    creditNote: "Credit Note",
+    salesReturn: "Sales Return",
+    goodsReceiveNotes:"Goods Receive Notes",
     purchaseOrder: 'Purchase Order'
 };
 

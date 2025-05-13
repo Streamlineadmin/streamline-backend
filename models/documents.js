@@ -162,6 +162,8 @@ module.exports = (sequelize, DataTypes) => {
     requiredDate: DataTypes.STRING,
     requestedBy: DataTypes.STRING,
     department: DataTypes.STRING,
+    salesReturnNumber: DataTypes.STRING,
+    salesReturnDate: DataTypes.STRING,
     showUnits: DataTypes.INTEGER
   }, {
     sequelize,
