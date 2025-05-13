@@ -75,6 +75,8 @@ async function createDocument(req, res) {
       debit_note_number = null,
       performaInvoiceNumber = null,
       performaInvoiceDate = null,
+      salesReturnNumber = null,
+      salesReturnDate = null,
       debit_note_date = null,
       pay_to_transporter = null,
       inspection_date = null,
@@ -182,6 +184,8 @@ async function createDocument(req, res) {
       debit_note_number,
       debit_note_date,
       performaInvoiceNumber,
+      salesReturnNumber,
+      salesReturnDate,
       performaInvoiceDate,
       pay_to_transporter,
       inspection_date,
@@ -274,6 +278,8 @@ async function createDocument(req, res) {
       debit_note_number,
       debit_note_date,
       performaInvoiceNumber,
+      salesReturnNumber,
+      salesReturnDate,
       performaInvoiceDate,
       pay_to_transporter,
       inspection_date,
@@ -392,14 +398,220 @@ async function createDocument(req, res) {
       }
     }
 
-    if (status && documentType === documentTypes.orderConfirmation) {
+    if (status && documentType === documentTypes.orderConfirmation && quotationNumber) {
       const existingDocument = await models.Documents.findOne({
         where: { documentNumber: quotationNumber, companyId },
       });
 
       if (existingDocument) {
         await existingDocument.update({
+          orderConfirmationNumber: documentNumber,
+          is_refered: true,
           status: 9
+        });
+      }
+    }
+
+    if (status && documentType === documentTypes.deliveryChallan && orderConfirmationNumber) {
+      const existingDocument = await models.Documents.findOne({
+        where: { documentNumber: orderConfirmationNumber, companyId },
+      });
+
+      if (existingDocument) {
+        await existingDocument.update({
+          challan_number: documentNumber,
+          is_refered: true,
+          status: 10,
+        });
+      }
+    }
+
+    if (status && documentType === documentTypes.proformaInvoice && orderConfirmationNumber) {
+      const existingDocument = await models.Documents.findOne({
+        where: { documentNumber: orderConfirmationNumber, companyId },
+      });
+
+      if (existingDocument) {
+        await existingDocument.update({
+          performaInvoiceNumber: documentNumber,
+          is_refered: true,
+          status: 11,
+        });
+      }
+    }
+
+    // Invoice from Order Confirmation
+    if (status && documentType === documentTypes.invoice && orderConfirmationNumber) {
+      const existingDocument = await models.Documents.findOne({
+        where: { documentNumber: orderConfirmationNumber, companyId },
+      });
+
+      if (existingDocument) {
+        await existingDocument.update({
+          invoiceNumber: documentNumber,
+          is_refered: true,
+          status: 12,
+        });
+      }
+    }
+
+    // Invoice from Proforma Invoice
+    if (status && documentType === documentTypes.invoice && performaInvoiceNumber) {
+      const existingDocument = await models.Documents.findOne({
+        where: { documentNumber: performaInvoiceNumber, companyId },
+      });
+
+      if (existingDocument) {
+        await existingDocument.update({
+          invoiceNumber: documentNumber,
+          is_refered: true,
+          status: 20
+        });
+      }
+    }
+
+    // Invoice from Delivery Challan
+    if (
+      status &&
+      documentType === documentTypes.invoice &&
+      challan_number
+    ) {
+      const existingDocument = await models.Documents.findOne({
+        where: { documentNumber: challan_number, companyId },
+      });
+
+      if (existingDocument) {
+        await existingDocument.update({
+          invoiceNumber: documentNumber,
+          is_refered: true,
+          status: 13,
+        });
+      }
+    }
+
+    // Debit Note from Invoice
+    if (status && documentType === documentTypes.debitNote && invoiceNumber) {
+      const existingDocument = await models.Documents.findOne({
+        where: { documentNumber: invoiceNumber, companyId },
+      });
+
+      if (existingDocument) {
+        await existingDocument.update({
+          debit_note_number: documentNumber,
+          is_refered: true,
+          status: 14,
+        });
+      }
+    }
+
+    // Credit Note from Invoice
+    if (status && documentType === documentTypes.creditNote && invoiceNumber) {
+      const existingDocument = await models.Documents.findOne({
+        where: { documentNumber: invoiceNumber, companyId },
+      });
+
+      if (existingDocument) {
+        await existingDocument.update({
+          creditNoteNumber: documentNumber,
+          is_refered: true,
+          status: 15,
+        });
+      }
+    }
+    
+    // Sales Return from Invoice
+    if (status && documentType === documentTypes.salesReturn && invoiceNumber) {
+      const existingDocument = await models.Documents.findOne({
+        where: { documentNumber: invoiceNumber, companyId },
+      });
+
+      if (existingDocument) {
+        await existingDocument.update({
+          salesReturnNumber: documentNumber,
+          is_refered: true,
+          status: 17,
+        });
+      }
+    }
+  
+    // Sales Return from Delivery Challan
+    if (
+      status &&
+      documentType === documentTypes.salesReturn &&
+      challan_number
+    ) {
+      const existingDocument = await models.Documents.findOne({
+        where: { documentNumber: challan_number, companyId },
+      });
+
+      if (existingDocument) {
+        await existingDocument.update({
+          salesReturnNumber: documentNumber,
+          is_refered: true,
+          status: 16,
+        });
+      }
+    }
+
+    // Sales Return from Order Confirmation
+    if (status && documentType === documentTypes.salesReturn && orderConfirmationNumber) {
+      const existingDocument = await models.Documents.findOne({
+        where: { documentNumber: orderConfirmationNumber, companyId },
+      });
+
+      if (existingDocument) {
+        await existingDocument.update({
+          salesReturnNumber: documentNumber,
+          is_refered: true,
+          status: 19
+        });
+      }
+    }
+    // Sales Return from Debit Note
+    if (
+      status &&
+      documentType === documentTypes.salesReturn &&
+      debit_note_number
+    ) {
+      const existingDocument = await models.Documents.findOne({
+        where: { documentNumber: debit_note_number, companyId },
+      });
+
+      if (existingDocument) {
+        await existingDocument.update({
+          salesReturnNumber: documentNumber,
+          is_refered: true,
+          status: 18,
+        });
+      }
+    }
+
+    // Goods Receive Note from Purchase Order
+    if (status && documentType === documentTypes.goodsReceiveNotes && purchaseOrderNumber) {
+      const existingDocument = await models.Documents.findOne({
+        where: { documentNumber: purchaseOrderNumber, companyId },
+      });
+
+      if (existingDocument) {
+        await existingDocument.update({
+          grn_number: documentNumber,
+          is_refered: true,
+          status: 21 // Update with your actual status code
+        });
+      }
+    }
+
+    // Quality Report from Goods Receive Note
+    if (status && documentType === documentTypes.qualityReport && grn_number) {
+      const existingDocument = await models.Documents.findOne({
+        where: { documentNumber: grn_number, companyId },
+      });
+
+      if (existingDocument) {
+        await existingDocument.update({
+          qualityReportNumber: documentNumber,
+          is_refered: true,
+          status: 22
         });
       }
     }
@@ -1030,43 +1242,150 @@ async function discardDocument(req, res) {
   const { documentId, companyId } = req.body;
 
   try {
-    // Find the document using documentId and companyId
     const document = await models.Documents.findOne({
       where: { id: documentId, companyId },
     });
 
-    // If the document doesn't exist, return an error
     if (!document) {
       return res.status(404).json({ message: "Document not found!" });
     }
 
-    // Start a transaction to ensure atomicity
     const transaction = await models.sequelize.transaction();
 
     try {
-      // Mark the specified document as discarded
+      // Check for active dependent documents first
+      const childConfig = {
+        [documentTypes.salesEnquiry]: ['quotationNumber'],
+        [documentTypes.salesQuotation]: ['orderConfirmationNumber'],
+        [documentTypes.orderConfirmation]: ['challan_number', 'performaInvoiceNumber', 'invoiceNumber'],
+        [documentTypes.deliveryChallan]: ['invoiceNumber'],
+        [documentTypes.proformaInvoice]: ['invoiceNumber'],
+        [documentTypes.invoice]: ['debit_note_number', 'creditNoteNumber', 'salesReturnNumber'],
+        [documentTypes.debitNote]: [],
+        [documentTypes.creditNote]: [],
+        [documentTypes.salesReturn]: [],
+        // Add other document types as needed
+      };
+
+      const childFields = childConfig[document.documentType] || [];
+      const childConditions = childFields.map(field => ({ [field]: document.documentNumber }));
+
+      let activeChildren;
+      if (childConditions.length > 0) {
+        activeChildren = await models.Documents.findOne({
+          where: {
+            [Op.or]: childConditions,
+            status: { [Op.ne]: -1 },
+            companyId,
+            id: { [Op.ne]: documentId }
+          },
+          transaction,
+        });
+      }
+
+      if (activeChildren) {
+        await transaction.rollback();
+        return res.status(400).json({ message: "Cannot discard document as it has active dependent documents." });
+      }
+
+      // Define parent relationships and original statuses
+      const parentConfig = {
+        [documentTypes.salesQuotation]: {
+          parentField: 'enquiryNumber',
+          originalStatus: 1 // Sales Enquiry original status
+        },
+        [documentTypes.orderConfirmation]: {
+          parentField: 'quotationNumber',
+          originalStatus: 8 // Corrected to Sales Quotation original status
+        },
+        [documentTypes.deliveryChallan]: {
+          parentField: 'orderConfirmationNumber',
+          originalStatus: 9 // Order Confirmation original status
+        },
+        [documentTypes.proformaInvoice]: {
+          parentField: 'orderConfirmationNumber',
+          originalStatus: 9
+        },
+        [documentTypes.invoice]: {
+          parentFields: ['orderConfirmationNumber', 'challan_number', 'performaInvoiceNumber'],
+          originalStatuses: {
+            orderConfirmationNumber: 9,
+            challan_number: 10,
+            performaInvoiceNumber: 11
+          }
+        },
+        [documentTypes.debitNote]: {
+          parentField: 'invoiceNumber',
+          originalStatus: 12 // Invoice original status
+        },
+        [documentTypes.creditNote]: {
+          parentField: 'invoiceNumber',
+          originalStatus: 12
+        },
+        [documentTypes.salesReturn]: {
+          parentFields: ['invoiceNumber', 'challan_number'],
+          originalStatuses: {
+            invoiceNumber: 12,
+            challan_number: 10
+          }
+        }
+      };
+
+      // Mark document as discarded
       await models.Documents.update(
-        { status: 2 },
+        { status: -1 }, // Changed to -1
         { where: { id: documentId }, transaction }
       );
 
-      // Commit the transaction
-      await transaction.commit();
+      // Update parent documents
+      const config = parentConfig[document.documentType];
+      if (config) {
+        const parentFields = config.parentFields || [config.parentField];
+        
+        for (const field of parentFields) {
+          const parentNumber = document[field];
+          if (parentNumber) {
+            const parent = await models.Documents.findOne({
+              where: { documentNumber: parentNumber, companyId },
+              transaction
+            });
 
-      // Success response
+            if (parent) {
+              // Check if parent has other active references
+              const hasActiveChildren = await models.Documents.findOne({
+                where: {
+                  companyId,
+                  [field]: parentNumber,
+                  status: { [Op.ne]: -1 }, // Check for non-discarded status
+                  id: { [Op.ne]: documentId }
+                },
+                transaction
+              });
+
+              if (!hasActiveChildren) {
+                const originalStatus = config.originalStatuses?.[field] || config.originalStatus;
+                await parent.update({
+                  is_refered: false,
+                  status: originalStatus
+                }, { transaction });
+              }
+            }
+          }
+        }
+      }
+
+      await transaction.commit();
       res.status(200).json({
-        message: `Document with ID ${documentId} has been successfully discarded.`,
+        message: `Document discarded successfully with parent status rollback.`,
       });
     } catch (error) {
-      // If something goes wrong, roll back the transaction
       await transaction.rollback();
       throw error;
     }
   } catch (error) {
-    // Catch any errors and send a failure response
     res.status(500).json({
-      message: "Something went wrong while discarding the document.",
-      error: error.message || error,
+      message: "Error discarding document",
+      error: error.message
     });
   }
 }
