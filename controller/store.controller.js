@@ -304,7 +304,7 @@ async function stockTransfer(req, res) {
     // Iterate through each stock transfer item
     for (const element of stockData) {
       let price = 0;
-      let remainingQuantity = element.quantity;
+      let remainingQuantity = element.quantity * (element?.conversionFactor || 1);
       const item = await models.Items.findOne({
         where: {
           id: element.itemId
@@ -329,15 +329,15 @@ async function stockTransfer(req, res) {
           );
           await models.StockTransfer.create({
             transferNumber,
-            fromStoreId: element?.fromStore || null,
+            fromStoreId: addReduce == 2 ? element?.toStore : (element?.fromStore || null),
             itemId: element.itemId,
             quantity: -deductQty,
-            toStoreId: element.toStore,
+            toStoreId: addReduce == 2 ? null : element.toStore,
             transferDate,
             transferredBy,
             comment: stockData.comment,
             companyId,
-            price: stock.price
+            price: element?.price / (element?.conversionFactor || 1)
           });
           price += (stock.price * deductQty);
         }
@@ -354,34 +354,34 @@ async function stockTransfer(req, res) {
       }
 
       // Create StockTransfer entry
-      await models.StockTransfer.create({
+      addReduce != 2 && await models.StockTransfer.create({
         transferNumber,
         fromStoreId: element?.fromStore || null,
         itemId: element.itemId,
-        quantity: addReduce == 2 ? -element.quantity : element.quantity,
+        quantity: (addReduce == 2 ? -element.quantity : element.quantity) * (element?.conversionFactor || 1),
         toStoreId: element.toStore,
         transferDate,
         transferredBy,
         comment: stockData.comment,
         companyId,
-        price: element.price
+        price: element.price / (element?.conversionFactor || 1)
       });
 
       // Add quantity to destination store
       addReduce != 2 && await models.StoreItems.create({
         storeId: element.toStore,
         itemId: element.itemId,
-        quantity: element.quantity,
+        quantity: element.quantity * (element?.conversionFactor || 1),
         status: 1,
         addedBy: transferredBy,
-        price: element?.price
+        price: element?.price / (element?.conversionFactor || 1)
       });
 
       if (!element.fromStore) {
         await models.Items.update(
           {
             currentStock: item.currentStock + (addReduce != 2 ? element.quantity : element.quantity * -1),
-            price: addReduce == 2 ? useFIFO ? ((item.price * item.currentStock) - price) / (item.currentStock - element.quantity) : item.price : (((item.currentStock * item.price) + (element.quantity * element.price)) / (item.currentStock + element.quantity))
+            // price: addReduce == 2 ? useFIFO ? ((item.price * item.currentStock) - price) / (item.currentStock - element.quantity) : item.price : (((item.currentStock * item.price) + (element.quantity * element.price)) / (item.currentStock + element.quantity))
           },
           { where: { id: element.itemId, companyId } }
         );
@@ -677,19 +677,29 @@ async function getStoreItemsByStoreId(req, res) {
     const myMap = new Map();
     uomData.map((uom => myMap.set(uom.id, uom.code)));
     const stores = {};
+    const averagePriceOfItem = {};
     let arr = [];
     for (const storeItem of storeItems) {
       if (stores[storeItem?.itemId] || stores[storeItem?.itemId] == 0) {
+        if (storeItem.quantity > 0) {
+          let averagePrice = (averagePriceOfItem[storeItem?.itemId] || 0) + (storeItem?.price * storeItem?.quantity);
+          averagePriceOfItem[storeItem?.itemId] = averagePrice;
+        }
         stores[storeItem.itemId] += storeItem?.quantity;
       }
       else {
         stores[storeItem.itemId] = storeItem?.quantity;
+        if (storeItem?.quantity > 0) {
+          averagePriceOfItem[storeItem?.itemId] = storeItem?.price * storeItem?.quantity;
+        }
         arr.push(storeItem);
       }
     }
     storeItems = [];
-    for (const storeItem of arr) {
+    for (let storeItem of arr) {
+      storeItem = storeItem.get({ plain: true });
       storeItem.quantity = stores[storeItem.itemId];
+      storeItem.averagePrice = averagePriceOfItem[storeItem?.itemId] || 0;
       const item = await models.Items.findOne({
         where: {
           id: storeItem.itemId

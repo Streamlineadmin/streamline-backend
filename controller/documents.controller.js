@@ -102,7 +102,10 @@ async function createDocument(req, res) {
 
     if (!isDraft) {
       const doc = await models.Documents.findOne({
-        where: { documentNumber, companyId, documentType }
+        where: {
+          documentNumber,
+          companyId,
+        }
       });
       if (doc) {
         return res.status(409).json({
@@ -822,6 +825,16 @@ async function createDocument(req, res) {
           }
         });
         if (purchase_order) {
+          if (purchase_order?.addStockOn === 'GRN') {
+            await models.Documents.update({ addStockOn: 'GRN' },
+              {
+                where: {
+                  documentNumber,
+                  companyId
+                }
+              }
+            );
+          }
           let partiallyReceived = false, accessQuantityReceived = false;
           for (const item of items) {
             if (item.quantity < item.receivedQuantity) {
@@ -881,7 +894,7 @@ async function createDocument(req, res) {
             quantity: (item?.receivedToday * (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1))) || 0,
             status: 1,
             addedBy: createdBy,
-            price: item?.price
+            price: item?.price / (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1))
           }
         })
         ),
@@ -898,7 +911,7 @@ async function createDocument(req, res) {
             transferredBy: createdBy,
             comment: '',
             companyId,
-            price: item?.price,
+            price: item?.price / (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1)),
             documentNumber: document.documentNumber,
             documentType
           }
@@ -935,7 +948,7 @@ async function createDocument(req, res) {
             quantity: (item.pendingQuantity * (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1))) || 0,
             status: 1,
             addedBy: createdBy,
-            price: item?.price,
+            price: item?.price / (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1)),
             isRejected: true
           }
         })
@@ -953,7 +966,7 @@ async function createDocument(req, res) {
             transferredBy: createdBy,
             comment: '',
             companyId,
-            price: item?.price,
+            price: item?.price / (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1)),
             documentNumber: document.documentNumber,
             documentType,
             isRejected: true
@@ -993,24 +1006,23 @@ async function createDocument(req, res) {
             { quantity: (stock.quantity - deductQty) },
             { where: { id: stock.id } }
           );
-          console.log('something', deductQty, element?.conversionFactor, element?.quantity, element?.auQuantity);
-          console.log((showUnits == 0 ? element.quantity / element.auQuantity : 1));
-          await models.StockTransfer.create({
-            transferNumber: element.transferNumber,
-            fromStoreId: storeId.id || null,
-            itemId: item.id,
-            quantity: -deductQty,
-            toStoreId: null,
-            transferDate: new Date().toISOString(),
-            transferredBy: createdBy,
-            comment: '',
-            companyId,
-            price: element.price,
-            documentNumber: document.documentNumber,
-            documentType
-          });
           price += (stock.price * deductQty);
         }
+
+        await models.StockTransfer.create({
+          transferNumber: element.transferNumber,
+          fromStoreId: storeId.id || null,
+          itemId: item.id,
+          quantity: (element?.quantity * (element?.conversionFactor || 1)) * -1,
+          toStoreId: null,
+          transferDate: new Date().toISOString(),
+          transferredBy: createdBy,
+          comment: '',
+          companyId,
+          price: element.price / (element.conversionFactor || 1),
+          documentNumber: document.documentNumber,
+          documentType
+        });
 
         await models.Items.update(
           {
