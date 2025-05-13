@@ -103,7 +103,6 @@ async function createDocument(req, res) {
         where: {
           documentNumber,
           companyId,
-          documentType
         }
       });
       if (doc) {
