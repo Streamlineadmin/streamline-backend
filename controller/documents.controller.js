@@ -1241,6 +1241,41 @@ async function discardDocument(req, res) {
     const transaction = await models.sequelize.transaction();
 
     try {
+      // Check for active dependent documents first
+      const childConfig = {
+        [documentTypes.salesEnquiry]: ['quotationNumber'],
+        [documentTypes.salesQuotation]: ['orderConfirmationNumber'],
+        [documentTypes.orderConfirmation]: ['challan_number', 'performaInvoiceNumber', 'invoiceNumber'],
+        [documentTypes.deliveryChallan]: ['invoiceNumber'],
+        [documentTypes.proformaInvoice]: ['invoiceNumber'],
+        [documentTypes.invoice]: ['debit_note_number', 'creditNoteNumber', 'salesReturnNumber'],
+        [documentTypes.debitNote]: [],
+        [documentTypes.creditNote]: [],
+        [documentTypes.salesReturn]: [],
+        // Add other document types as needed
+      };
+
+      const childFields = childConfig[document.documentType] || [];
+      const childConditions = childFields.map(field => ({ [field]: document.documentNumber }));
+
+      let activeChildren;
+      if (childConditions.length > 0) {
+        activeChildren = await models.Documents.findOne({
+          where: {
+            [Op.or]: childConditions,
+            status: { [Op.ne]: -1 },
+            companyId,
+            id: { [Op.ne]: documentId }
+          },
+          transaction,
+        });
+      }
+
+      if (activeChildren) {
+        await transaction.rollback();
+        return res.status(400).json({ message: "Cannot discard document as it has active dependent documents." });
+      }
+
       // Define parent relationships and original statuses
       const parentConfig = {
         [documentTypes.salesQuotation]: {
@@ -1249,7 +1284,7 @@ async function discardDocument(req, res) {
         },
         [documentTypes.orderConfirmation]: {
           parentField: 'quotationNumber',
-          originalStatus: 8 // Sales Quotation original status
+          originalStatus: 8 // Corrected to Sales Quotation original status
         },
         [documentTypes.deliveryChallan]: {
           parentField: 'orderConfirmationNumber',
@@ -1284,12 +1319,9 @@ async function discardDocument(req, res) {
         }
       };
 
-      // Check for active dependent documents first (previous implementation)
-      // ... [Keep the existing dependency check code here] ...
-
       // Mark document as discarded
       await models.Documents.update(
-        { status: 2 },
+        { status: -1 }, // Changed to -1
         { where: { id: documentId }, transaction }
       );
 
@@ -1312,8 +1344,8 @@ async function discardDocument(req, res) {
                 where: {
                   companyId,
                   [field]: parentNumber,
-                  status: { [Op.ne]: 2 },
-                  id: { [Op.ne]: documentId } // Exclude current document
+                  status: { [Op.ne]: -1 }, // Check for non-discarded status
+                  id: { [Op.ne]: documentId }
                 },
                 transaction
               });
