@@ -320,14 +320,24 @@ async function createDocument(req, res) {
             }
           });
           const purchaseRequestItemsMap = {};
+          const consumeItemsMap = {};
 
           for (const current of purchaseRequestItems) {
-            let quantity = 0;
+            let quantity = 0, remaining = 0;
             if (current.receivedToday) quantity += current.receivedToday;
-            if (itemsMap[current.itemId]) quantity += itemsMap[current.itemId];
+            if (itemsMap[current.itemId]) {
+              if ((quantity + itemsMap[current.itemId]) > current.quantity) {
+                remaining = (quantity + itemsMap[current.itemId]) - current.quantity;
+                quantity = current.quantity;
+                consumeItemsMap[current?.itemId] = itemsMap[current.itemId] - remaining;
+              }
+              else {
+                quantity += itemsMap[current.itemId];
+              }
+            }
 
             itemsMap[current.itemId] && await current.update({ receivedToday: quantity });
-
+            itemsMap[current.itemId] = remaining;
             if (purchaseRequestItemsMap[current.itemId]) {
               purchaseRequestItemsMap[current.itemId] += current.quantity;
             } else {
@@ -359,7 +369,7 @@ async function createDocument(req, res) {
 
           for (const item of items) {
             const itemId = item?.itemId;
-            const quantity = item?.quantity ?? 0;
+            const quantity = consumeItemsMap[item?.itemId] || 0;
             purchaseOrdersItemsMap[itemId] = (purchaseOrdersItemsMap[itemId] ?? 0) + quantity;
           }
 
@@ -518,7 +528,7 @@ async function createDocument(req, res) {
         });
       }
     }
-    
+
     // Sales Return from Invoice
     if (status && documentType === documentTypes.salesReturn && invoiceNumber) {
       const existingDocument = await models.Documents.findOne({
@@ -533,7 +543,7 @@ async function createDocument(req, res) {
         });
       }
     }
-  
+
     // Sales Return from Delivery Challan
     if (
       status &&
@@ -1341,7 +1351,7 @@ async function discardDocument(req, res) {
       const config = parentConfig[document.documentType];
       if (config) {
         const parentFields = config.parentFields || [config.parentField];
-        
+
         for (const field of parentFields) {
           const parentNumber = document[field];
           if (parentNumber) {
