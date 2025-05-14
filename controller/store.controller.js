@@ -343,13 +343,13 @@ async function stockTransfer(req, res) {
         }
       } else {
         // Direct deduction if FIFO is not enabled
-        (element.fromStore || addReduce == 2) && await models.StoreItems.create({
+        (element?.fromStore || addReduce == 2) && await models.StoreItems.create({
           storeId: element.fromStore || element.toStore,
           itemId: element.itemId,
           quantity: element.quantity * -1,
           status: 1,
           addedBy: transferredBy,
-          price: item?.price
+          price: element.price / (element?.conversionFactor || 1)
         });
       }
 
@@ -700,62 +700,6 @@ async function getStoreItemsByStoreId(req, res) {
       storeItem = storeItem.get({ plain: true });
       storeItem.quantity = stores[storeItem.itemId];
       storeItem.averagePrice = averagePriceOfItem[storeItem?.itemId] || 0;
-      const item = await models.Items.findOne({
-        where: {
-          id: storeItem.itemId
-        }
-      });
-      if (item) {
-        const alternateUnit = await models.AlternateUnits.findAll({
-          where: {
-            itemId: item.id
-          }
-        });
-        const units = [];
-        for (const unit of alternateUnit) {
-          let obj = { ...unit?.dataValues };
-          const code = myMap.get(unit.alternateUnits);
-          obj.code = code;
-          units.push(obj);
-        }
-        item.alternateUnit = units;
-        storeItem.itemId = item;
-        storeItems.push(storeItem);
-      }
-    }
-    res.status(200).json({ storeItems });
-  } catch (error) {
-    console.log(error);
-    res.status(500).json({ message: "Something went Wrong." });
-  }
-}
-
-async function getStoreItemsByStoreId(req, res) {
-  const { storeId } = req.body;
-  if (!storeId) return res.status(404).json({ message: "Store Not found." });
-  try {
-    let [storeItems, uomData] = await Promise.all([models.StoreItems.findAll({
-      where: {
-        storeId,
-        isRejected: req.body.isRejected || false
-      }
-    }), models.UOM.findAll({})]);
-    const myMap = new Map();
-    uomData.map((uom => myMap.set(uom.id, uom.code)));
-    const stores = {};
-    let arr = [];
-    for (const storeItem of storeItems) {
-      if (stores[storeItem?.itemId] || stores[storeItem?.itemId] == 0) {
-        stores[storeItem.itemId] += storeItem?.quantity;
-      }
-      else {
-        stores[storeItem.itemId] = storeItem?.quantity;
-        arr.push(storeItem);
-      }
-    }
-    storeItems = [];
-    for (const storeItem of arr) {
-      storeItem.quantity = stores[storeItem.itemId];
       const item = await models.Items.findOne({
         where: {
           id: storeItem.itemId
