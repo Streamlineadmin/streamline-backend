@@ -21,7 +21,7 @@ module.exports = (sequelize, DataTypes) => {
     transferredBy: DataTypes.INTEGER,
     status: DataTypes.INTEGER,
     itemId: DataTypes.INTEGER, // New column
-    quantity: DataTypes.INTEGER, // New column
+    quantity: DataTypes.FLOAT, // New column
     companyId: DataTypes.INTEGER,
     comment: {
       type: DataTypes.STRING,
