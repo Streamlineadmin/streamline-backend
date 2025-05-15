@@ -665,70 +665,91 @@ async function getStockTransferHistory(req, res) {
 
 
 async function getStoreItemsByStoreId(req, res) {
-  const { storeId } = req.body;
+  const { storeId, isRejected = false } = req.body;
   if (!storeId) return res.status(404).json({ message: "Store Not found." });
+
   try {
-    let [storeItems, uomData] = await Promise.all([models.StoreItems.findAll({
-      where: {
-        storeId,
-        isRejected: req.body.isRejected || false
+    // Fetch StoreItems and UOMs
+    const [storeItemsRaw, uomData] = await Promise.all([
+      models.StoreItems.findAll({
+        where: { storeId, isRejected },
+        raw: true
+      }),
+      models.UOM.findAll({ raw: true })
+    ]);
+
+    // Map UOM IDs to codes
+    const uomMap = uomData.reduce((map, uom) => {
+      map[uom.id] = uom.code;
+      return map;
+    }, {});
+
+    const itemQuantityMap = {};
+    const itemPriceMap = {};
+    const uniqueStoreItems = {};
+
+    for (const item of storeItemsRaw) {
+      const itemId = item.itemId;
+      const quantity = item.quantity;
+      const price = item.price;
+
+      // Aggregate quantity and price
+      itemQuantityMap[itemId] = (itemQuantityMap[itemId] || 0) + quantity;
+      if (quantity > 0) {
+        itemPriceMap[itemId] = (itemPriceMap[itemId] || 0) + (price * quantity);
       }
-    }), models.UOM.findAll({})]);
-    const myMap = new Map();
-    uomData.map((uom => myMap.set(uom.id, uom.code)));
-    const stores = {};
-    const averagePriceOfItem = {};
-    let arr = [];
-    for (const storeItem of storeItems) {
-      if (stores[storeItem?.itemId] || stores[storeItem?.itemId] == 0) {
-        if (storeItem.quantity > 0) {
-          let averagePrice = (averagePriceOfItem[storeItem?.itemId] || 0) + (storeItem?.price * storeItem?.quantity);
-          averagePriceOfItem[storeItem?.itemId] = averagePrice;
-        }
-        stores[storeItem.itemId] += storeItem?.quantity;
-      }
-      else {
-        stores[storeItem.itemId] = storeItem?.quantity;
-        if (storeItem?.quantity > 0) {
-          averagePriceOfItem[storeItem?.itemId] = storeItem?.price * storeItem?.quantity;
-        }
-        arr.push(storeItem);
-      }
-    }
-    storeItems = [];
-    for (let storeItem of arr) {
-      storeItem = storeItem.get({ plain: true });
-      storeItem.quantity = stores[storeItem.itemId];
-      storeItem.averagePrice = averagePriceOfItem[storeItem?.itemId] || 0;
-      const item = await models.Items.findOne({
-        where: {
-          id: storeItem.itemId
-        }
-      });
-      if (item) {
-        const alternateUnit = await models.AlternateUnits.findAll({
-          where: {
-            itemId: item.id
-          }
-        });
-        const units = [];
-        for (const unit of alternateUnit) {
-          let obj = { ...unit?.dataValues };
-          const code = myMap.get(unit.alternateUnits);
-          obj.code = code;
-          units.push(obj);
-        }
-        item.alternateUnit = units;
-        storeItem.itemId = item;
-        storeItems.push(storeItem);
+
+      // Store one instance of each item
+      if (!uniqueStoreItems[itemId]) {
+        uniqueStoreItems[itemId] = item;
       }
     }
-    res.status(200).json({ storeItems });
+
+    const itemIds = Object.keys(uniqueStoreItems);
+
+    // Fetch item data and alternate units in bulk
+    const [itemsData, alternateUnitsData] = await Promise.all([
+      models.Items.findAll({
+        where: { id: itemIds },
+        raw: true
+      }),
+      models.AlternateUnits.findAll({
+        where: { itemId: itemIds },
+        raw: true
+      })
+    ]);
+
+    // Map alternate units by itemId
+    const alternateUnitsMap = alternateUnitsData.reduce((acc, unit) => {
+      const itemId = unit.itemId;
+      const unitWithCode = { ...unit, code: uomMap[unit.alternateUnits] || null };
+      acc[itemId] = acc[itemId] || [];
+      acc[itemId].push(unitWithCode);
+      return acc;
+    }, {});
+
+    // Build final store items
+    const storeItems = itemIds.map(itemId => {
+      const baseItem = uniqueStoreItems[itemId];
+      return {
+        ...baseItem,
+        quantity: itemQuantityMap[itemId],
+        averagePrice: itemPriceMap[itemId] || 0,
+        itemId: {
+          ...itemsData.find(item => item.id === Number(itemId)),
+          alternateUnit: alternateUnitsMap[itemId] || []
+        }
+      };
+    });
+
+    return res.status(200).json({ storeItems });
+
   } catch (error) {
-    console.log(error);
-    res.status(500).json({ message: "Something went Wrong." });
+    console.error(error);
+    return res.status(500).json({ message: "Something went wrong." });
   }
 }
+
 
 async function getAllStoreItemsByStoresID(req, res) {
   let { storeIds, isRejected } = req.body;
@@ -809,5 +830,4 @@ module.exports = {
   getStockTransferHistory: getStockTransferHistory,
   getStoreItemsByStoreId: getStoreItemsByStoreId,
   getAllStoreItemsByStoresID: getAllStoreItemsByStoresID,
-
 };

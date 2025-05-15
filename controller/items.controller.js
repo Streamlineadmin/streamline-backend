@@ -639,6 +639,9 @@ async function stockReconcilation(req, res) {
             if (item['Final Stock'] && Number(item['Final Stock']) < 0) {
                 err += 'Final Stock Value Should not be negative.'
             }
+            if (price && Number(price) < 0) {
+                err += 'Price Value Should not be negative.'
+            }
             if (err) {
                 errorArray.push({ ...item, Error: err });
                 continue;
@@ -655,7 +658,8 @@ async function stockReconcilation(req, res) {
                 quantity: Number(item['Final Stock'] || 0),
                 addedBy: Number(req.body.companyId),
                 status: 1,
-                addedBy: Number(req.body.userId)
+                addedBy: Number(req.body.userId),
+                price: price,
             };
 
             const stockTransfer = {
@@ -668,7 +672,7 @@ async function stockReconcilation(req, res) {
                 transferredBy: Number(req.body.companyId),
                 comment: '',
                 companyId: Number(req.body.companyId),
-                price: price || 10
+                price: price,
             }
 
             await models.StoreItems.create(storeItemData);

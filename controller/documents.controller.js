@@ -329,10 +329,12 @@ async function createDocument(req, res) {
               if ((quantity + itemsMap[current.itemId]) > current.quantity) {
                 remaining = (quantity + itemsMap[current.itemId]) - current.quantity;
                 quantity = current.quantity;
+                current.receivedToday = quantity;
                 consumeItemsMap[current?.itemId] = itemsMap[current.itemId] - remaining;
               }
               else {
                 quantity += itemsMap[current.itemId];
+                current.receivedToday = quantity;
               }
             }
 
@@ -345,37 +347,37 @@ async function createDocument(req, res) {
             }
           }
 
-          const purchaseOrders = await models.Documents.findAll({
-            where: {
-              companyId,
-              indent_number: ind_number
-            }
-          });
+          // const purchaseOrders = await models.Documents.findAll({
+          //   where: {
+          //     companyId,
+          //     indent_number: ind_number
+          //   }
+          // });
 
-          const purchaseOrderIds = purchaseOrders.map(doc => doc.documentNumber);
-          const purchaseOrdersItems = await models.DocumentItems.findAll({
-            where: {
-              companyId,
-              documentNumber: {
-                [Op.in]: purchaseOrderIds
-              }
-            }
-          });
-          const purchaseOrdersItemsMap = purchaseOrdersItems.reduce((acc, current) => {
-            if (acc[current.itemId]) acc[current.itemId] += current.quantity;
-            acc[current.itemId] = current.quantity;
-            return acc;
-          }, {});
+          // const purchaseOrderIds = purchaseOrders.map(doc => doc.documentNumber);
+          // const purchaseOrdersItems = await models.DocumentItems.findAll({
+          //   where: {
+          //     companyId,
+          //     documentNumber: {
+          //       [Op.in]: purchaseOrderIds
+          //     }
+          //   }
+          // });
+          // const purchaseOrdersItemsMap = purchaseOrdersItems.reduce((acc, current) => {
+          //   if (acc[current.itemId]) acc[current.itemId] += current.quantity;
+          //   acc[current.itemId] = current.quantity;
+          //   return acc;
+          // }, {});
 
-          for (const item of items) {
-            const itemId = item?.itemId;
-            const quantity = consumeItemsMap[item?.itemId] || 0;
-            purchaseOrdersItemsMap[itemId] = (purchaseOrdersItemsMap[itemId] ?? 0) + quantity;
-          }
+          // for (const item of items) {
+          //   const itemId = item?.itemId;
+          //   const quantity = consumeItemsMap[item?.itemId] || 0;
+          //   purchaseOrdersItemsMap[itemId] = (purchaseOrdersItemsMap[itemId] ?? 0) + quantity;
+          // }
 
           let status = purchaseRequest.status, isPartial = false;
-          for (const key of Object.keys(purchaseRequestItemsMap)) {
-            if (purchaseRequestItemsMap[key] > purchaseOrdersItemsMap[key]) {
+          for (const current of purchaseRequestItems) {
+            if (current?.quantity > current?.receivedToday) {
               isPartial = true;
               if (status == 1) {
                 status = 14;
