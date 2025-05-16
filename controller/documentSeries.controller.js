@@ -46,7 +46,7 @@ function addDocumentSeries(req, res) {
 function editDocumentSeries(req, res) {
     const DocType = req.body.docType;
     const seriesName = req.body.seriesName;
-    const prefix = req.body.prefix;
+    const prefix = req.body.series;
     const number = req.body.number;
     const companyId = req.body.companyId;
 
