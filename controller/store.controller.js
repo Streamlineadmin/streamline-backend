@@ -245,7 +245,7 @@ async function getStoresByItem(req, res) {
   try {
     // Step 2: Find all storeIds that have the given itemId in StoreItems
     const storeItems = await models.StoreItems.findAll({
-      where: { itemId, isRejected: false },
+      where: { itemId, isRejected: false, price: { [models.Sequelize.Op.gt]: 0 } },
       attributes: ['storeId', 'quantity'], // Only retrieve storeId and quantity
     });
 
@@ -310,10 +310,10 @@ async function stockTransfer(req, res) {
           id: element.itemId
         }
       });
-      if (useFIFO && addReduce == 2) {
+      if ((useFIFO && addReduce == 2) || !addReduce) {
         // Fetch existing stock based on FIFO (oldest stock first)
         const existingStock = await models.StoreItems.findAll({
-          where: { storeId: element.toStore, itemId: element.itemId, isRejected: false },
+          where: { storeId: (element.fromStore || element.toStore), itemId: element.itemId, isRejected: false },
           order: [['createdAt', 'ASC']], // Oldest entries first
         });
         for (const stock of existingStock) {
@@ -327,34 +327,48 @@ async function stockTransfer(req, res) {
             { quantity: (stock.quantity - deductQty) },
             { where: { id: stock.id } }
           );
-          await models.StockTransfer.create({
+          if (!addReduce) {
+            await models.StoreItems.create({
+              storeId: element.toStore,
+              itemId: element.itemId,
+              quantity: deductQty,
+              status: 1,
+              addedBy: transferredBy,
+              price: stock.price,
+              isRejected: false
+            });
+            await models.StockTransfer.create({
+              transferNumber,
+              fromStoreId: element?.fromStore,
+              itemId: element.itemId,
+              quantity: deductQty,
+              toStoreId: element.toStore,
+              transferDate,
+              transferredBy,
+              comment: stock.comment,
+              companyId,
+              price: stock.price,
+              isRejected: false
+            });
+          }
+          addReduce && await models.StockTransfer.create({
             transferNumber,
-            fromStoreId: addReduce == 2 ? element?.toStore : (element?.fromStore || null),
+            fromStoreId: !addReduce ? element?.fromStore : addReduce == 2 ? element?.toStore : (element?.fromStore || null),
             itemId: element.itemId,
             quantity: -deductQty,
-            toStoreId: addReduce == 2 ? null : element.toStore,
+            toStoreId: !addReduce ? element?.toStore : addReduce == 2 ? null : element.toStore,
             transferDate,
             transferredBy,
             comment: stockData.comment,
             companyId,
-            price: element?.price / (element?.conversionFactor || 1)
+            price: (!addReduce ? stock.price : element?.price / (element?.conversionFactor || 1))
           });
           price += (stock.price * deductQty);
         }
-      } else {
-        // Direct deduction if FIFO is not enabled
-        (element?.fromStore || addReduce == 2) && await models.StoreItems.create({
-          storeId: element.fromStore || element.toStore,
-          itemId: element.itemId,
-          quantity: element.quantity * -1,
-          status: 1,
-          addedBy: transferredBy,
-          price: element.price / (element?.conversionFactor || 1)
-        });
       }
 
       // Create StockTransfer entry
-      addReduce != 2 && await models.StockTransfer.create({
+      (addReduce && addReduce != 2) && await models.StockTransfer.create({
         transferNumber,
         fromStoreId: element?.fromStore || null,
         itemId: element.itemId,
@@ -368,7 +382,7 @@ async function stockTransfer(req, res) {
       });
 
       // Add quantity to destination store
-      addReduce != 2 && await models.StoreItems.create({
+      (addReduce && addReduce) != 2 && await models.StoreItems.create({
         storeId: element.toStore,
         itemId: element.itemId,
         quantity: element.quantity * (element?.conversionFactor || 1),
@@ -777,17 +791,17 @@ async function getAllStoreItemsByStoresID(req, res) {
     // Aggregate quantity by storeId and itemId
     const aggregated = {};
     storeItems.forEach(si => {
-    const key = `${si.storeId}_${si.itemId}_${si.isRejected}`;
-    if (!aggregated[key]) {
-      aggregated[key] = {
-        storeId: si.storeId, 
-        itemId: si.itemId,
-        isRejected: si.isRejected,
-        quantity: 0
-      };
-    }
-    aggregated[key].quantity += si.quantity;
-  });
+      const key = `${si.storeId}_${si.itemId}_${si.isRejected}`;
+      if (!aggregated[key]) {
+        aggregated[key] = {
+          storeId: si.storeId,
+          itemId: si.itemId,
+          isRejected: si.isRejected,
+          quantity: 0
+        };
+      }
+      aggregated[key].quantity += si.quantity;
+    });
 
     const resultByStore = {};
     for (const entry of Object.values(aggregated)) {
@@ -804,8 +818,8 @@ async function getAllStoreItemsByStoresID(req, res) {
         }));
         item.alternateUnit = alternateUnits;
       }
-      resultByStore[storeId].push({ 
-        item: item || { id: itemId, message: 'Item not found' }, 
+      resultByStore[storeId].push({
+        item: item || { id: itemId, message: 'Item not found' },
         quantity,
         isRejected
       });
