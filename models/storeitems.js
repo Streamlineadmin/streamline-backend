@@ -20,7 +20,8 @@ module.exports = (sequelize, DataTypes) => {
     status: DataTypes.INTEGER,
     addedBy: DataTypes.INTEGER,
     price: DataTypes.FLOAT,
-    isRejected: DataTypes.BOOLEAN
+    isRejected: DataTypes.BOOLEAN,
+    documentNumber: DataTypes.STRING
   }, {
     sequelize,
     modelName: 'StoreItems',
