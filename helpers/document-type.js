@@ -11,7 +11,10 @@ documentTypes = {
     creditNote: "Credit Note",
     salesReturn: "Sales Return",
     goodsReceiveNotes:"Goods Receive Notes",
-    purchaseOrder: 'Purchase Order'
+    purchaseOrder: 'Purchase Order',
+    purchaseRequest: 'Purchase Request',
+    purchaseInvoice: 'Purchase Invoice',
+    purchaseReturn: 'Purchase Return'
 };
 
 module.exports = { documentTypes };
