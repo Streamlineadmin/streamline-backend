@@ -1543,6 +1543,14 @@ async function discardDocument(req, res) {
         models.StoreItems.bulkCreate(storeItems),
         models.StockTransfer.bulkCreate(stockHistory)
       ]);
+      if (document.orderConfirmationNumber) {
+        await models.Documents.update({ status: 1 }, {
+          where: {
+            companyId,
+            documentNumber: document.orderConfirmationNumber
+          }
+        })
+      }
     }
     if (document.documentType === documentTypes.invoice) {
       linkedDocument = await models.Documents.findOne({
@@ -1593,6 +1601,14 @@ async function discardDocument(req, res) {
         models.StoreItems.bulkCreate(storeItems),
         models.StockTransfer.bulkCreate(stockHistory)
       ]);
+      if (document.orderConfirmationNumber) {
+        await models.Documents.update({ status: 1 }, {
+          where: {
+            companyId,
+            documentNumber: document.orderConfirmationNumber
+          }
+        })
+      }
     }
     if (document.documentType === documentTypes.proformaInvoice) {
       linkedDocument = await models.Documents.findOne({
@@ -1697,6 +1713,12 @@ async function discardDocument(req, res) {
         });
       }
       await models.StockTransfer.bulkCreate(stockHistory);
+      await models.Documents.update({ status: 1 }, {
+        where: {
+          companyId,
+          documentNumber: document.purchaseOrderNumber
+        }
+      })
     }
     if (document.documentType === documentTypes.purchaseInvoice) {
       linkedDocument = await models.Documents.findOne({
@@ -1745,7 +1767,7 @@ async function discardDocument(req, res) {
         }
       });
       const transferNumber = generateTransferNumber();
-      console.log('Stock Transfer',stockTransfers[0]);
+      console.log('Stock Transfer', stockTransfers[0]);
       for (const stockTransfer of stockTransfers) {
         stockHistory.push({
           transferNumber,
