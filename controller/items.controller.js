@@ -583,7 +583,7 @@ async function bulkEditItems(req, res) {
             if (item["Tax Type"]) updatedObj.taxType = item['Tax Type'] == 'Inclusive' ? 1 : 2;
             if (item.Tax) updatedObj.tax = item.Tax;
             if (item["Item type"]) updatedObj.itemType = item["Item type"] === "Buy" ? 1 : item["Item type"] === "Sell" ? 2 : 3;
-
+            if (item?.customFields) updatedObj.customFields = item.customFields
             updateData.push(updatedObj);
         }
 
