@@ -1526,7 +1526,7 @@ async function discardDocument(req, res) {
           transferredBy: stockTransfer.transferredBy,
           comment: '',
           companyId: stockTransfer.companyId,
-          price: stockTransfer?.actualPrice,
+          price: stockTransfer?.price,
           documentNumber: document.documentNumber,
           documentType: stockTransfer.documentType,
         });
@@ -1584,7 +1584,7 @@ async function discardDocument(req, res) {
           transferredBy: stockTransfer.transferredBy,
           comment: '',
           companyId: stockTransfer.companyId,
-          price: stockTransfer?.actualPrice,
+          price: stockTransfer?.price,
           documentNumber: document.documentNumber,
           documentType: stockTransfer.documentType,
         });
