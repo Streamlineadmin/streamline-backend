@@ -1024,7 +1024,7 @@ async function createDocument(req, res) {
             transferNumber: element.transferNumber,
             fromStoreId: storeId.id || null,
             itemId: item.id,
-            quantity: (deductQty * (element?.conversionFactor || 1)) * -1,
+            quantity: deductQty * -1,
             toStoreId: null,
             transferDate: new Date().toISOString(),
             transferredBy: createdBy,
