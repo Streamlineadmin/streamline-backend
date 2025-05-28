@@ -1,6 +1,6 @@
 const { Op, where } = require('sequelize');
 const models = require('../models');
-const { documentTypes } = require('../helpers/document-type');
+const { documentTypes, purchaseDocuments, salesDocuments } = require('../helpers/document-type');
 const { generateTransferNumber } = require('../helpers/transfer-number');
 
 async function createDocument(req, res) {
@@ -1159,24 +1159,34 @@ async function createDocument(req, res) {
 }
 
 async function getDocuments(req, res) {
-  const { companyId } = req.body;
+  const { companyId, currentPage, pageSize, documentType = '', search = '', dealStatus, docTypeFilter } = req.body;
 
-  const documents = await models.Documents.findAll({
-    where: { companyId },
-    include: [
-      {
-        model: models.LogisticDetails,
-        as: 'logisticDetails'
-      },
-      {
-        model: models.Users,
-        as: 'creator',
-        attributes: ['id', 'name', 'gstNumber']
-      },
-    ],
-    distinct: true
-  });
+  const offset = ((currentPage || 1) - 1) * (pageSize || 10);
+  let documentstype = [];
+  if (documentType === 'sales') {
+    documentstype = salesDocuments;
+  } else {
+    documentstype = purchaseDocuments;
+  }
 
+  let documents = [];
+  if (!currentPage || !pageSize) {
+    documents = await models.Documents.findAll({
+      where: { companyId },
+      include: [
+        {
+          model: models.LogisticDetails,
+          as: 'logisticDetails'
+        },
+        {
+          model: models.Users,
+          as: 'creator',
+          attributes: ['id', 'name', 'gstNumber']
+        },
+      ],
+      distinct: true
+    });
+  } else {
   const indentNumbers = documents
     .map((doc) => doc.indent_number)
     .filter(Boolean);
@@ -1189,15 +1199,77 @@ async function getDocuments(req, res) {
   });
 
 
-  if (!documents || documents.length === 0) {
-    return res.status(200).json([]);
+    documents = await models.Documents.findAndCountAll({
+      where: {
+        companyId,
+        ...(documentstype.length > 0 && {
+          documentType: {
+            [Op.in]: documentstype
+          }
+        }),
+        ...(dealStatus?.length > 0 && {
+          status: {
+            [Op.in]: dealStatus,
+          },
+        }),
+        ...(docTypeFilter?.length > 0 && {
+          documentType: {
+            [Op.in]: docTypeFilter,
+          },
+        }),
+        ...(search && {
+          [Op.or]: [
+            {
+              documentNumber: {
+                [Op.like]: `%${search.trim()}%`,
+              },
+            },
+            {
+              documentType: {
+                [Op.like]: `%${search.trim()}%`,
+              },
+            },
+          ],
+        }),
+      },
+      include: [
+        {
+          model: models.LogisticDetails,
+          as: 'logisticDetails',
+        },
+        {
+          model: models.Users,
+          as: 'creator',
+          attributes: ['id', 'name'],
+        },
+      ],
+      distinct: true,
+      limit: pageSize,
+      offset,
+    });
   }
 
-  const documentNumbers = documents.map(doc => doc.documentNumber);
-  const documentIds = documents.map(doc => doc.id);
+  if (!documents || (documents?.rows?.length === 0 || documents?.length === 0)) {
+    return res.status(200).json({
+      total: 0,
+      currentPage,
+      pageSize,
+      data: [],
+    });
+  }
+
+  const documentNumbers = (documents?.rows || documents)?.map(doc => doc.documentNumber);
+  const documentIds = (documents?.rows || documents).map(doc => doc.id);
   const purchaseRequestNumbers = purchaseRequests.map(doc => doc.documentNumber);
 
-  const [items, additionalCharges, bankDetails, termsConditions, attachments, documentComments] = await Promise.all([
+  const [
+    items,
+    additionalCharges,
+    bankDetails,
+    termsConditions,
+    attachments,
+    documentComments
+  ] = await Promise.all([
     models.DocumentItems.findAll({
       where: { documentNumber: documentNumbers, companyId },
       include: [
@@ -1224,7 +1296,7 @@ async function getDocuments(req, res) {
   }
   const uniqueItems = Array.from(uniqueItemsMap.values());
 
-  const formattedResult = documents.map(document => ({
+  const formattedResult = (documents?.rows || documents)?.map(document => ({
     ...document.toJSON(),
     items: uniqueItems.filter(item => item.documentNumber === document.documentNumber),
     additionalCharges: additionalCharges.filter(charge => charge.documentNumber === document.documentNumber),
@@ -1234,7 +1306,15 @@ async function getDocuments(req, res) {
     documentComments: documentComments.filter(comment => comment.documentId === document.id),
   }));
 
-  res.status(200).json(formattedResult);
+  if (!currentPage || !pageSize) {
+    return res.status(200).json(formattedResult)
+  }
+  res.status(200).json({
+    total: documents.count,
+    currentPage,
+    pageSize,
+    data: formattedResult,
+  });
 }
 
 async function getDocumentById(req, res) {
@@ -1279,158 +1359,6 @@ async function getDocumentById(req, res) {
     return res.status(500).json({ message: "Something went wrong, please try again later!" });
   }
 }
-
-// async function discardDocument(req, res) {
-//   const { documentId, companyId } = req.body;
-
-//   try {
-//     const document = await models.Documents.findOne({
-//       where: { id: documentId, companyId },
-//     });
-
-//     if (!document) {
-//       return res.status(404).json({ message: "Document not found!" });
-//     }
-
-//     const transaction = await models.sequelize.transaction();
-
-//     try {
-//       // Check for active dependent documents first
-//       const childConfig = {
-//         [documentTypes.salesEnquiry]: ['quotationNumber'],
-//         [documentTypes.salesQuotation]: ['orderConfirmationNumber'],
-//         [documentTypes.orderConfirmation]: ['challan_number', 'performaInvoiceNumber', 'invoiceNumber'],
-//         [documentTypes.deliveryChallan]: ['invoiceNumber'],
-//         [documentTypes.proformaInvoice]: ['invoiceNumber'],
-//         [documentTypes.invoice]: ['debit_note_number', 'creditNoteNumber', 'salesReturnNumber'],
-//         [documentTypes.debitNote]: [],
-//         [documentTypes.creditNote]: [],
-//         [documentTypes.salesReturn]: [],
-//         // Add other document types as needed
-//       };
-
-//       const childFields = childConfig[document.documentType] || [];
-//       const childConditions = childFields.map(field => ({ [field]: document.documentNumber }));
-
-//       let activeChildren;
-//       if (childConditions.length > 0) {
-//         activeChildren = await models.Documents.findOne({
-//           where: {
-//             [Op.or]: childConditions,
-//             status: { [Op.ne]: -1 },
-//             companyId,
-//             id: { [Op.ne]: documentId }
-//           },
-//           transaction,
-//         });
-//       }
-
-//       if (activeChildren) {
-//         await transaction.rollback();
-//         return res.status(400).json({ message: "Cannot discard document as it has active dependent documents." });
-//       }
-
-//       // Define parent relationships and original statuses
-//       const parentConfig = {
-//         [documentTypes.salesQuotation]: {
-//           parentField: 'enquiryNumber',
-//           originalStatus: 1 // Sales Enquiry original status
-//         },
-//         [documentTypes.orderConfirmation]: {
-//           parentField: 'quotationNumber',
-//           originalStatus: 8 // Corrected to Sales Quotation original status
-//         },
-//         [documentTypes.deliveryChallan]: {
-//           parentField: 'orderConfirmationNumber',
-//           originalStatus: 9 // Order Confirmation original status
-//         },
-//         [documentTypes.proformaInvoice]: {
-//           parentField: 'orderConfirmationNumber',
-//           originalStatus: 9
-//         },
-//         [documentTypes.invoice]: {
-//           parentFields: ['orderConfirmationNumber', 'challan_number', 'performaInvoiceNumber'],
-//           originalStatuses: {
-//             orderConfirmationNumber: 9,
-//             challan_number: 10,
-//             performaInvoiceNumber: 11
-//           }
-//         },
-//         [documentTypes.debitNote]: {
-//           parentField: 'invoiceNumber',
-//           originalStatus: 12 // Invoice original status
-//         },
-//         [documentTypes.creditNote]: {
-//           parentField: 'invoiceNumber',
-//           originalStatus: 12
-//         },
-//         [documentTypes.salesReturn]: {
-//           parentFields: ['invoiceNumber', 'challan_number'],
-//           originalStatuses: {
-//             invoiceNumber: 12,
-//             challan_number: 10
-//           }
-//         }
-//       };
-
-//       // Mark document as discarded
-//       await models.Documents.update(
-//         { status: -1 }, // Changed to -1
-//         { where: { id: documentId }, transaction }
-//       );
-
-//       // Update parent documents
-//       const config = parentConfig[document.documentType];
-//       if (config) {
-//         const parentFields = config.parentFields || [config.parentField];
-
-//         for (const field of parentFields) {
-//           const parentNumber = document[field];
-//           if (parentNumber) {
-//             const parent = await models.Documents.findOne({
-//               where: { documentNumber: parentNumber, companyId },
-//               transaction
-//             });
-
-//             if (parent) {
-//               // Check if parent has other active references
-//               const hasActiveChildren = await models.Documents.findOne({
-//                 where: {
-//                   companyId,
-//                   [field]: parentNumber,
-//                   status: { [Op.ne]: -1 }, // Check for non-discarded status
-//                   id: { [Op.ne]: documentId }
-//                 },
-//                 transaction
-//               });
-
-//               if (!hasActiveChildren) {
-//                 const originalStatus = config.originalStatuses?.[field] || config.originalStatus;
-//                 await parent.update({
-//                   is_refered: false,
-//                   status: originalStatus
-//                 }, { transaction });
-//               }
-//             }
-//           }
-//         }
-//       }
-
-//       await transaction.commit();
-//       res.status(200).json({
-//         message: `Document discarded successfully with parent status rollback.`,
-//       });
-//     } catch (error) {
-//       await transaction.rollback();
-//       throw error;
-//     }
-//   } catch (error) {
-//     res.status(500).json({
-//       message: "Error discarding document",
-//       error: error.message
-//     });
-//   }
-// }
 
 async function discardDocument(req, res) {
   const { documentId, companyId } = req.body;
