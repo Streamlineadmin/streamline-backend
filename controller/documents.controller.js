@@ -1187,17 +1187,6 @@ async function getDocuments(req, res) {
       distinct: true
     });
   } else {
-  const indentNumbers = documents
-    .map((doc) => doc.indent_number)
-    .filter(Boolean);
-
-  const purchaseRequests = await models.Documents.findAll({
-    where: {
-      companyId,
-      documentNumber: indentNumbers,
-    },
-  });
-
 
     documents = await models.Documents.findAndCountAll({
       where: {
