@@ -1249,7 +1249,6 @@ async function getDocuments(req, res) {
 
   const documentNumbers = (documents?.rows || documents)?.map(doc => doc.documentNumber);
   const documentIds = (documents?.rows || documents).map(doc => doc.id);
-  const purchaseRequestNumbers = purchaseRequests.map(doc => doc.documentNumber);
 
   const [
     items,
