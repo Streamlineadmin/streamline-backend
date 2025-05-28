@@ -1,5 +1,5 @@
 documentTypes = {
-    goodsReceive:'Goods Received Note',
+    goodsReceive: 'Goods Received Note',
     invoice: 'Invoice',
     deliveryChallan: 'Delivery Challan',
     salesQuotation: 'Sales Quotation',
@@ -10,11 +10,34 @@ documentTypes = {
     debitNote: "Debit Note",
     creditNote: "Credit Note",
     salesReturn: "Sales Return",
-    goodsReceiveNotes:"Goods Receive Notes",
+    goodsReceiveNotes: "Goods Receive Notes",
     purchaseOrder: 'Purchase Order',
     purchaseRequest: 'Purchase Request',
     purchaseInvoice: 'Purchase Invoice',
     purchaseReturn: 'Purchase Return'
 };
 
-module.exports = { documentTypes };
+const salesDocuments = [
+    "Sales Enquiry",
+    "Sales Quotation",
+    "Order Confirmation",
+    "Delivery Challan",
+    "Proforma Invoice",
+    "Invoice",
+    "Debit Note",
+    "Credit Note",
+    "Sales Return"
+];
+
+const purchaseDocuments = [
+    "Purchase Request",
+    "Purchase Order",
+    "Goods Received Note",
+    "Quality Report",
+    "Purchase Invoice",
+    "Purchase Debit Note",
+    "Purchase Credit Note",
+    "Purchase Return"
+];
+
+module.exports = { documentTypes, salesDocuments, purchaseDocuments };
