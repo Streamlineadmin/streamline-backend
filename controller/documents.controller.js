@@ -1154,11 +1154,23 @@ async function getDocuments(req, res) {
       {
         model: models.Users,
         as: 'creator',
-        attributes: ['id', 'name']
+        attributes: ['id', 'name', 'gstNumber']
       },
     ],
     distinct: true
   });
+
+  const indentNumbers = documents
+    .map((doc) => doc.indent_number)
+    .filter(Boolean);
+
+  const purchaseRequests = await models.Documents.findAll({
+    where: {
+      companyId,
+      documentNumber: indentNumbers,
+    },
+  });
+
 
   if (!documents || documents.length === 0) {
     return res.status(200).json([]);
@@ -1166,6 +1178,7 @@ async function getDocuments(req, res) {
 
   const documentNumbers = documents.map(doc => doc.documentNumber);
   const documentIds = documents.map(doc => doc.id);
+  const purchaseRequestNumbers = purchaseRequests.map(doc => doc.documentNumber);
 
   const [items, additionalCharges, bankDetails, termsConditions, attachments, documentComments] = await Promise.all([
     models.DocumentItems.findAll({
