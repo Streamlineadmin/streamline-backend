@@ -298,7 +298,7 @@ async function getItems(req, res) {
         const itemIds = items.map(item => item.id);
 
         const storeItems = await models.StoreItems.findAll({
-            where: { itemId: itemIds, isRejected: false },
+            where: { itemId: itemIds, isRejected: false, price: { [Op.gt]: 0 } },
             attributes: ['itemId', 'storeId', 'quantity'],
             raw: true
         });
@@ -583,7 +583,7 @@ async function bulkEditItems(req, res) {
             if (item["Tax Type"]) updatedObj.taxType = item['Tax Type'] == 'Inclusive' ? 1 : 2;
             if (item.Tax) updatedObj.tax = item.Tax;
             if (item["Item type"]) updatedObj.itemType = item["Item type"] === "Buy" ? 1 : item["Item type"] === "Sell" ? 2 : 3;
-
+            if (item?.customFields) updatedObj.customFields = item.customFields
             updateData.push(updatedObj);
         }
 
@@ -652,10 +652,30 @@ async function stockReconcilation(req, res) {
                 }
             }
             )
+            if (Number(item['Final Stock'] || 0) < Number(item['Current Stock'] || 0)) {
+                console.log('inside loop');
+                let remainingQuantity = (Number(item['Current Stock']) - Number(item['Final Stock']));
+                const existingStock = await models.StoreItems.findAll({
+                    where: { storeId: Number(req.body.storeId), itemId: existingItem.id, isRejected: false },
+                    order: [['createdAt', 'ASC']],
+                });
+                for (const stock of existingStock) {
+                    if (remainingQuantity <= 0) break;
+                    if (stock.quantity <= 0) continue;
+                    const deductQty = Math.min(stock.quantity, remainingQuantity);
+                    remainingQuantity -= deductQty;
+
+                    await models.StoreItems.update(
+                        { quantity: (stock.quantity - deductQty) },
+                        { where: { id: stock.id } }
+                    );
+                }
+
+            }
             const storeItemData = {
                 storeId: Number(req.body.storeId),
                 itemId: existingItem.id,
-                quantity: Number(item['Final Stock'] || 0),
+                quantity: Number(item['Final Stock'] || 0) - Number(item['Current Stock']),
                 addedBy: Number(req.body.companyId),
                 status: 1,
                 addedBy: Number(req.body.userId),
@@ -664,10 +684,10 @@ async function stockReconcilation(req, res) {
 
             const stockTransfer = {
                 transferNumber: generateTransferNumber(),
-                fromStoreId: null,
+                fromStoreId: (Number(item['Final Stock'] || 0) < Number(item['Current Stock'] || 0)) ? Number(req.body.storeId) : null,
                 itemId: existingItem.id,
-                quantity: Number(item['Final Stock'] || 0),
-                toStoreId: Number(req.body.storeId),
+                quantity: Number(item['Final Stock'] || 0) - Number(item['Current Stock']),
+                toStoreId: (Number(item['Final Stock'] || 0) > Number(item['Current Stock'] || 0)) ? Number(req.body.storeId) : null,
                 transferDate: new Date().toISOString(),
                 transferredBy: Number(req.body.companyId),
                 comment: '',
@@ -675,13 +695,16 @@ async function stockReconcilation(req, res) {
                 price: price,
             }
 
-            await models.StoreItems.create(storeItemData);
+            if (Number(item['Final Stock'] || 0) > Number(item['Current Stock'] || 0)) {
+                await models.StoreItems.create(storeItemData);
+            }
             await models.StockTransfer.create(stockTransfer);
         }
         msg = !errorArray.length ? 'Stocks Reconcile Successfully.' : errorArray.length != items.length ? 'Few Items are Not Found. We Download Those Rows for you.' : 'All Items are Not Found. We Download Those Rows for you.'
         return res.status(200).json({ message: msg, invalidData: errorArray });
 
     } catch (error) {
+        console.log(error);
         return res.status(500).json({ message: "Something went wrong, please try again later!", error, items });
     }
 }

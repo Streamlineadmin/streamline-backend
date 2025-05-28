@@ -28,6 +28,7 @@ module.exports = (sequelize, DataTypes) => {
       allowNull: true,
     },
     price: DataTypes.FLOAT,
+    actualPrice: DataTypes.FLOAT,
     documentNumber: DataTypes.STRING,
     documentType: DataTypes.STRING,
     isRejected: DataTypes.BOOLEAN
