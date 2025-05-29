@@ -30,6 +30,8 @@ const demoQueryRoutes = require('./routes/demoQuery');
 const newsLetterRoutes = require('./routes/newsLetter');
 const customfieldRoutes = require('./routes/customfields');
 const dashboardRoutes = require('./routes/dashboard');
+const reportColumnRoutes = require('./routes/reportColumn');
+const inventoryServicesRoutes = require('./routes/inventoryServices');
 
 const app = express();
 
@@ -80,5 +82,7 @@ app.use('/demoQuery', demoQueryRoutes);
 app.use('/newsLetter', newsLetterRoutes);
 app.use('/customFields', customfieldRoutes);
 app.use('/dashboard', dashboardRoutes);
+app.use('/reportColumns', reportColumnRoutes);
+app.use('/inventoryServices', inventoryServicesRoutes);
 
 module.exports = app;
