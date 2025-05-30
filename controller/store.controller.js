@@ -187,27 +187,41 @@ async function getStores(req, res) {
     for (const store of stores) {
       try {
         // Count the number of items in the StoreItems table for each store
-        const itemCount = await models.StoreItems.count({
+        const items = await models.StoreItems.findAll({
           where: {
             storeId: store.id,
-            isRejected: false
+            isRejected: false,
           },
-          distinct: true,
-          col: 'itemId'
+          raw: true
         });
-        const rejectedItemCount = await models.StoreItems.count({
+        const rejectedItems = await models.StoreItems.findAll({
           where: {
             storeId: store.id,
-            isRejected: true
+            isRejected: true,
           },
-          distinct: true,
-          col: 'itemId'
+          raw: true
         });
+
+        const itemsMap = {}, rejectedItemsMap = {};
+        for (const item of items) {
+          itemsMap[item.itemId] = (itemsMap[item.itemId] || 0) + item.quantity;
+        }
+        for (const item of rejectedItems) {
+          rejectedItemsMap[item.itemId] = (rejectedItemsMap[item.itemId] || 0) + item.quantity;
+        }
+        let itemCount = 0, rejectedItemCount = 0;
+        for (const key in itemsMap) {
+          if (itemsMap[key] > 0) itemCount += 1;
+        }
+
+        for (const key in rejectedItemsMap) {
+          if (rejectedItemsMap[key] > 0) rejectedItemCount += 1;
+        }
 
         // Add store data along with item count to the response
         storesWithItemCount.push({
           ...store.toJSON(), // Spread the store object to include all columns
-          itemCount: itemCount, // This is the number of items in the store
+          itemCount, // This is the number of items in the store
           rejectedItemCount
         });
       } catch (err) {

@@ -14,7 +14,7 @@ function addUOM(req, res) {
             // UOM does not exist, proceed to create
             const UOMData = {
                 companyId: req.body.companyId,
-                name: req.body.name,
+                name: req.body.name || req.body.code,
                 code: req.body.code,
                 ip_address: req.body.ip_address,
                 status: 1
