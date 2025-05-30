@@ -32,6 +32,7 @@ const customfieldRoutes = require('./routes/customfields');
 const dashboardRoutes = require('./routes/dashboard');
 const reportColumnRoutes = require('./routes/reportColumn');
 const inventoryServicesRoutes = require('./routes/inventoryServices');
+const batchItemsRoutes = require('./routes/batchItems');
 
 const app = express();
 
@@ -84,5 +85,6 @@ app.use('/customFields', customfieldRoutes);
 app.use('/dashboard', dashboardRoutes);
 app.use('/reportColumns', reportColumnRoutes);
 app.use('/inventoryServices', inventoryServicesRoutes);
+app.use('/batchItems', batchItemsRoutes);
 
 module.exports = app;
