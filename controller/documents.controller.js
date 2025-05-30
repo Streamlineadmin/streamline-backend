@@ -1017,12 +1017,13 @@ async function getDocuments(req, res) {
         {
           model: models.Users,
           as: 'creator',
-          attributes: ['id', 'name']
+          attributes: ['id', 'name', 'gstNumber']
         },
       ],
       distinct: true
     });
   } else {
+
     documents = await models.Documents.findAndCountAll({
       where: {
         companyId,
