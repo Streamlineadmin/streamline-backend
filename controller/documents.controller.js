@@ -97,7 +97,8 @@ async function createDocument(req, res) {
       requiredDate = null,
       requestedBy = '',
       department = '',
-      showUnits = null
+      showUnits = null,
+      batches = null
     } = req.body;
 
     if (!isDraft) {
@@ -423,210 +424,6 @@ async function createDocument(req, res) {
         });
       }
     }
-
-    // if (status && documentType === documentTypes.deliveryChallan && orderConfirmationNumber) {
-    //   const existingDocument = await models.Documents.findOne({
-    //     where: { documentNumber: orderConfirmationNumber, companyId },
-    //   });
-
-    //   if (existingDocument) {
-    //     await existingDocument.update({
-    //       challan_number: documentNumber,
-    //       is_refered: true,
-    //       status: 10,
-    //     });
-    //   }
-    // }
-
-    // if (status && documentType === documentTypes.proformaInvoice && orderConfirmationNumber) {
-    //   const existingDocument = await models.Documents.findOne({
-    //     where: { documentNumber: orderConfirmationNumber, companyId },
-    //   });
-
-    //   if (existingDocument) {
-    //     await existingDocument.update({
-    //       performaInvoiceNumber: documentNumber,
-    //       is_refered: true,
-    //       status: 11,
-    //     });
-    //   }
-    // }
-
-    // Invoice from Order Confirmation
-    // if (status && documentType === documentTypes.invoice && orderConfirmationNumber) {
-    //   const existingDocument = await models.Documents.findOne({
-    //     where: { documentNumber: orderConfirmationNumber, companyId },
-    //   });
-
-    //   if (existingDocument) {
-    //     await existingDocument.update({
-    //       invoiceNumber: documentNumber,
-    //       is_refered: true,
-    //       status: 12,
-    //     });
-    //   }
-    // }
-
-    // Invoice from Proforma Invoice
-    // if (status && documentType === documentTypes.invoice && performaInvoiceNumber) {
-    //   const existingDocument = await models.Documents.findOne({
-    //     where: { documentNumber: performaInvoiceNumber, companyId },
-    //   });
-
-    //   if (existingDocument) {
-    //     await existingDocument.update({
-    //       invoiceNumber: documentNumber,
-    //       is_refered: true,
-    //       status: 20
-    //     });
-    //   }
-    // }
-
-    // Invoice from Delivery Challan
-    // if (
-    //   status &&
-    //   documentType === documentTypes.invoice &&
-    //   challan_number
-    // ) {
-    //   const existingDocument = await models.Documents.findOne({
-    //     where: { documentNumber: challan_number, companyId },
-    //   });
-
-    //   if (existingDocument) {
-    //     await existingDocument.update({
-    //       invoiceNumber: documentNumber,
-    //       is_refered: true,
-    //       status: 13,
-    //     });
-    //   }
-    // }
-
-    // Debit Note from Invoice
-    // if (status && documentType === documentTypes.debitNote && invoiceNumber) {
-    //   const existingDocument = await models.Documents.findOne({
-    //     where: { documentNumber: invoiceNumber, companyId },
-    //   });
-
-    //   if (existingDocument) {
-    //     await existingDocument.update({
-    //       debit_note_number: documentNumber,
-    //       is_refered: true,
-    //       status: 14,
-    //     });
-    //   }
-    // }
-
-    // Credit Note from Invoice
-    // if (status && documentType === documentTypes.creditNote && invoiceNumber) {
-    //   const existingDocument = await models.Documents.findOne({
-    //     where: { documentNumber: invoiceNumber, companyId },
-    //   });
-
-    //   if (existingDocument) {
-    //     await existingDocument.update({
-    //       creditNoteNumber: documentNumber,
-    //       is_refered: true,
-    //       status: 15,
-    //     });
-    //   }
-    // }
-
-    // Sales Return from Invoice
-    // if (status && documentType === documentTypes.salesReturn && invoiceNumber) {
-    //   const existingDocument = await models.Documents.findOne({
-    //     where: { documentNumber: invoiceNumber, companyId },
-    //   });
-
-    //   if (existingDocument) {
-    //     await existingDocument.update({
-    //       salesReturnNumber: documentNumber,
-    //       is_refered: true,
-    //       status: 17,
-    //     });
-    //   }
-    // }
-
-    // Sales Return from Delivery Challan
-    // if (
-    //   status &&
-    //   documentType === documentTypes.salesReturn &&
-    //   challan_number
-    // ) {
-    //   const existingDocument = await models.Documents.findOne({
-    //     where: { documentNumber: challan_number, companyId },
-    //   });
-
-    //   if (existingDocument) {
-    //     await existingDocument.update({
-    //       salesReturnNumber: documentNumber,
-    //       is_refered: true,
-    //       status: 16,
-    //     });
-    //   }
-    // }
-
-    // Sales Return from Order Confirmation
-    // if (status && documentType === documentTypes.salesReturn && orderConfirmationNumber) {
-    //   const existingDocument = await models.Documents.findOne({
-    //     where: { documentNumber: orderConfirmationNumber, companyId },
-    //   });
-
-    //   if (existingDocument) {
-    //     await existingDocument.update({
-    //       salesReturnNumber: documentNumber,
-    //       is_refered: true,
-    //       status: 19
-    //     });
-    //   }
-    // }
-    // Sales Return from Debit Note
-    // if (
-    //   status &&
-    //   documentType === documentTypes.salesReturn &&
-    //   debit_note_number
-    // ) {
-    //   const existingDocument = await models.Documents.findOne({
-    //     where: { documentNumber: debit_note_number, companyId },
-    //   });
-
-    //   if (existingDocument) {
-    //     await existingDocument.update({
-    //       salesReturnNumber: documentNumber,
-    //       is_refered: true,
-    //       status: 18,
-    //     });
-    //   }
-    // }
-
-    // Goods Receive Note from Purchase Order
-    // if (status && documentType === documentTypes.goodsReceiveNotes && purchaseOrderNumber) {
-    //   const existingDocument = await models.Documents.findOne({
-    //     where: { documentNumber: purchaseOrderNumber, companyId },
-    //   });
-
-    //   if (existingDocument) {
-    //     await existingDocument.update({
-    //       grn_number: documentNumber,
-    //       is_refered: true,
-    //       status: 21 // Update with your actual status code
-    //     });
-    //   }
-    // }
-
-    // Quality Report from Goods Receive Note
-    // if (status && documentType === documentTypes.qualityReport && grn_number) {
-    //   const existingDocument = await models.Documents.findOne({
-    //     where: { documentNumber: grn_number, companyId },
-    //   });
-
-    //   if (existingDocument) {
-    //     await existingDocument.update({
-    //       qualityReportNumber: documentNumber,
-    //       is_refered: true,
-    //       status: 22
-    //     });
-    //   }
-    // }
 
     if (status && ((documentType === documentTypes.deliveryChallan || documentType === documentTypes.invoice) && orderConfirmationNumber)) {
       const existingDocument = await models.Documents.findOne({
@@ -1149,6 +946,45 @@ async function createDocument(req, res) {
       }
     }
 
+    if (status && (documentType === documentTypes.goodsReceive || documentType === documentTypes.qualityReport)) {
+      if (batches && batches?.length) {
+        const bulkBatches = [], bulkBatchItems = [];
+        for (const batch of batches) {
+          bulkBatches.push({
+            companyId: Number(companyId),
+            createdBy: Number(createdBy),
+            documentNumber,
+            documentType,
+            item: batch.item,
+            status: 1,
+            isRejected: batch?.isRejected || false
+          });
+          for (const batchItem of batch.batchItems) {
+            bulkBatchItems.push({
+              companyId: Number(companyId),
+              createdBy: Number(createdBy),
+              documentNumber,
+              documentType,
+              item: batch.item,
+              iterationCount: batch?.batchItems?.length,
+              barCodeNumber: batchItem.barCodeNumber,
+              manufacturingDate: batchItem.manufacturingDate,
+              expiryDate: batchItem.expiryDate,
+              quantity: batchItem.quantity,
+              outQuantity: 0,
+              store: store,
+              status: 1,
+              isRejected: batch?.isRejected || false
+            })
+          }
+        }
+        await Promise.all([
+          models?.Batches?.bulkCreate(bulkBatches),
+          models?.BatchItems?.bulkCreate(bulkBatchItems)
+        ]);
+      }
+    }
+
     res.status(201).json({
       message: "Document and related data created successfully!"
     });
@@ -1195,11 +1031,17 @@ async function getDocuments(req, res) {
             [Op.in]: documentstype
           }
         }),
-        ...(dealStatus?.length > 0 && {
-          status: {
-            [Op.in]: dealStatus,
-          },
-        }),
+        ...(Array.isArray(dealStatus) && dealStatus.length > 0
+          ? {
+            status: {
+              [Op.in]: dealStatus,
+            },
+          }
+          : {
+            status: {
+              [Op.not]: 2,
+            },
+          }),
         ...(docTypeFilter?.length > 0 && {
           documentType: {
             [Op.in]: docTypeFilter,
@@ -1217,6 +1059,11 @@ async function getDocuments(req, res) {
                 [Op.like]: `%${search.trim()}%`,
               },
             },
+            {
+              buyerName: {
+                [Op.like]: `%${search.trim()}%`,
+              },
+            }
           ],
         }),
       },
@@ -1231,6 +1078,7 @@ async function getDocuments(req, res) {
           attributes: ['id', 'name'],
         },
       ],
+      order: [['createdAt', 'DESC']],
       distinct: true,
       limit: pageSize,
       offset,
@@ -1323,7 +1171,7 @@ async function getDocumentById(req, res) {
       models.DocumentBankDetails.findOne({ where: { documentNumber, companyId } }),
       models.CompanyTermsCondition.findOne({ where: { companyId, documentNumber } }),
       models.DocumentAttachments.findAll({ where: { documentNumber, companyId } }),
-      models.DocumentComments.findAll({ where: { documentId: document.id } })
+      models.DocumentComments.findAll({ where: { documentId: document.id } }),
     ]);
 
     const response = {
@@ -1338,6 +1186,41 @@ async function getDocumentById(req, res) {
       logisticDetails: document.logisticDetails || null,
       documentComments,
     };
+
+    if (document.documentType === documentTypes.goodsReceive || document.documentType === documentTypes.qualityReport) {
+      const batchItems = await models.BatchItems.findAll({
+        where: {
+          companyId,
+          documentNumber: document.documentNumber
+        },
+        raw: true
+      });
+      const batchMap = batchItems.reduce((acc, current) => {
+        if (acc[current.item]) {
+          const obj = acc[current.item];
+          acc[current.item] = [...obj, current];
+        }
+        else {
+          acc[current.item] = [current];
+        }
+        return acc;
+      }, {});
+      const itemsId = batchItems.map(batch => batch.item);
+      const items = await models.Items.findAll({
+        where: {
+          id: {
+            [Op.in]: itemsId
+          }
+        },
+        attributes: ['id', 'itemName', 'itemId'],
+        raw: true
+      });
+      const batches = {};
+      for (const item of items) {
+        batches[item.itemId] = batchMap[item.id];
+      }
+      response.batches = batches;
+    }
 
     return res.status(200).json(response);
 
@@ -1695,7 +1578,6 @@ async function discardDocument(req, res) {
         }
       });
       const transferNumber = generateTransferNumber();
-      console.log('Stock Transfer', stockTransfers[0]);
       for (const stockTransfer of stockTransfers) {
         stockHistory.push({
           transferNumber,

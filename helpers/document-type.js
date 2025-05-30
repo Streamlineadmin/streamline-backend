@@ -18,9 +18,9 @@ documentTypes = {
 };
 
 const salesDocuments = [
-    "Sales Enquiry",
+    "Sales Lead",
     "Sales Quotation",
-    "Order Confirmation",
+    "Sales Order",
     "Delivery Challan",
     "Proforma Invoice",
     "Invoice",
