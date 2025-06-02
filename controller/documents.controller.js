@@ -1,6 +1,6 @@
-const { Op } = require('sequelize');
+const { Op, where } = require('sequelize');
 const models = require('../models');
-const { documentTypes } = require('../helpers/document-type');
+const { documentTypes, purchaseDocuments, salesDocuments, serviceDocuments } = require('../helpers/document-type');
 const { generateTransferNumber } = require('../helpers/transfer-number');
 
 async function createDocument(req, res) {
@@ -23,6 +23,8 @@ async function createDocument(req, res) {
       documentDate = null,
       ammendment = null,
       deliveryDate = null,
+      ServiceConfirmationNumber = null,
+      ServiceConfirmationDate = null,
       paymentTerm = null,
       store = null,
       rejectedStore = null,
@@ -75,6 +77,8 @@ async function createDocument(req, res) {
       debit_note_number = null,
       performaInvoiceNumber = null,
       performaInvoiceDate = null,
+      salesReturnNumber = null,
+      salesReturnDate = null,
       debit_note_date = null,
       pay_to_transporter = null,
       inspection_date = null,
@@ -90,9 +94,28 @@ async function createDocument(req, res) {
       buyerGSTNumber = null,
       is_refered = null,
       addStockOn = '',
-      isDraft = false
+      isDraft = false,
+      purpose = '',
+      requiredDate = null,
+      requestedBy = '',
+      department = '',
+      showUnits = null,
+      batches = null
     } = req.body;
 
+    if (!isDraft) {
+      const doc = await models.Documents.findOne({
+        where: {
+          documentNumber,
+          companyId,
+        }
+      });
+      if (doc) {
+        return res.status(409).json({
+          message: 'Document Already Exist with this Document Number.'
+        })
+      }
+    }
     let document = null;
     if (!isDraft) document = await models.Documents.create({
       documentType,
@@ -116,6 +139,8 @@ async function createDocument(req, res) {
       documentDate,
       ammendment,
       deliveryDate,
+      ServiceConfirmationNumber,
+      ServiceConfirmationDate,
       paymentTerm,
       store,
       rejectedStore,
@@ -164,13 +189,20 @@ async function createDocument(req, res) {
       debit_note_number,
       debit_note_date,
       performaInvoiceNumber,
+      salesReturnNumber,
+      salesReturnDate,
       performaInvoiceDate,
       pay_to_transporter,
       inspection_date,
       BuyerPANNumber,
       isRounded,
       tcsData,
-      addStockOn
+      addStockOn,
+      purpose,
+      requiredDate,
+      requestedBy,
+      department,
+      showUnits
     });
 
     else {
@@ -203,6 +235,8 @@ async function createDocument(req, res) {
       documentDate,
       ammendment,
       deliveryDate,
+      ServiceConfirmationNumber,
+      ServiceConfirmationDate,
       paymentTerm,
       store,
       rejectedStore,
@@ -251,19 +285,95 @@ async function createDocument(req, res) {
       debit_note_number,
       debit_note_date,
       performaInvoiceNumber,
+      salesReturnNumber,
+      salesReturnDate,
       performaInvoiceDate,
       pay_to_transporter,
       inspection_date,
       BuyerPANNumber,
       isRounded,
       tcsData,
-      addStockOn
+      addStockOn,
+      purpose,
+      requiredDate,
+      requestedBy,
+      department,
+      showUnits
     }, {
       where: {
         companyId,
         documentNumber
       }
     });
+
+    if (status && documentType === documentTypes.purchaseOrder && indent_number) {
+      const indent_numbers = indent_number.split(',');
+      const itemsMap = items.reduce((item, current) => {
+        item[current.itemId] = current.quantity;
+        return item;
+      }, {});
+      for (const ind_number of indent_numbers) {
+        const purchaseRequest = await models.Documents.findOne({
+          where: {
+            companyId,
+            documentNumber: ind_number
+          }
+        });
+        if (purchaseRequest) {
+          const purchaseRequestItems = await models.DocumentItems.findAll({
+            where: {
+              companyId,
+              documentNumber: ind_number
+            }
+          });
+          const purchaseRequestItemsMap = {};
+          const consumeItemsMap = {};
+
+          for (const current of purchaseRequestItems) {
+            let quantity = 0, remaining = 0;
+            if (current.receivedToday) quantity += current.receivedToday;
+            if (itemsMap[current.itemId]) {
+              if ((quantity + itemsMap[current.itemId]) > current.quantity) {
+                remaining = (quantity + itemsMap[current.itemId]) - current.quantity;
+                quantity = current.quantity;
+                current.receivedToday = quantity;
+                consumeItemsMap[current?.itemId] = itemsMap[current.itemId] - remaining;
+              }
+              else {
+                quantity += itemsMap[current.itemId];
+                current.receivedToday = quantity;
+              }
+            }
+
+            itemsMap[current.itemId] && await current.update({ receivedToday: quantity });
+            itemsMap[current.itemId] = remaining;
+            if (purchaseRequestItemsMap[current.itemId]) {
+              purchaseRequestItemsMap[current.itemId] += current.quantity;
+            } else {
+              purchaseRequestItemsMap[current.itemId] = current.quantity;
+            }
+          }
+
+          let status = purchaseRequest.status, isPartial = false;
+          for (const current of purchaseRequestItems) {
+            if (current?.quantity > current?.receivedToday) {
+              isPartial = true;
+              if (status == 1) {
+                status = 14;
+              }
+              break;
+            }
+          }
+          if (!isPartial) {
+            if (status == 1 || status == 14) {
+              status = 16;
+            }
+            else if (status == 15) status = 17;
+          }
+          await purchaseRequest.update({ status });
+        }
+      }
+    }
 
     if (status && (documentType === documentTypes.salesQuotation && enquiryNumber)) {
       const existingDocument = await models.Documents.findOne({
@@ -279,13 +389,15 @@ async function createDocument(req, res) {
       }
     }
 
-    if (status && documentType === documentTypes.orderConfirmation) {
+    if (status && documentType === documentTypes.orderConfirmation && quotationNumber) {
       const existingDocument = await models.Documents.findOne({
         where: { documentNumber: quotationNumber, companyId },
       });
 
       if (existingDocument) {
         await existingDocument.update({
+          orderConfirmationNumber: documentNumber,
+          is_refered: true,
           status: 9
         });
       }
@@ -439,7 +551,13 @@ async function createDocument(req, res) {
             totalAfterTax: item.totalAfterTax,
             receivedToday: item.receivedToday || 0,
             pendingQuantity: item.pendingQuantity || 0,
-            receivedQuantity: item.receivedQuantity || 0
+            receivedQuantity: item.receivedQuantity || 0,
+            auQuantity: item?.auQuantity,
+            alternateUnit: item?.alternateUnit,
+            conversionFactor: item?.conversionFactor,
+            ServiceID: item?.ServiceID,
+            ServiceName: item?.ServiceName,
+            additionalDetails: item?.additionalDetails
           })
         })
       ),
@@ -496,6 +614,16 @@ async function createDocument(req, res) {
           }
         });
         if (purchase_order) {
+          if (purchase_order?.addStockOn === 'GRN') {
+            await models.Documents.update({ addStockOn: 'GRN' },
+              {
+                where: {
+                  documentNumber,
+                  companyId
+                }
+              }
+            );
+          }
           let partiallyReceived = false, accessQuantityReceived = false;
           for (const item of items) {
             if (item.quantity < item.receivedQuantity) {
@@ -552,10 +680,11 @@ async function createDocument(req, res) {
           return {
             storeId,
             itemId,
-            quantity: item?.receivedToday || 0,
+            quantity: (item?.receivedToday * (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1))) || 0,
             status: 1,
             addedBy: createdBy,
-            price: item?.price
+            price: item?.price / (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1)),
+            documentNumber: document.documentNumber
           }
         })
         ),
@@ -566,13 +695,13 @@ async function createDocument(req, res) {
             transferNumber: item?.transferNumber,
             fromStoreId: null,
             itemId,
-            quantity: item?.receivedToday || 0,
+            quantity: (item?.receivedToday * (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1))) || 0,
             toStoreId: storeId,
             transferDate: new Date().toISOString(),
             transferredBy: createdBy,
             comment: '',
             companyId,
-            price: item?.price,
+            price: item?.price / (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1)),
             documentNumber: document.documentNumber,
             documentType
           }
@@ -588,7 +717,7 @@ async function createDocument(req, res) {
           });
           if (existItem) {
             await models.Items.update(
-              { currentStock: (item.currentStock || 0) + (item.receivedToday || 0) },
+              { currentStock: (item.currentStock || 0) + ((item.receivedToday * (item.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1))) || 0) },
               {
                 where: {
                   id: itemsMap.get(item.itemId)
@@ -606,11 +735,12 @@ async function createDocument(req, res) {
           return {
             storeId,
             itemId,
-            quantity: item.pendingQuantity || 0,
+            quantity: (item.pendingQuantity * (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1))) || 0,
             status: 1,
             addedBy: createdBy,
-            price: item?.price,
-            isRejected: true
+            price: item?.price / (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1)),
+            isRejected: true,
+            documentNumber: document.documentNumber
           }
         })
         ),
@@ -621,13 +751,13 @@ async function createDocument(req, res) {
             transferNumber: generateTransferNumber(),
             fromStoreId: null,
             itemId,
-            quantity: item.pendingQuantity || 0,
+            quantity: (item.pendingQuantity * (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1))) || 0,
             toStoreId: storeId,
             transferDate: new Date().toISOString(),
             transferredBy: createdBy,
             comment: '',
             companyId,
-            price: item?.price,
+            price: item?.price / (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1)),
             documentNumber: document.documentNumber,
             documentType,
             isRejected: true
@@ -646,10 +776,11 @@ async function createDocument(req, res) {
       });
       for (const element of items) {
         let price = 0;
-        let remainingQuantity = element.quantity;
+        let remainingQuantity = (element.quantity * (element?.conversionFactor || 1));;
         const item = await models.Items.findOne({
           where: {
-            itemId: element.itemId
+            itemId: element.itemId,
+            companyId
           }
         });
         const existingStock = await models.StoreItems.findAll({
@@ -670,26 +801,167 @@ async function createDocument(req, res) {
             transferNumber: element.transferNumber,
             fromStoreId: storeId.id || null,
             itemId: item.id,
-            quantity: -deductQty,
+            quantity: deductQty * -1,
             toStoreId: null,
             transferDate: new Date().toISOString(),
             transferredBy: createdBy,
             comment: '',
             companyId,
-            price: element.price,
+            price: element.price / (element.conversionFactor || 1),
             documentNumber: document.documentNumber,
-            documentType
+            documentType,
+            actualPrice: stock.price
           });
           price += (stock.price * deductQty);
         }
 
+        // await models.StockTransfer.create({
+        //   transferNumber: element.transferNumber,
+        //   fromStoreId: storeId.id || null,
+        //   itemId: item.id,
+        //   quantity: (element?.quantity * (element?.conversionFactor || 1)) * -1,
+        //   toStoreId: null,
+        //   transferDate: new Date().toISOString(),
+        //   transferredBy: createdBy,
+        //   comment: '',
+        //   companyId,
+        //   price: element.price / (element.conversionFactor || 1),
+        //   documentNumber: document.documentNumber,
+        //   documentType
+        // });
+
         await models.Items.update(
           {
-            currentStock: item.currentStock - element.quantity,
-            price: ((item.price * item.currentStock) - price) / (item.currentStock - element.quantity)
+            currentStock: item.currentStock - (element.quantity * (element?.conversionFactor || (showUnits == 0 ? element.quantity / element.auQuantity : 1))),
           },
           { where: { id: item.id, companyId } }
         );
+      }
+    }
+
+    if (status && documentType === documentTypes.goodsReceive) {
+      // find purchase order against grn
+      const purchase_order = await models.Documents.findOne({
+        where: {
+          documentNumber: purchaseOrderNumber,
+          companyId
+        }
+      });
+
+      if (purchase_order && purchase_order.indent_number) {
+        const indent_numbers = purchase_order.indent_number.split(",");
+        for (const ind_number of indent_numbers) {
+          // find purchse request against purchase order
+          const purchase_request = await models.Documents.findOne({
+            where: {
+              companyId,
+              documentNumber: ind_number
+            }
+          });
+
+          // if purchase request status is 14 or 15 then directly update the status to 15
+          if (purchase_request.status == 14 || purchase_request.status == 15) {
+            await purchase_request.update({
+              status: 15
+            });
+          }
+          else {
+            // find all purchase orders against same purchase request 
+            const purchase_orders = await models.Documents.findAll({
+              where: {
+                companyId,
+                indent_number: ind_number
+              }
+            });
+
+            // iterate through all purchase orders
+            for (const purchase_order of purchase_orders) {
+              // find latest grn against evvery purchase order
+              const latest_grn = await models.Documents.findOne({
+                where: {
+                  companyId,
+                  documentType,
+                  purchaseOrderNumber: purchase_order.documentNumber
+                },
+                order: [['createdAt', 'DESC']]
+              });
+
+              let isBreak = false;
+              // if latest grn is not found then directly update the status to 17 and break all loops
+              if (!latest_grn) {
+                await purchase_request.update({
+                  status: 17
+                });
+                break;
+              }
+              else {
+                // find all grnItems against latest grn 
+                const grnsItems = await models.DocumentItems.findAll({
+                  where: {
+                    documentNumber: latest_grn.documentNumber,
+                    companyId
+                  }
+                });
+                // iterate through all grns
+                for (const grn of grnsItems) {
+                  // any one grn items is partially received update purchase request status to 17 and break all loops
+                  if ((showUnits == 0 ? grn.auQuantity : grn.quantity) < grn.receivedQuantity) {
+                    await purchase_request.update({
+                      status: 17
+                    });
+                    isBreak = true;
+                    break;
+                  }
+                }
+              }
+              if (isBreak) break;
+            }
+            // if all purchase orders against purchase request have received full quantity then update purchase request status to 18
+            await purchase_request.update({
+              status: 18
+            });
+          }
+
+        }
+      }
+    }
+
+    if (status && (documentType === documentTypes.goodsReceive || documentType === documentTypes.qualityReport)) {
+      if (batches && batches?.length) {
+        const bulkBatches = [], bulkBatchItems = [];
+        for (const batch of batches) {
+          bulkBatches.push({
+            companyId: Number(companyId),
+            createdBy: Number(createdBy),
+            documentNumber,
+            documentType,
+            item: batch.item,
+            status: 1,
+            isRejected: batch?.isRejected || false
+          });
+          for (const batchItem of batch.batchItems) {
+            bulkBatchItems.push({
+              companyId: Number(companyId),
+              createdBy: Number(createdBy),
+              documentNumber,
+              documentType,
+              item: batch.item,
+              iterationCount: batch?.batchItems?.length,
+              barCodeNumber: batchItem.barCodeNumber,
+              manufacturingDate: batchItem.manufacturingDate,
+              expiryDate: batchItem.expiryDate,
+              quantity: batchItem.quantity,
+              outQuantity: 0,
+              store: store,
+              status: 1,
+              isRejected: batch?.isRejected || false
+            })
+          }
+        }
+        await Promise.all([
+          models?.Batches?.bulkCreate(bulkBatches),
+          models?.BatchItems?.bulkCreate(bulkBatchItems)
+        ]);
       }
     }
 
@@ -703,32 +975,125 @@ async function createDocument(req, res) {
 }
 
 async function getDocuments(req, res) {
-  const { companyId } = req.body;
+  const { companyId, currentPage, pageSize, documentType = '', search = '', dealStatus, docTypeFilter } = req.body;
 
-  const documents = await models.Documents.findAll({
-    where: { companyId },
-    include: [
-      {
-        model: models.LogisticDetails,
-        as: 'logisticDetails'
-      },
-      {
-        model: models.Users,
-        as: 'creator',
-        attributes: ['id', 'name']
-      },
-    ],
-    distinct: true
-  });
-
-  if (!documents || documents.length === 0) {
-    return res.status(200).json([]);
+  const offset = ((currentPage || 1) - 1) * (pageSize || 10);
+  let documentstype = [];
+  switch (documentType) {
+    case "sales":
+      documentstype = salesDocuments;
+      break;
+    case "purchase":
+      documentstype = purchaseDocuments;
+      break;
+    case "documentServices":
+      documentstype = serviceDocuments;
+      break;
+    default:
+      break;
   }
 
-  const documentNumbers = documents.map(doc => doc.documentNumber);
-  const documentIds = documents.map(doc => doc.id);
+  let documents = [];
+  if (!currentPage || !pageSize) {
+    documents = await models.Documents.findAll({
+      where: { companyId },
+      include: [
+        {
+          model: models.LogisticDetails,
+          as: 'logisticDetails'
+        },
+        {
+          model: models.Users,
+          as: 'creator',
+          attributes: ['id', 'name', 'gstNumber']
+        },
+      ],
+      distinct: true
+    });
+  } else {
 
-  const [items, additionalCharges, bankDetails, termsConditions, attachments, documentComments] = await Promise.all([
+    documents = await models.Documents.findAndCountAll({
+      where: {
+        companyId,
+        ...(documentstype.length > 0 && {
+          documentType: {
+            [Op.in]: documentstype
+          }
+        }),
+        ...(Array.isArray(dealStatus) && dealStatus.length > 0
+          ? {
+            status: {
+              [Op.in]: dealStatus,
+            },
+          }
+          : {
+            status: {
+              [Op.not]: 2,
+            },
+          }),
+        ...(docTypeFilter?.length > 0 && {
+          documentType: {
+            [Op.in]: docTypeFilter,
+          },
+        }),
+        ...(search && {
+          [Op.or]: [
+            {
+              documentNumber: {
+                [Op.like]: `%${search.trim()}%`,
+              },
+            },
+            {
+              documentType: {
+                [Op.like]: `%${search.trim()}%`,
+              },
+            },
+            {
+              buyerName: {
+                [Op.like]: `%${search.trim()}%`,
+              },
+            }
+          ],
+        }),
+      },
+      include: [
+        {
+          model: models.LogisticDetails,
+          as: 'logisticDetails',
+        },
+        {
+          model: models.Users,
+          as: 'creator',
+          attributes: ['id', 'name'],
+        },
+      ],
+      order: [['createdAt', 'DESC']],
+      distinct: true,
+      limit: pageSize,
+      offset,
+    });
+  }
+
+  if (!documents || (documents?.rows?.length === 0 || documents?.length === 0)) {
+    return res.status(200).json({
+      total: 0,
+      currentPage,
+      pageSize,
+      data: [],
+    });
+  }
+
+  const documentNumbers = (documents?.rows || documents)?.map(doc => doc.documentNumber);
+  const documentIds = (documents?.rows || documents).map(doc => doc.id);
+
+  const [
+    items,
+    additionalCharges,
+    bankDetails,
+    termsConditions,
+    attachments,
+    documentComments
+  ] = await Promise.all([
     models.DocumentItems.findAll({
       where: { documentNumber: documentNumbers, companyId },
       include: [
@@ -747,15 +1112,15 @@ async function getDocuments(req, res) {
   ]);
 
   const uniqueItemsMap = new Map();
-    for (const item of items) {
-      const key = `${item.documentNumber}_${item.itemId}`;
-      if (!uniqueItemsMap.has(key)) {
-        uniqueItemsMap.set(key, item);
-      }
+  for (const item of items) {
+    const key = `${item.documentNumber}_${item.itemId}`;
+    if (!uniqueItemsMap.has(key)) {
+      uniqueItemsMap.set(key, item);
     }
+  }
   const uniqueItems = Array.from(uniqueItemsMap.values());
 
-  const formattedResult = documents.map(document => ({
+  const formattedResult = (documents?.rows || documents)?.map(document => ({
     ...document.toJSON(),
     items: uniqueItems.filter(item => item.documentNumber === document.documentNumber),
     additionalCharges: additionalCharges.filter(charge => charge.documentNumber === document.documentNumber),
@@ -765,7 +1130,15 @@ async function getDocuments(req, res) {
     documentComments: documentComments.filter(comment => comment.documentId === document.id),
   }));
 
-  res.status(200).json(formattedResult);
+  if (!currentPage || !pageSize) {
+    return res.status(200).json(formattedResult)
+  }
+  res.status(200).json({
+    total: documents.count,
+    currentPage,
+    pageSize,
+    data: formattedResult,
+  });
 }
 
 async function getDocumentById(req, res) {
@@ -787,7 +1160,7 @@ async function getDocumentById(req, res) {
       models.DocumentBankDetails.findOne({ where: { documentNumber, companyId } }),
       models.CompanyTermsCondition.findOne({ where: { companyId, documentNumber } }),
       models.DocumentAttachments.findAll({ where: { documentNumber, companyId } }),
-      models.DocumentComments.findAll({ where: { documentId: document.id } })
+      models.DocumentComments.findAll({ where: { documentId: document.id } }),
     ]);
 
     const response = {
@@ -803,6 +1176,41 @@ async function getDocumentById(req, res) {
       documentComments,
     };
 
+    if (document.documentType === documentTypes.goodsReceive || document.documentType === documentTypes.qualityReport) {
+      const batchItems = await models.BatchItems.findAll({
+        where: {
+          companyId,
+          documentNumber: document.documentNumber
+        },
+        raw: true
+      });
+      const batchMap = batchItems.reduce((acc, current) => {
+        if (acc[current.item]) {
+          const obj = acc[current.item];
+          acc[current.item] = [...obj, current];
+        }
+        else {
+          acc[current.item] = [current];
+        }
+        return acc;
+      }, {});
+      const itemsId = batchItems.map(batch => batch.item);
+      const items = await models.Items.findAll({
+        where: {
+          id: {
+            [Op.in]: itemsId
+          }
+        },
+        attributes: ['id', 'itemName', 'itemId'],
+        raw: true
+      });
+      const batches = {};
+      for (const item of items) {
+        batches[item.itemId] = batchMap[item.id];
+      }
+      response.batches = batches;
+    }
+
     return res.status(200).json(response);
 
   } catch (error) {
@@ -813,46 +1221,382 @@ async function getDocumentById(req, res) {
 
 async function discardDocument(req, res) {
   const { documentId, companyId } = req.body;
-
+  let linkedDocument = null;
   try {
-    // Find the document using documentId and companyId
     const document = await models.Documents.findOne({
       where: { id: documentId, companyId },
     });
 
-    // If the document doesn't exist, return an error
     if (!document) {
       return res.status(404).json({ message: "Document not found!" });
     }
-
-    // Start a transaction to ensure atomicity
-    const transaction = await models.sequelize.transaction();
-
-    try {
-      // Mark the specified document as discarded
-      await models.Documents.update(
-        { status: 2 },
-        { where: { id: documentId }, transaction }
-      );
-
-      // Commit the transaction
-      await transaction.commit();
-
-      // Success response
-      res.status(200).json({
-        message: `Document with ID ${documentId} has been successfully discarded.`,
+    if (document.documentType === documentTypes.salesEnquiry) {
+      linkedDocument = await models.Documents.findOne({
+        where: {
+          companyId,
+          enquiryNumber: document.documentNumber,
+          status: {
+            [Op.ne]: 2,
+          },
+        }
       });
-    } catch (error) {
-      // If something goes wrong, roll back the transaction
-      await transaction.rollback();
-      throw error;
+      if (linkedDocument) {
+        return res.status(409).json({ message: 'You can not discard this document, It is linked with other documents.' })
+      }
     }
+    if (document.documentType === documentTypes.salesQuotation) {
+      linkedDocument = await models.Documents.findOne({
+        where: {
+          companyId,
+          quotationNumber: document.documentNumber,
+          status: {
+            [Op.ne]: 2,
+          },
+          documentType: documentTypes.orderConfirmation
+        }
+      });
+      if (linkedDocument) {
+        return res.status(409).json({ message: 'You can not discard this document, It is linked with other documents.' })
+      }
+      await models.Documents.update({ quotationNumber: null }, {
+        where: {
+          quotationNumber: document.documentNumber,
+          DocumentType: documentTypes.salesEnquiry
+        }
+      })
+    }
+    if (document.documentType === documentTypes.orderConfirmation) {
+      const purchaseRequest = await models.Documents.findOne({
+        where: {
+          orderConfirmationNumber: {
+            [Op.like]: `%${document.documentNumber},%`,
+          },
+          status: {
+            [Op.ne]: 2,
+          },
+        }
+      });
+      linkedDocument = await models.Documents.findOne({
+        where: {
+          companyId,
+          orderConfirmationNumber: document.documentNumber,
+          status: {
+            [Op.ne]: 2,
+          },
+        }
+      });
+      if (linkedDocument || purchaseRequest) {
+        return res.status(409).json({ message: 'You can not discard this document, It is linked with other documents.' })
+      }
+      await models.Documents.update({ status: 1 }, {
+        where: {
+          documentNumber: document.quotationNumber,
+        }
+      });
+    }
+    if (document.documentType === documentTypes.deliveryChallan) {
+      linkedDocument = await models.Documents.findOne({
+        where: {
+          companyId,
+          challan_number: document.documentNumber,
+          status: {
+            [Op.ne]: 2,
+          },
+        }
+      });
+      if (linkedDocument) {
+        return res.status(409).json({ message: 'You can not discard this document, It is linked with other documents.' })
+      }
+      const stockTransfers = await models.StockTransfer.findAll({
+        where: {
+          documentNumber: document.documentNumber,
+          companyId
+        }
+      });
+      const storeItems = [], stockHistory = [];
+      const transferNumber = generateTransferNumber();
+      for (const stockTransfer of stockTransfers) {
+        stockHistory.push({
+          transferNumber,
+          fromStoreId: null,
+          itemId: stockTransfer.itemId,
+          quantity: stockTransfer.quantity * -1,
+          toStoreId: stockTransfer.fromStoreId,
+          transferDate: new Date().toISOString(),
+          transferredBy: stockTransfer.transferredBy,
+          comment: '',
+          companyId: stockTransfer.companyId,
+          price: stockTransfer?.price,
+          documentNumber: document.documentNumber,
+          documentType: stockTransfer.documentType,
+        });
+        storeItems.push({
+          storeId: stockTransfer.fromStoreId,
+          itemId: stockTransfer.itemId,
+          quantity: stockTransfer.quantity * -1,
+          status: 1,
+          addedBy: stockTransfer.transferredBy,
+          price: stockTransfer?.actualPrice
+        })
+      }
+      await Promise.all([
+        models.StoreItems.bulkCreate(storeItems),
+        models.StockTransfer.bulkCreate(stockHistory)
+      ]);
+      if (document.orderConfirmationNumber) {
+        await models.Documents.update({ status: 1 }, {
+          where: {
+            companyId,
+            documentNumber: document.orderConfirmationNumber
+          }
+        })
+      }
+    }
+    if (document.documentType === documentTypes.invoice) {
+      linkedDocument = await models.Documents.findOne({
+        where: {
+          companyId,
+          invoiceNumber: document.documentNumber,
+          status: {
+            [Op.ne]: 2,
+          },
+        }
+      });
+      if (linkedDocument) {
+        return res.status(409).json({ message: 'You can not discard this document, It is linked with other documents.' })
+      }
+      const stockTransfers = await models.StockTransfer.findAll({
+        where: {
+          documentNumber: document.documentNumber,
+          companyId
+        }
+      });
+      const storeItems = [], stockHistory = [];
+      const transferNumber = generateTransferNumber();
+      for (const stockTransfer of stockTransfers) {
+        stockHistory.push({
+          transferNumber,
+          fromStoreId: null,
+          itemId: stockTransfer.itemId,
+          quantity: stockTransfer.quantity * -1,
+          toStoreId: stockTransfer.fromStoreId,
+          transferDate: new Date().toISOString(),
+          transferredBy: stockTransfer.transferredBy,
+          comment: '',
+          companyId: stockTransfer.companyId,
+          price: stockTransfer?.price,
+          documentNumber: document.documentNumber,
+          documentType: stockTransfer.documentType,
+        });
+        storeItems.push({
+          storeId: stockTransfer.fromStoreId,
+          itemId: stockTransfer.itemId,
+          quantity: stockTransfer.quantity * -1,
+          status: 1,
+          addedBy: stockTransfer.transferredBy,
+          price: stockTransfer?.actualPrice
+        })
+      }
+      await Promise.all([
+        models.StoreItems.bulkCreate(storeItems),
+        models.StockTransfer.bulkCreate(stockHistory)
+      ]);
+      if (document.orderConfirmationNumber) {
+        await models.Documents.update({ status: 1 }, {
+          where: {
+            companyId,
+            documentNumber: document.orderConfirmationNumber
+          }
+        })
+      }
+    }
+    if (document.documentType === documentTypes.proformaInvoice) {
+      linkedDocument = await models.Documents.findOne({
+        where: {
+          companyId,
+          performaInvoiceNumber: document.documentNumber,
+          status: {
+            [Op.ne]: 2,
+          },
+        }
+      });
+      if (linkedDocument) {
+        return res.status(409).json({ message: 'You can not discard this document, It is linked with other documents.' })
+      }
+    }
+    if (document.documentType === documentTypes.purchaseRequest) {
+      const purchaseOrder = await models.Documents.findOne({
+        where: {
+          indent_number: {
+            [Op.like]: `%${document.documentNumber},%`,
+          },
+          status: {
+            [Op.ne]: 2,
+          },
+        }
+      })
+      linkedDocument = await models.Documents.findOne({
+        where: {
+          companyId,
+          indent_number: document.documentNumber,
+          status: {
+            [Op.ne]: 2,
+          },
+        }
+      });
+      if (linkedDocument || purchaseOrder) {
+        return res.status(409).json({ message: 'You can not discard this document, It is linked with other documents.' })
+      }
+    }
+    if (document.documentType === documentTypes.purchaseOrder) {
+      linkedDocument = await models.Documents.findOne({
+        where: {
+          companyId,
+          purchaseOrderNumber: document.documentNumber,
+          status: {
+            [Op.ne]: 2,
+          },
+        }
+      });
+      if (linkedDocument) {
+        return res.status(409).json({ message: 'You can not discard this document, It is linked with other documents.' })
+      }
+    }
+    if (document.documentType === documentTypes.goodsReceive) {
+      linkedDocument = await models.Documents.findOne({
+        where: {
+          companyId,
+          grn_number: document.documentNumber,
+          status: {
+            [Op.ne]: 2,
+          },
+        }
+      });
+      if (linkedDocument) {
+        return res.status(409).json({ message: 'You can not discard this document, It is linked with other documents.' })
+      }
+      const stockTransfers = await models.StockTransfer.findAll({
+        where: {
+          companyId,
+          documentNumber: document.documentNumber,
+        }
+      });
+      const store = await models.Store.findOne({
+        where: {
+          name: document.store,
+          companyId
+        }
+      });
+      const stockHistory = [];
+      await models.StoreItems.update({ quantity: 0 }, {
+        where: {
+          documentNumber: document.documentNumber,
+          storeId: store.id
+        }
+      });
+      const transferNumber = generateTransferNumber();
+      for (const stockTransfer of stockTransfers) {
+        stockHistory.push({
+          transferNumber,
+          fromStoreId: stockTransfer.toStoreId,
+          itemId: stockTransfer.itemId,
+          quantity: stockTransfer.quantity * -1,
+          toStoreId: null,
+          transferDate: new Date().toISOString(),
+          transferredBy: stockTransfer.transferredBy,
+          comment: '',
+          companyId: stockTransfer.companyId,
+          price: stockTransfer?.price,
+          documentNumber: document.documentNumber,
+          documentType: stockTransfer.documentType,
+          actualPrice: stockTransfer.price
+        });
+      }
+      await models.StockTransfer.bulkCreate(stockHistory);
+      await models.Documents.update({ status: 1 }, {
+        where: {
+          companyId,
+          documentNumber: document.purchaseOrderNumber
+        }
+      })
+    }
+    if (document.documentType === documentTypes.purchaseInvoice) {
+      linkedDocument = await models.Documents.findOne({
+        where: {
+          companyId,
+          invoiceNumber: document.documentNumber,
+          status: {
+            [Op.ne]: 2,
+          },
+        }
+      });
+      if (linkedDocument) {
+        return res.status(409).json({ message: 'You can not discard this document, It is linked with other documents.' })
+      }
+    }
+    if (document.documentType === documentTypes.qualityReport) {
+      const stockTransfers = await models.StockTransfer.findAll({
+        where: {
+          companyId,
+          documentNumber: document.documentNumber,
+        }
+      });
+      const store = await models.Store.findOne({
+        where: {
+          name: document.store,
+          companyId
+        }
+      });
+      const rejectStore = await models.Store.findOne({
+        where: {
+          name: document.rejectedStore,
+          companyId
+        }
+      })
+      const stockHistory = [];
+      await models.StoreItems.update({ quantity: 0 }, {
+        where: {
+          documentNumber: document.documentNumber,
+          storeId: store.id,
+        }
+      });
+      await models.StoreItems.update({ quantity: 0 }, {
+        where: {
+          documentNumber: document.documentNumber,
+          storeId: rejectStore.id,
+        }
+      });
+      const transferNumber = generateTransferNumber();
+      for (const stockTransfer of stockTransfers) {
+        stockHistory.push({
+          transferNumber,
+          fromStoreId: stockTransfer.toStoreId,
+          itemId: stockTransfer.itemId,
+          quantity: stockTransfer.quantity * -1,
+          toStoreId: null,
+          transferDate: new Date().toISOString(),
+          transferredBy: stockTransfer.transferredBy,
+          comment: '',
+          companyId: stockTransfer.companyId,
+          price: stockTransfer?.price,
+          documentNumber: document.documentNumber,
+          documentType: stockTransfer.documentType,
+          actualPrice: stockTransfer.price,
+          isRejected: stockTransfer?.isRejected
+        });
+      }
+      await models.StockTransfer.bulkCreate(stockHistory);
+      await models.Documents.update({ status: 1 }, {
+        where: {
+          documentNumber: document.grn_number
+        }
+      });
+    }
+    await document.update({ status: 2 });
+    res.status(200).json({ message: 'Document Discarded Successfully.' });
   } catch (error) {
-    // Catch any errors and send a failure response
-    res.status(500).json({
-      message: "Something went wrong while discarding the document.",
-      error: error.message || error,
-    });
+    console.log(error);
+    res.status(500).json({ message: 'Internal Server Error' })
   }
 }
 
@@ -925,7 +1669,7 @@ async function getDocumentItems(req, res) {
     }
 
     const purchaseOrders = await models.Documents.findAll({
-      where: { purchaseOrderNumber, companyId: Number(req.body.companyId) },
+      where: { purchaseOrderNumber, companyId: Number(req.body.companyId), documentType: documentTypes.goodsReceive },
       attributes: ['documentNumber']
     });
 

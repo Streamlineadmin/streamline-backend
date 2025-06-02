@@ -10,14 +10,14 @@ module.exports = (sequelize, DataTypes) => {
     static associate(models) {
       Documents.belongsTo(models.LogisticDetails, {
         foreignKey: 'logisticDetailsId',
-        as: 'logisticDetails', 
+        as: 'logisticDetails',
         onDelete: 'CASCADE',
         onUpdate: 'CASCADE',
       });
       Documents.belongsTo(models.Users, {
         foreignKey: 'createdBy',
         as: 'creator' // alias for cleaner querying
-      });   
+      });
 
       Documents.belongsTo(models.CompanyTermsCondition, {
         foreignKey: 'companyTermsConditionId',
@@ -53,6 +53,8 @@ module.exports = (sequelize, DataTypes) => {
       allowNull: true
     },
     supplierContactNo: DataTypes.STRING,
+    ServiceConfirmationNumber: DataTypes.STRING,
+    ServiceConfirmationDate: DataTypes.DATE,
     supplierEmail: DataTypes.STRING,
     documentDate: DataTypes.STRING,
     ammendment: DataTypes.STRING,
@@ -108,8 +110,8 @@ module.exports = (sequelize, DataTypes) => {
     debit_note_number: DataTypes.STRING,
     debit_note_date: DataTypes.STRING,
     quotationDate: DataTypes.STRING,
-    quotationNumber:DataTypes.STRING,
-    orderConfirmationNumber:DataTypes.STRING,
+    quotationNumber: DataTypes.STRING,
+    orderConfirmationNumber: DataTypes.STRING,
     orderConfirmationDate: DataTypes.STRING,
     purchaseOrderNumber: DataTypes.STRING,
     purchaseOrderDate: DataTypes.STRING,
@@ -120,31 +122,31 @@ module.exports = (sequelize, DataTypes) => {
     documentTo: DataTypes.STRING,
     isRounded: {
       type: DataTypes.BOOLEAN,
-      allowNull: true, 
+      allowNull: true,
       defaultValue: false,
     },
     advancePayment: {
       type: DataTypes.DECIMAL(10, 2),
       allowNull: true,
       defaultValue: 0.00,
-    }, 
+    },
     GSTValue: {
       type: DataTypes.STRING,
       allowNull: true,
-    }, 
+    },
     buyerGSTNumber: {
       type: DataTypes.STRING,
-      allowNull: true, 
-    },  
+      allowNull: true,
+    },
     buyerSupplierKYCDetails: {
       type: DataTypes.JSON,
-      allowNull: true, 
-    },  
+      allowNull: true,
+    },
     is_refered: {
       type: DataTypes.BOOLEAN,
-      allowNull: true, 
+      allowNull: true,
       defaultValue: false,
-    },    
+    },
     companyTermsConditionId: {
       type: DataTypes.INTEGER,
       allowNull: true,
@@ -157,7 +159,14 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.JSON,
       defaultValue: []
     },
-    addStockOn: DataTypes.STRING
+    addStockOn: DataTypes.STRING,
+    purpose: DataTypes.STRING,
+    requiredDate: DataTypes.STRING,
+    requestedBy: DataTypes.STRING,
+    department: DataTypes.STRING,
+    salesReturnNumber: DataTypes.STRING,
+    salesReturnDate: DataTypes.STRING,
+    showUnits: DataTypes.INTEGER
   }, {
     sequelize,
     modelName: 'Documents',

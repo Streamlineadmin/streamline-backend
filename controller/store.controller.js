@@ -187,27 +187,41 @@ async function getStores(req, res) {
     for (const store of stores) {
       try {
         // Count the number of items in the StoreItems table for each store
-        const itemCount = await models.StoreItems.count({
+        const items = await models.StoreItems.findAll({
           where: {
             storeId: store.id,
-            isRejected: false
+            isRejected: false,
           },
-          distinct: true,
-          col: 'itemId'
+          raw: true
         });
-        const rejectedItemCount = await models.StoreItems.count({
+        const rejectedItems = await models.StoreItems.findAll({
           where: {
             storeId: store.id,
-            isRejected: true
+            isRejected: true,
           },
-          distinct: true,
-          col: 'itemId'
+          raw: true
         });
+
+        const itemsMap = {}, rejectedItemsMap = {};
+        for (const item of items) {
+          itemsMap[item.itemId] = (itemsMap[item.itemId] || 0) + item.quantity;
+        }
+        for (const item of rejectedItems) {
+          rejectedItemsMap[item.itemId] = (rejectedItemsMap[item.itemId] || 0) + item.quantity;
+        }
+        let itemCount = 0, rejectedItemCount = 0;
+        for (const key in itemsMap) {
+          if (itemsMap[key] > 0) itemCount += 1;
+        }
+
+        for (const key in rejectedItemsMap) {
+          if (rejectedItemsMap[key] > 0) rejectedItemCount += 1;
+        }
 
         // Add store data along with item count to the response
         storesWithItemCount.push({
           ...store.toJSON(), // Spread the store object to include all columns
-          itemCount: itemCount, // This is the number of items in the store
+          itemCount, // This is the number of items in the store
           rejectedItemCount
         });
       } catch (err) {
@@ -245,7 +259,7 @@ async function getStoresByItem(req, res) {
   try {
     // Step 2: Find all storeIds that have the given itemId in StoreItems
     const storeItems = await models.StoreItems.findAll({
-      where: { itemId, isRejected: false },
+      where: { itemId, isRejected: false, price: { [models.Sequelize.Op.gt]: 0 } },
       attributes: ['storeId', 'quantity'], // Only retrieve storeId and quantity
     });
 
@@ -304,16 +318,16 @@ async function stockTransfer(req, res) {
     // Iterate through each stock transfer item
     for (const element of stockData) {
       let price = 0;
-      let remainingQuantity = element.quantity;
+      let remainingQuantity = element.quantity * (element?.conversionFactor || 1);
       const item = await models.Items.findOne({
         where: {
           id: element.itemId
         }
       });
-      if (useFIFO && addReduce == 2) {
+      if ((useFIFO && addReduce == 2) || !addReduce) {
         // Fetch existing stock based on FIFO (oldest stock first)
         const existingStock = await models.StoreItems.findAll({
-          where: { storeId: element.toStore, itemId: element.itemId, isRejected: false },
+          where: { storeId: (element.fromStore || element.toStore), itemId: element.itemId, isRejected: false },
           order: [['createdAt', 'ASC']], // Oldest entries first
         });
         for (const stock of existingStock) {
@@ -327,61 +341,75 @@ async function stockTransfer(req, res) {
             { quantity: (stock.quantity - deductQty) },
             { where: { id: stock.id } }
           );
-          await models.StockTransfer.create({
+          if (!addReduce) {
+            await models.StoreItems.create({
+              storeId: element.toStore,
+              itemId: element.itemId,
+              quantity: deductQty,
+              status: 1,
+              addedBy: transferredBy,
+              price: stock.price,
+              isRejected: false
+            });
+            await models.StockTransfer.create({
+              transferNumber,
+              fromStoreId: element?.fromStore,
+              itemId: element.itemId,
+              quantity: deductQty,
+              toStoreId: element.toStore,
+              transferDate,
+              transferredBy,
+              comment: stock.comment,
+              companyId,
+              price: stock.price,
+              isRejected: false
+            });
+          }
+          addReduce && await models.StockTransfer.create({
             transferNumber,
-            fromStoreId: element?.fromStore || null,
+            fromStoreId: !addReduce ? element?.fromStore : addReduce == 2 ? element?.toStore : (element?.fromStore || null),
             itemId: element.itemId,
             quantity: -deductQty,
-            toStoreId: element.toStore,
+            toStoreId: !addReduce ? element?.toStore : addReduce == 2 ? null : element.toStore,
             transferDate,
             transferredBy,
             comment: stockData.comment,
             companyId,
-            price: stock.price
+            price: (!addReduce ? stock.price : element?.price / (element?.conversionFactor || 1))
           });
           price += (stock.price * deductQty);
         }
-      } else {
-        // Direct deduction if FIFO is not enabled
-        (element.fromStore || addReduce == 2) && await models.StoreItems.create({
-          storeId: element.fromStore || element.toStore,
-          itemId: element.itemId,
-          quantity: element.quantity * -1,
-          status: 1,
-          addedBy: transferredBy,
-          price: item?.price
-        });
       }
 
       // Create StockTransfer entry
-      await models.StockTransfer.create({
+      (addReduce && addReduce != 2) && await models.StockTransfer.create({
         transferNumber,
         fromStoreId: element?.fromStore || null,
         itemId: element.itemId,
-        quantity: addReduce == 2 ? -element.quantity : element.quantity,
+        quantity: (addReduce == 2 ? -element.quantity : element.quantity) * (element?.conversionFactor || 1),
         toStoreId: element.toStore,
         transferDate,
         transferredBy,
         comment: stockData.comment,
         companyId,
-        price: element.price
+        price: element.price / (element?.conversionFactor || 1)
       });
 
       // Add quantity to destination store
-      addReduce != 2 && await models.StoreItems.create({
+      (addReduce && addReduce) != 2 && await models.StoreItems.create({
         storeId: element.toStore,
         itemId: element.itemId,
-        quantity: element.quantity,
+        quantity: element.quantity * (element?.conversionFactor || 1),
         status: 1,
         addedBy: transferredBy,
-        price: element?.price
+        price: element?.price / (element?.conversionFactor || 1)
       });
 
       if (!element.fromStore) {
         await models.Items.update(
           {
             currentStock: item.currentStock + (addReduce != 2 ? element.quantity : element.quantity * -1),
-            price: addReduce == 2 ? useFIFO ? ((item.price * item.currentStock) - price) / (item.currentStock - element.quantity) : item.price : (((item.currentStock * item.price) + (element.quantity * element.price)) / (item.currentStock + element.quantity))
+            // price: addReduce == 2 ? useFIFO ? ((item.price * item.currentStock) - price) / (item.currentStock - element.quantity) : item.price : (((item.currentStock * item.price) + (element.quantity * element.price)) / (item.currentStock + element.quantity))
           },
           { where: { id: element.itemId, companyId } }
         );
@@ -665,58 +693,156 @@ async function getStockTransferHistory(req, res) {
 
 
 async function getStoreItemsByStoreId(req, res) {
-  const { storeId } = req.body;
+  const { storeId, isRejected = false } = req.body;
   if (!storeId) return res.status(404).json({ message: "Store Not found." });
+
   try {
-    let [storeItems, uomData] = await Promise.all([models.StoreItems.findAll({
-      where: {
-        storeId,
-        isRejected: req.body.isRejected || false
+    // Fetch StoreItems and UOMs
+    const [storeItemsRaw, uomData] = await Promise.all([
+      models.StoreItems.findAll({
+        where: { storeId, isRejected },
+        raw: true
+      }),
+      models.UOM.findAll({ raw: true })
+    ]);
+
+    // Map UOM IDs to codes
+    const uomMap = uomData.reduce((map, uom) => {
+      map[uom.id] = uom.code;
+      return map;
+    }, {});
+
+    const itemQuantityMap = {};
+    const itemPriceMap = {};
+    const uniqueStoreItems = {};
+
+    for (const item of storeItemsRaw) {
+      const itemId = item.itemId;
+      const quantity = item.quantity;
+      const price = item.price;
+
+      // Aggregate quantity and price
+      itemQuantityMap[itemId] = (itemQuantityMap[itemId] || 0) + quantity;
+      if (quantity > 0) {
+        itemPriceMap[itemId] = (itemPriceMap[itemId] || 0) + (price * quantity);
       }
-    }), models.UOM.findAll({})]);
-    const myMap = new Map();
-    uomData.map((uom => myMap.set(uom.id, uom.code)));
-    const stores = {};
-    let arr = [];
-    for (const storeItem of storeItems) {
-      if (stores[storeItem?.itemId] || stores[storeItem?.itemId] == 0) {
-        stores[storeItem.itemId] += storeItem?.quantity;
-      }
-      else {
-        stores[storeItem.itemId] = storeItem?.quantity;
-        arr.push(storeItem);
-      }
-    }
-    storeItems = [];
-    for (const storeItem of arr) {
-      storeItem.quantity = stores[storeItem.itemId];
-      const item = await models.Items.findOne({
-        where: {
-          id: storeItem.itemId
-        }
-      });
-      if (item) {
-        const alternateUnit = await models.AlternateUnits.findAll({
-          where: {
-            itemId: item.id
-          }
-        });
-        const units = [];
-        for (const unit of alternateUnit) {
-          let obj = { ...unit?.dataValues };
-          const code = myMap.get(unit.alternateUnits);
-          obj.code = code;
-          units.push(obj);
-        }
-        item.alternateUnit = units;
-        storeItem.itemId = item;
-        storeItems.push(storeItem);
+
+      // Store one instance of each item
+      if (!uniqueStoreItems[itemId]) {
+        uniqueStoreItems[itemId] = item;
       }
     }
-    res.status(200).json({ storeItems });
+
+    const itemIds = Object.keys(uniqueStoreItems);
+
+    // Fetch item data and alternate units in bulk
+    const [itemsData, alternateUnitsData] = await Promise.all([
+      models.Items.findAll({
+        where: { id: itemIds },
+        raw: true
+      }),
+      models.AlternateUnits.findAll({
+        where: { itemId: itemIds },
+        raw: true
+      })
+    ]);
+
+    // Map alternate units by itemId
+    const alternateUnitsMap = alternateUnitsData.reduce((acc, unit) => {
+      const itemId = unit.itemId;
+      const unitWithCode = { ...unit, code: uomMap[unit.alternateUnits] || null };
+      acc[itemId] = acc[itemId] || [];
+      acc[itemId].push(unitWithCode);
+      return acc;
+    }, {});
+
+    // Build final store items
+    const storeItems = itemIds.map(itemId => {
+      const baseItem = uniqueStoreItems[itemId];
+      return {
+        ...baseItem,
+        quantity: itemQuantityMap[itemId],
+        averagePrice: itemPriceMap[itemId] || 0,
+        itemId: {
+          ...itemsData.find(item => item.id === Number(itemId)),
+          alternateUnit: alternateUnitsMap[itemId] || []
+        }
+      };
+    });
+
+    return res.status(200).json({ storeItems });
+
   } catch (error) {
-    console.log(error);
-    res.status(500).json({ message: "Something went Wrong." });
+    console.error(error);
+    return res.status(500).json({ message: "Something went wrong." });
+  }
+}
+
+
+async function getAllStoreItemsByStoresID(req, res) {
+  let { storeIds, isRejected } = req.body;
+
+  try {
+    // If no storeIds provided, fetch all store IDs
+    if (!Array.isArray(storeIds) || storeIds.length === 0) {
+      const stores = await models.Store.findAll({ attributes: ['id'] });
+      storeIds = stores.map(s => s.id);
+    }
+
+    // Build filter: always include storeIds, optionally filter on isRejected
+    const whereClause = { storeId: storeIds };
+    if (typeof isRejected === 'boolean') whereClause.isRejected = isRejected;
+
+    // Fetch items and UOM data in parallel
+    const [storeItems, uomData] = await Promise.all([
+      models.StoreItems.findAll({ where: whereClause }),
+      models.UOM.findAll()
+    ]);
+
+    // Map UOM IDs to codes
+    const uomMap = new Map(uomData.map(u => [u.id, u.code]));
+
+    // Aggregate quantity by storeId and itemId
+    const aggregated = {};
+    storeItems.forEach(si => {
+      const key = `${si.storeId}_${si.itemId}_${si.isRejected}`;
+      if (!aggregated[key]) {
+        aggregated[key] = {
+          storeId: si.storeId,
+          itemId: si.itemId,
+          isRejected: si.isRejected,
+          quantity: 0
+        };
+      }
+      aggregated[key].quantity += si.quantity;
+    });
+
+    const resultByStore = {};
+    for (const entry of Object.values(aggregated)) {
+      const { storeId, itemId, quantity, isRejected } = entry;
+      if (!resultByStore[storeId]) resultByStore[storeId] = [];
+
+      const item = await models.Items.findByPk(itemId);
+      let alternateUnits = [];
+      if (item) {
+        const altUnits = await models.AlternateUnits.findAll({ where: { itemId } });
+        alternateUnits = altUnits.map(au => ({
+          ...au.dataValues,
+          code: uomMap.get(au.alternateUnits) || null
+        }));
+        item.alternateUnit = alternateUnits;
+      }
+      resultByStore[storeId].push({
+        item: item || { id: itemId, message: 'Item not found' },
+        quantity,
+        isRejected
+      });
+    }
+    const response = storeIds.map(id => ({ storeId: id, storeItems: resultByStore[id] || [] }));
+    return res.status(200).json({ data: response });
+  } catch (error) {
+    console.error('Error in getAllStoreItemsByStoresID:', error);
+    return res.status(500).json({ message: 'Something went wrong.', error: error.message });
   }
 }
 
@@ -730,5 +856,6 @@ module.exports = {
   stockTransfer: stockTransfer,
   getItemStockTransferHistory: getItemStockTransferHistory,
   getStockTransferHistory: getStockTransferHistory,
-  getStoreItemsByStoreId: getStoreItemsByStoreId
+  getStoreItemsByStoreId: getStoreItemsByStoreId,
+  getAllStoreItemsByStoresID: getAllStoreItemsByStoresID,
 };
