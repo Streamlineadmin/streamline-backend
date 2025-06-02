@@ -29,6 +29,11 @@ const salesDocuments = [
     "Sales Return"
 ];
 
+const serviceDocuments = [
+    "Service Order",
+];
+
+
 const purchaseDocuments = [
     "Purchase Request",
     "Purchase Order",
@@ -40,4 +45,4 @@ const purchaseDocuments = [
     "Purchase Return"
 ];
 
-module.exports = { documentTypes, salesDocuments, purchaseDocuments };
+module.exports = { documentTypes, serviceDocuments, salesDocuments, purchaseDocuments };
