@@ -41,6 +41,8 @@ module.exports = (sequelize, DataTypes) => {
     auQuantity: DataTypes.FLOAT,
     alternateUnit: DataTypes.STRING,
     conversionFactor: DataTypes.FLOAT,
+    ServiceID: DataTypes.STRING,
+    ServiceName: DataTypes.STRING,
     additionalDetails: DataTypes.STRING
   }, {
     sequelize,

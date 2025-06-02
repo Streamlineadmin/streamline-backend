@@ -53,6 +53,8 @@ module.exports = (sequelize, DataTypes) => {
       allowNull: true
     },
     supplierContactNo: DataTypes.STRING,
+    ServiceConfirmationNumber: DataTypes.STRING,
+    ServiceConfirmationDate: DataTypes.DATE,
     supplierEmail: DataTypes.STRING,
     documentDate: DataTypes.STRING,
     ammendment: DataTypes.STRING,

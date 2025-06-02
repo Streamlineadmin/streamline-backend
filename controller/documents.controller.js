@@ -1,6 +1,6 @@
 const { Op, where } = require('sequelize');
 const models = require('../models');
-const { documentTypes, purchaseDocuments, salesDocuments } = require('../helpers/document-type');
+const { documentTypes, purchaseDocuments, salesDocuments, serviceDocuments } = require('../helpers/document-type');
 const { generateTransferNumber } = require('../helpers/transfer-number');
 
 async function createDocument(req, res) {
@@ -23,6 +23,8 @@ async function createDocument(req, res) {
       documentDate = null,
       ammendment = null,
       deliveryDate = null,
+      ServiceConfirmationNumber = null,
+      ServiceConfirmationDate = null,
       paymentTerm = null,
       store = null,
       rejectedStore = null,
@@ -137,6 +139,8 @@ async function createDocument(req, res) {
       documentDate,
       ammendment,
       deliveryDate,
+      ServiceConfirmationNumber,
+      ServiceConfirmationDate,
       paymentTerm,
       store,
       rejectedStore,
@@ -231,6 +235,8 @@ async function createDocument(req, res) {
       documentDate,
       ammendment,
       deliveryDate,
+      ServiceConfirmationNumber,
+      ServiceConfirmationDate,
       paymentTerm,
       store,
       rejectedStore,
@@ -347,34 +353,6 @@ async function createDocument(req, res) {
               purchaseRequestItemsMap[current.itemId] = current.quantity;
             }
           }
-
-          // const purchaseOrders = await models.Documents.findAll({
-          //   where: {
-          //     companyId,
-          //     indent_number: ind_number
-          //   }
-          // });
-
-          // const purchaseOrderIds = purchaseOrders.map(doc => doc.documentNumber);
-          // const purchaseOrdersItems = await models.DocumentItems.findAll({
-          //   where: {
-          //     companyId,
-          //     documentNumber: {
-          //       [Op.in]: purchaseOrderIds
-          //     }
-          //   }
-          // });
-          // const purchaseOrdersItemsMap = purchaseOrdersItems.reduce((acc, current) => {
-          //   if (acc[current.itemId]) acc[current.itemId] += current.quantity;
-          //   acc[current.itemId] = current.quantity;
-          //   return acc;
-          // }, {});
-
-          // for (const item of items) {
-          //   const itemId = item?.itemId;
-          //   const quantity = consumeItemsMap[item?.itemId] || 0;
-          //   purchaseOrdersItemsMap[itemId] = (purchaseOrdersItemsMap[itemId] ?? 0) + quantity;
-          // }
 
           let status = purchaseRequest.status, isPartial = false;
           for (const current of purchaseRequestItems) {
@@ -577,6 +555,8 @@ async function createDocument(req, res) {
             auQuantity: item?.auQuantity,
             alternateUnit: item?.alternateUnit,
             conversionFactor: item?.conversionFactor,
+            ServiceID: item?.ServiceID,
+            ServiceName: item?.ServiceName,
             additionalDetails: item?.additionalDetails
           })
         })
@@ -999,10 +979,18 @@ async function getDocuments(req, res) {
 
   const offset = ((currentPage || 1) - 1) * (pageSize || 10);
   let documentstype = [];
-  if (documentType === 'sales') {
-    documentstype = salesDocuments;
-  } else {
-    documentstype = purchaseDocuments;
+  switch (documentType) {
+    case "sales":
+      documentstype = salesDocuments;
+      break;
+    case "purchase":
+      documentstype = purchaseDocuments;
+      break;
+    case "documentServices":
+      documentstype = serviceDocuments;
+      break;
+    default:
+      break;
   }
 
   let documents = [];
