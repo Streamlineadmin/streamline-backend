@@ -28,37 +28,37 @@ async function createBOMProductionProcess(req, res) {
 }
 
 async function getBOMProductionProcesses(req, res) {
-    try {
-      const { bomId } = req.params;
-  
-      const bomWithProcesses = await models.BillOfMaterial.findByPk(bomId, {
-        include: [{
-          model: models.ProductionProcess,
-          through: { attributes: [] },
-          attributes: ['id', 'processCode', 'processName', 'description']
-        }]
-      });
-  
-      if (!bomWithProcesses) {
-        return res.status(404).json({ 
-          message: "BOM not found",
-          data: null 
-        });
-      }
-  
-      res.status(200).json({
-        message: "BOM processes retrieved successfully",
-        data: bomWithProcesses.ProductionProcesses
-      });
-  
-    } catch (error) {
-      console.error("Error:", error);
-      res.status(500).json({ 
-        message: "Something went wrong!", 
-        error: error.message 
-      });
+  try {
+    const { bomId } = req.body;
+
+    if (!bomId) {
+      return res.status(400).json({ message: "Missing bomId in request body" });
     }
+
+    const bomProcesses = await models.BOMProductionProcess.findAll({
+      where: { bomId },
+      include: [
+        {
+          model: models.ProductionProcess,
+          attributes: ['id', 'processCode', 'processName', 'description'],
+        },
+      ],
+    });
+
+    if (!bomProcesses.length) {
+      return res.status(404).json({ message: "No processes found for this BOM", data: [] });
+    }
+
+    res.status(200).json({
+      message: "BOM processes retrieved successfully",
+      data: bomProcesses,
+    });
+
+  } catch (error) {
+    console.error("Error:", error);
+    res.status(500).json({ message: "Something went wrong!", error: error.message });
   }
+}
 
 async function updateBOMProductionProcess(req, res) {
   try {

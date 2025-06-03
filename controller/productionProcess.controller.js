@@ -3,7 +3,7 @@ const models = require('../models');
 // Create a new Production Process
 async function createProductionProcess(req, res) {
     try {
-        const { processCode, processName, description, status, companyId, userId } = req.body;
+        const { processCode, processName, description, status, companyId, userId, plannedTime, cost} = req.body;
 
         const existingProcess = await models.ProductionProcess.findOne({ where: { processCode } });
         if (existingProcess) {
@@ -16,7 +16,9 @@ async function createProductionProcess(req, res) {
             description,
             status,
             companyId,
-            userId
+            userId,
+            plannedTime,
+            cost,
         });
 
         res.status(201).json({ message: "Production Process created successfully", data: newProcess });
@@ -58,7 +60,7 @@ async function getProductionProcessById(req, res) {
 async function updateProductionProcess(req, res) {
     try {
         const { id } = req.params;
-        const { processCode, processName, description, status, companyId, userId } = req.body;
+        const { processCode, processName,  plannedTime, cost, description, status, companyId, userId } = req.body;
 
         const process = await models.ProductionProcess.findOne({ where: { id } });
 
@@ -67,7 +69,7 @@ async function updateProductionProcess(req, res) {
         }
 
         await models.ProductionProcess.update(
-            { processCode, processName, description, status, companyId, userId },
+            { processCode, processName, description, status, companyId, userId, plannedTime, cost },
             { where: { id } }
         );
 

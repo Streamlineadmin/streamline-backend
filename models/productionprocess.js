@@ -15,6 +15,12 @@ module.exports = (sequelize, DataTypes) => {
         onDelete: 'CASCADE',
         onUpdate: 'CASCADE',
       });
+      ProductionProcess.belongsTo(models.BOMDetails, {
+        foreignKey: 'bomId',
+        targetKey: 'id',
+        onDelete: 'CASCADE',
+        onUpdate: 'CASCADE',
+      });
     }
   }
 
@@ -46,6 +52,16 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.INTEGER,
         allowNull: false,
       },
+      plannedTime: {
+        type: DataTypes.TIME,
+        allowNull: true,
+      },
+      cost: {
+        type: DataTypes.FLOAT,
+        allowNull: false,
+        defaultValue: 0,
+      },
+      bomId: { type: DataTypes.INTEGER, allowNull: true },
     },
     {
       sequelize,
