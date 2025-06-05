@@ -1,9 +1,9 @@
 {
   "development": {
-    "username": "root",
-    "password": null,
-    "database": "database_dev",
-    "host": "127.0.0.1",
+    "username": "easemarginadmin",
+    "password": "EaseM@rgin@1290",
+    "database": "easemargin",
+    "host": "107.180.113.149",
     "dialect": "mysql"
   },
   "test": {

@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<title>EaseMargin API Documentation</title>
+
+<head>
+    <style>
+        html,
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            /* padding: 20px; */
+            background-image: url('https://static.vecteezy.com/system/resources/previews/005/007/315/original/illustration-background-wallpaper-banner-template-flyer-poster-event-label-backdrop-modern-free-vector.jpg');
+            background-size: cover;
+        }
+
+        h1,
+        h2 {
+            color: #333;
+        }
+
+        p,
+        pre {
+            margin: 0 0 20px;
+        }
+
+        .heroTitle {
+            color: #d4df30;
+            padding: 0;
+            margin: 0;
+        }
+
+        p {
+            line-height: normal;
+        }
+
+        .parent {
+            background-color: #000000;
+            color: white;
+        }
+
+        .heroSection {
+            padding: 10px 20px;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .mainContainer {
+            display: flex;
+            padding: 1rem;
+            padding: 0;
+            height: calc(100vh - 25px);
+            opacity: 0.9;
+        }
+
+        .menuList {
+            min-width: 300px;
+            background-color: white;
+            border-top-left-radius: 5px;
+            padding-top: 10px;
+            flex: 1 0 10%;
+            overflow-y: auto;
+            padding-bottom: 50px;
+        }
+
+        .listItem {
+            padding: 5px 20px;
+            border-radius: 5px;
+        }
+
+        .documentContainer {
+            background-color: #dbd9d9;
+            overflow-y: auto;
+            border-top-right-radius: 5px;
+            
+        }
+
+        .code,
+        pre {
+            background-color: black;
+            color: white;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+
+        .success {
+            color: greenyellow;
+        }
+
+        ul {
+            list-style-type: disc;
+            padding-left: 20px;
+            margin-bottom: 20px;
+        }
+
+        ul li {
+            margin-bottom: 10px;
+        }
+
+        a {
+            text-decoration: none;
+            color: #000000;
+        }
+
+        .module {
+            background-color: whitesmoke;
+            padding: 10px 20px;
+            margin-bottom: 20px;
+            border-radius: 5px;
+        }
+
+        .footer {
+            margin: 0;
+            background: black;
+            padding: 5px 10px;
+            color: yellow;
+            font-size: 13px;
+            border-bottom-right-radius: 5px;
+            border-bottom-left-radius: 5px;
+        }
+
+        .signature {
+            font-size: 13px;
+            color: rgb(243, 251, 3);
+        }
+    </style>
+</head>
+
+<body>
+    <div class="mainContainer">
+        <div class="menuList">
+            <div class="listItem"><a href="#introduction">Introduction</a></div>
+            <div class="listItem"><a href="#overview">Overview</a></div>
+            <div class="listItem"><a href="#gettingstarted">Getting started</a></div>
+            <div class="listItem">Authentication
+                <ul>
+                    <li><a href="#signup"><code>signup</code></a></li>
+                    <li><a href="#login"><code>login</code></a></li>
+                    <li><a href="#"><code>Forget Password</code></a></li>
+                    <li><a href="#"><code>Reset Password</code></a></li>
+                </ul>
+            </div>
+            <div class="listItem">Blogs
+                <ul>
+                    <li><a href="#"><code>Get All Blogs</code></a></li>
+                    <li><a href="#"><code>Get Single Blog</code></a></li>
+                    <li><a href="#"><code>Get Blog by Title</code></a></li>
+                    <li><a href="#"><code>Add Blog</code></a></li>
+                    <li><a href="#"><code>Update Blog</code></a></li>
+                    <li><a href="#"><code>Delete Blog</code></a></li>
+                </ul>
+            </div>
+            <div class="listItem">Media
+                <ul>
+                    <li><a href="#"><code>Add Image</code></a></li>
+                    <li><a href="#"><code>Add File</code></a></li>
+                </ul>
+            </div>
+            <div class="listItem">Teams
+                <ul>
+                    <li><a href="#"><code>Get All Teams</code></a></li>
+                    <li><a href="#"><code>Add Team</code></a></li>
+                    <li><a href="#"><code>Update Team</code></a></li>
+                    <li><a href="#"><code>Delete Team</code></a></li>
+                </ul>
+            </div>
+
+            <div class="listItem">Members
+                <ul>
+                    <li><a href="#"><code>Get All Members</code></a></li>
+                    <li><a href="#"><code>Get Members by name</code></a></li>
+                    <li><a href="#"><code>Get Members by Team</code></a></li>
+                    <li><a href="#"><code>Add Members</code></a></li>
+                    <li><a href="#"><code>Update Members</code></a></li>
+                    <li><a href="#"><code>Delete Members</code></a></li>
+                </ul>
+            </div>
+
+            <div class="listItem">Company (Buyer/Supplier)
+                <ul>
+                    <li><a href="#"><code>Get All Comapnies</code></a></li>
+                    <li><a href="#"><code>Get Companies by name</code></a></li>
+                    <li><a href="#"><code>Get Companies by Type</code></a></li>
+                    <li><a href="#"><code>Add Companies</code></a></li>
+                    <li><a href="#"><code>Update Companies</code></a></li>
+                    <li><a href="#"><code>Delete Companies</code></a></li>
+                </ul>
+            </div>
+
+            <div class="listItem"><a href="#errorhandling">Error handling</a></div>
+        </div>
+        <div class="documentContainer">
+            <div class="parent">
+                <div class="heroSection">
+                    <div>
+                        <h2 class="heroTitle">EaseMargin API Documentation</h2>
+                        <div class="signature">Version: 1.0.0, EC2 INSTANCE, AWS</div>
+                    </div>
+
+                    <div>
+                        <div class="signature">Last Updated: 5th Aug, 2024</div>
+                        <div class="signature">Author: Rahul Deo Burman</div>
+                    </div>
+                </div>
+            </div>
+            <div class="module" id="introduction">
+                <h1>Introduction</h1>
+                <p>Welcome to the API documentation for our service, built using Node.js, Express.js, and MySQL. This
+                    API
+                    provides a robust and efficient way to interact with our database, allowing you to perform various
+                    operations such as creating, reading, updating, and deleting (CRUD) records. </p>
+                <br>
+                <h3>Technology Stack</h3>
+                <h3>Node.js</h3>
+                <p>Node.js is a powerful JavaScript runtime built on Chrome's V8 engine, allowing us to build scalable
+                    network applications. It uses an event-driven, non-blocking I/O model that makes it lightweight and
+                    efficient, perfect for data-intensive real-time applications.</p>
+                <h3>Express.js</h3>
+                <p>Express.js is a minimal and flexible Node.js web application framework that provides a robust set of
+                    features to develop web and mobile applications. It facilitates the rapid development of Node-based
+                    web
+                    applications by providing a set of features to help with routing, middleware integration, and
+                    handling
+                    HTTP requests and responses.
+                </p>
+                <h3>MySQL</h3>
+                <p>MySQL is a popular relational database management system known for its reliability, performance, and
+                    ease
+                    of use. It is used to manage and store the data for this API, providing a structured way to organize
+                    and
+                    query data efficiently.</p>
+            </div>
+
+            <div class="module" id="overview">
+                <h1>Overview</h1>
+                <p>This API allows you to:</p>
+                <ul>
+                    <li>Create new records in the database.</li>
+                    <li>Read existing records from the database.</li>
+                    <li>Update existing records in the database.</li>
+                    <li>Delete records from the database.</li>
+                </ul>
+                <p>Each endpoint in this API is designed to handle specific operations on the data, ensuring a clear and
+                    organized approach to interacting with our service.</p>
+
+                <h2>Base URL</h2>
+                <p>The base URL for accessing the API is:</p>
+                <div class="code-block">
+                    <pre><code>https://api.yourdomain.com:8080</code></pre>
+                </div>
+                <p>All endpoints described in this documentation are relative to this base URL.</p>
+
+                <h2>Authentication</h2>
+                <p>To access the API, you will need to authenticate using an API key. The API key should be included in
+                    the
+                    header of each request as follows:</p>
+                <div class="code-block">
+                    <pre><code>Authorization: Bearer YOUR_API_KEY</code></pre>
+                </div>
+            </div>
+
+            <div class="module" id="gettingstarted">
+                <h2>Getting Started</h2>
+                <p>
+                    Clone the repository with the link given below, if you have invitation link<br><br>
+                    <a
+                        href="https://github.com/Streamlineadmin/streamline-backend">https://github.com/Streamlineadmin/streamline-backend.git</a>
+                </p>
+                <br>
+                <div class="code">
+                    <code>
+                        <p>(base) burman@Rahuls-MacBook-Pro ~ % git clone https://github.com/Streamlineadmin/streamline-backend.git</p>
+                        <p>(base) burman@Rahuls-MacBook-Pro ~ % cd streamline-backend</p>
+                        <p>(base) burman@Rahuls-MacBook-Pro streamline-backend ~ % npm install</p>
+                        <p>(base) burman@Rahuls-MacBook-Pro streamline-backend ~ % npm start</p>
+                        <p class="success">[nodemon] starting `node server.js`<br>
+                        Server running at http://localhost:8080</p>
+                    </code>
+                </div>
+            </div>
+
+            <div id="signup" class="module">
+                <h1>Signup Endpoint</h1>
+                <p>The signup endpoint allows new users to create an account by providing the necessary information.
+                    Below
+                    is the detailed information on how to use this endpoint.</p>
+
+                <h2>Endpoint</h2>
+                <div class="code-block">
+                    <pre><code>POST: http://localhost:8080/authentication/signup</code></pre>
+                </div>
+
+                <h2>Request Headers</h2>
+                <ul>
+                    <li><code>Content-Type: application/json</code></li>
+                </ul>
+
+                <h2>Request Body</h2>
+                <p>The request body should be a JSON object containing the following fields:</p>
+                <ul>
+                    <li><code>name</code> (string, required): Full name of the user.</li>
+                    <li><code>username</code> (string, required): The desired username for the new account.</li>
+                    <li><code>email</code> (string, required): The user's email address.</li>
+                    <li><code>password</code> (string, required): The password for the new account.</li>
+                </ul>
+
+                <h3>Example Request Body</h3>
+                <div class="code-block">
+                    <pre>
+                    <code>
+                        {
+                            "name": "Rahul Burman",
+                            "username": "rdburman",
+                            "email": "rdeoburman@gmail.com",
+                            "password": "demopassword"
+                        }
+                    </code>
+                </pre>
+                </div>
+
+                <h2>Response</h2>
+                <p>The response will be a JSON object containing the following fields:</p>
+                <ul>
+                    <li><code>message</code> (string): A message providing additional information about the signup
+                        result.
+                    </li>
+                </ul>
+
+                <h3>Example Successful Response</h3>
+                <div class="code-block">
+                    <pre>
+                    <code>
+                        {
+                            "message": "Signed up successfully"
+                        }
+                    </code>
+                </pre>
+                </div>
+
+                <h3>Example Error Response</h3>
+                <div class="code-block">
+                    <pre>
+                    <code>
+                        {
+                            "message": "Email already exists !"
+                        }
+                    </code>
+                </pre>
+                </div>
+            </div>
+
+            <div id="errorhandling" class="module">
+                <h1>Error Handling</h1>
+                <p>Our API uses standard HTTP status codes to indicate the success or failure of an API request. Here
+                    are
+                    some common status codes you may encounter:</p>
+                <ul>
+                    <li><strong>200 OK</strong>: The request was successful.</li>
+                    <li><strong>201 Created</strong>: A new resource was successfully created.</li>
+                    <li><strong>400 Bad Request</strong>: The request was invalid or cannot be otherwise served.</li>
+                    <li><strong>401 Unauthorized</strong>: Authentication is required and has failed or has not yet been
+                        provided.</li>
+                    <li><strong>404 Not Found</strong>: The requested resource could not be found.</li>
+                    <li><strong>500 Internal Server Error</strong>: An error occurred on the server.</li>
+                </ul>
+                <h2>Error Codes</h2>
+                <p>Common error codes you may encounter include:</p>
+                <ul>
+                    <li><strong>400 Bad Request</strong>: The request was invalid or cannot be otherwise served. This
+                        may
+                        occur if required fields are missing or if the password and confirmPassword do not match.</li>
+                    <li><strong>409 Conflict</strong>: The request could not be completed due to a conflict with the
+                        current
+                        state of the target resource. This may occur if the email or username is already in use.</li>
+                    <li><strong>500 Internal Server Error</strong>: An error occurred on the server.</li>
+                </ul>
+            </div>
+
+        </div>
+    </div>
+    <div class="footer">Copyright 2024. www.easemargin.com</div>
+</body>
+
+</html>
