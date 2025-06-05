@@ -36,7 +36,11 @@ const serviceDocuments = [
     "Service Order",
     "Service Challan",
     "Service Grn",
-    "Service Qr"
+    "Service Qr",
+    "Service Proforma Invoice",
+    "Service Invoice",
+    "Service Debit Note",
+    "Service Credit Note"
 ];
 
 
