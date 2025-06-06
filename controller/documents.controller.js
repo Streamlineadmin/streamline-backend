@@ -965,6 +965,155 @@ async function createDocument(req, res) {
       }
     }
 
+    if (status && (documentType === documentTypes.serviceChallan)) {
+      const storeId = await models.Store.findOne({
+        where: {
+          name: store,
+          companyId
+        }
+      });
+      for (const element of items) {
+        let price = 0;
+        let remainingQuantity = (element.quantity * (element?.conversionFactor || 1));;
+        const item = await models.Items.findOne({
+          where: {
+            itemId: element.itemId,
+            companyId
+          }
+        });
+        const existingStock = await models.StoreItems.findAll({
+          where: { storeId: storeId.id, itemId: item.id },
+          order: [['createdAt', 'ASC']],
+        });
+        for (const stock of existingStock) {
+          if (remainingQuantity <= 0) break;
+          if (stock.quantity <= 0) continue;
+          const deductQty = Math.min(stock.quantity, remainingQuantity);
+          remainingQuantity -= deductQty;
+
+          await models.StoreItems.update(
+            { quantity: (stock.quantity - deductQty) },
+            { where: { id: stock.id } }
+          );
+          await models.StockTransfer.create({
+            transferNumber: element.transferNumber,
+            fromStoreId: storeId.id || null,
+            itemId: item.id,
+            quantity: deductQty * -1,
+            toStoreId: null,
+            transferDate: new Date().toISOString(),
+            transferredBy: createdBy,
+            comment: '',
+            companyId,
+            price: element.price / (element.conversionFactor || 1),
+            documentNumber: document.documentNumber,
+            documentType,
+            actualPrice: stock.price
+          });
+          price += (stock.price * deductQty);
+        }
+      }
+    }
+
+    if (status && (documentType === documentTypes.serviceGrn || documentType === documentTypes.serviceQr)) {
+      const serviceChallan = await models.Documents.findOne({
+        where: {
+          companyId,
+          documentNumber: challan_number,
+          documentType: documentTypes.serviceChallan
+        }
+      });
+
+      if (serviceChallan && (serviceChallan.addStockOn === 'GRN' || documentType === documentTypes.serviceQr)) {
+        documentType === documentTypes.serviceGrn && await models.Documents.update({ addStockOn: 'GRN' },
+          {
+            where: {
+              documentNumber,
+              companyId
+            }
+          });
+        const existingItems = await models.Items.findAll({});
+        const stores = await models.Store.findAll({});
+        const itemsMap = new Map(existingItems.map(existingItem => [existingItem.itemId, existingItem.id]));
+        const storesMap = new Map(stores.map(store => [store.name, store.id]));
+
+        await Promise.all([models.StoreItems.bulkCreate(items?.filter(item => item?.receivedToday).map(item => {
+          const itemId = itemsMap.get(item.itemId) || null;
+          const storeId = storesMap.get(store) || null;
+          return {
+            storeId,
+            itemId,
+            quantity: (item?.receivedToday * (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1))) || 0,
+            status: 1,
+            addedBy: createdBy,
+            price: item?.price / (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1)),
+            documentNumber: document.documentNumber
+          }
+        })
+        ),
+        models.StockTransfer.bulkCreate(items?.filter(item => item?.receivedToday).map(item => {
+          const itemId = itemsMap.get(item.itemId) || null;
+          const storeId = storesMap.get(store) || null;
+          return {
+            transferNumber: item?.transferNumber,
+            fromStoreId: null,
+            itemId,
+            quantity: (item?.receivedToday * (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1))) || 0,
+            toStoreId: storeId,
+            transferDate: new Date().toISOString(),
+            transferredBy: createdBy,
+            comment: '',
+            companyId,
+            price: item?.price / (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1)),
+            documentNumber: document.documentNumber,
+            documentType
+          }
+        })),
+        ]
+        );
+
+        if (documentType === documentTypes.serviceQr) {
+          await Promise.all([models.StoreItems.bulkCreate(items?.filter(item => item.pendingQuantity).map(item => {
+            const itemId = itemsMap.get(item.itemId) || null;
+            const storeId = storesMap.get(rejectedStore) || null;
+            return {
+              storeId,
+              itemId,
+              quantity: (item.pendingQuantity * (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1))) || 0,
+              status: 1,
+              addedBy: createdBy,
+              price: item?.price / (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1)),
+              isRejected: true,
+              documentNumber: document.documentNumber
+            }
+          })
+          ),
+          models.StockTransfer.bulkCreate(items?.filter(item => item.pendingQuantity).map(item => {
+            const itemId = itemsMap.get(item.itemId) || null;
+            const storeId = storesMap.get(rejectedStore) || null;
+            return {
+              transferNumber: generateTransferNumber(),
+              fromStoreId: null,
+              itemId,
+              quantity: (item.pendingQuantity * (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1))) || 0,
+              toStoreId: storeId,
+              transferDate: new Date().toISOString(),
+              transferredBy: createdBy,
+              comment: '',
+              companyId,
+              price: item?.price / (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1)),
+              documentNumber: document.documentNumber,
+              documentType,
+              isRejected: true
+            }
+          })),
+          ]);
+        }
+      }
+    }
+
+
+
     res.status(201).json({
       message: "Document and related data created successfully!"
     });

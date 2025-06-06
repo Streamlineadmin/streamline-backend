@@ -3,11 +3,15 @@ const { Op } = require('sequelize');
 
 async function getBatchItems(req, res) {
     try {
-        const { companyId } = req.body;
-        const batchItems = await models.BatchItems.findAll({
+        const { companyId, currentPage = 1, pageSize = 20 } = req.body;
+        const offset = (currentPage - 1) * pageSize;
+        const { count, rows: batchItems } = await models.BatchItems.findAndCountAll({
             where: {
                 companyId: Number(companyId)
             },
+            limit: Number(pageSize),
+            offset: Number(offset),
+            order: [['createdAt', 'DESC']],
             raw: true
         });
         const itemsId = batchItems.map(batch => batch.item);
@@ -30,7 +34,7 @@ async function getBatchItems(req, res) {
             item: itemMap[batch.item] || null
         }));
 
-        return res.status(200).json(enrichedBatchItems);
+        return res.status(200).json({ data: enrichedBatchItems, total: count });
     } catch (error) {
         console.error("Error fetching BatchItems:", error);
         return res.status(500).json({ message: "Something went wrong, please try again later!" });

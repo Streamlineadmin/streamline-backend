@@ -14,7 +14,10 @@ documentTypes = {
     purchaseOrder: 'Purchase Order',
     purchaseRequest: 'Purchase Request',
     purchaseInvoice: 'Purchase Invoice',
-    purchaseReturn: 'Purchase Return'
+    purchaseReturn: 'Purchase Return',
+    serviceChallan: 'Service Challan',
+    serviceGrn: 'Service Grn',
+    serviceQr: 'Service Qr'
 };
 
 const salesDocuments = [
@@ -31,6 +34,13 @@ const salesDocuments = [
 
 const serviceDocuments = [
     "Service Order",
+    "Service Challan",
+    "Service Grn",
+    "Service Qr",
+    "Service Proforma Invoice",
+    "Service Invoice",
+    "Service Debit Note",
+    "Service Credit Note"
 ];
 
 
