@@ -100,7 +100,8 @@ async function createDocument(req, res) {
       requestedBy = '',
       department = '',
       showUnits = null,
-      batches = null
+      batches = null,
+      supplyState = ''
     } = req.body;
 
     if (!isDraft) {
@@ -202,7 +203,8 @@ async function createDocument(req, res) {
       requiredDate,
       requestedBy,
       department,
-      showUnits
+      showUnits,
+      supplyState
     });
 
     else {
@@ -298,13 +300,31 @@ async function createDocument(req, res) {
       requiredDate,
       requestedBy,
       department,
-      showUnits
+      showUnits,
+      supplyState
     }, {
       where: {
         companyId,
         documentNumber
       }
     });
+
+    if (documentType != documentTypes.purchaseInvoice) {
+      const documentSeries = await models.DocumentSeries.findOne({
+        where: {
+          prefix: documentNumber.split("-")[documentNumber.split("-").length - 2],
+          companyId
+        }
+      });
+      if (documentSeries) {
+        await models.DocumentSeries.update({ nextNumber: documentSeries.nextNumber + 1 }, {
+          where: {
+            companyId,
+            prefix: documentSeries.prefix
+          }
+        });
+      }
+    }
 
     if (status && documentType === documentTypes.purchaseOrder && indent_number) {
       const indent_numbers = indent_number.split(',');
@@ -1112,8 +1132,6 @@ async function createDocument(req, res) {
       }
     }
 
-
-
     res.status(201).json({
       message: "Document and related data created successfully!"
     });
@@ -1667,7 +1685,19 @@ async function discardDocument(req, res) {
           companyId,
           documentNumber: document.purchaseOrderNumber
         }
-      })
+      });
+      await models.BatchItems.update({ status: 0 }, {
+        where: {
+          documentNumber: document.documentNumber,
+          companyId
+        }
+      });
+      await models.Batches.update({ status: 0 }, {
+        where: {
+          documentNumber: document.documentNumber,
+          companyId
+        }
+      });
     }
     if (document.documentType === documentTypes.purchaseInvoice) {
       linkedDocument = await models.Documents.findOne({

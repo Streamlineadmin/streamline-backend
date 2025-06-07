@@ -7,7 +7,8 @@ async function getBatchItems(req, res) {
         const offset = (currentPage - 1) * pageSize;
         const { count, rows: batchItems } = await models.BatchItems.findAndCountAll({
             where: {
-                companyId: Number(companyId)
+                companyId: Number(companyId),
+                status: 1
             },
             limit: Number(pageSize),
             offset: Number(offset),
