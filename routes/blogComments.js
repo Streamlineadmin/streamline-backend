@@ -1,6 +1,6 @@
 const express = require("express");
 const { Model } = require("sequelize");
-const blogCommentsController = require('../controller/blogComments.conroller')
+const blogCommentsController = require('../controller/blogComments.controller')
 
 const router = express.Router();
 router.post("/addBlogComments", blogCommentsController.addBlogComments);
