@@ -1,21 +1,20 @@
 const models = require("../models");
 
-// CREATE
 async function createBOMFinishedGoods(req, res) {
   try {
-    const { finishedGoods, userId, companyId } = req.body;
+    const { bomId, finishedGoods, userId, companyId, status } = req.body;
 
     if (
+      !bomId ||
       !finishedGoods ||
       !Array.isArray(finishedGoods) ||
       finishedGoods.length === 0
     ) {
-      return res
-        .status(400)
-        .json({ message: "No finished goods data provided" });
+      return res.status(400).json({ message: "Missing required data" });
     }
 
     const payload = finishedGoods.map((item) => ({
+      bomId,
       itemId: item.itemId,
       itemName: item.itemName,
       uom: item.UOM,
@@ -24,7 +23,7 @@ async function createBOMFinishedGoods(req, res) {
       costAllocation: item.costAllocation,
       userId,
       companyId,
-      status: "active",
+      status,
       createdAt: new Date(),
       updatedAt: new Date(),
     }));
@@ -45,7 +44,16 @@ async function createBOMFinishedGoods(req, res) {
 
 async function getAllBOMFinishedGoods(req, res) {
   try {
-    const data = await models.BOMFinishedGoods.findAll();
+    const { bomId } = req.body;
+
+    if (!bomId) {
+      return res.status(400).json({ message: "bomId is required" });
+    }
+
+    const data = await models.BOMFinishedGoods.findAll({
+      where: { bomId },
+    });
+
     res.status(200).json({ message: "Retrieved successfully", data });
   } catch (error) {
     console.error("Get Error:", error);

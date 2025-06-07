@@ -10,10 +10,16 @@ module.exports = (sequelize, DataTypes) => {
      * The `models/index` file will call this method automatically.
      */
     static associate(models) {
-      // define association here
+      BOMRawMaterial.belongsTo(models.BOMDetails, {
+        foreignKey: 'bomId',
+        targetKey: 'id',
+        onDelete: 'CASCADE',
+        onUpdate: 'CASCADE',
+      });
     }
   }
   BOMRawMaterial.init({
+    bomId: DataTypes.INTEGER,
     itemId: DataTypes.STRING,
     itemName: DataTypes.STRING,
     uom: DataTypes.STRING,

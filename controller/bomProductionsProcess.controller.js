@@ -2,7 +2,7 @@ const models = require("../models");
 
 async function createBOMProductionProcess(req, res) {
   try {
-    const { bomId, processes } = req.body;
+    const { bomId, processes, companyId, userId, status } = req.body;
 
     if (!bomId || !processes?.length) {
       return res.status(400).json({ message: "Missing required fields" });
@@ -12,6 +12,9 @@ async function createBOMProductionProcess(req, res) {
       processes.map((process) => ({
         bomId,
         processId: process.processId,
+        companyId,
+        status,
+        userId,
       }))
     );
 
@@ -29,34 +32,39 @@ async function createBOMProductionProcess(req, res) {
 
 async function getBOMProductionProcesses(req, res) {
   try {
-    const { bomId } = req.body;
+    const { bomId, companyId } = req.body;
 
-    if (!bomId) {
-      return res.status(400).json({ message: "Missing bomId in request body" });
+    if (!bomId || !companyId) {
+      return res
+        .status(400)
+        .json({ message: "Missing bomId or companyId in request body" });
     }
 
     const bomProcesses = await models.BOMProductionProcess.findAll({
-      where: { bomId },
+      where: { bomId, companyId },
       include: [
         {
           model: models.ProductionProcess,
-          attributes: ['id', 'processCode', 'processName', 'description'],
+          attributes: ["id", "processCode", "processName", "description"],
         },
       ],
     });
 
     if (!bomProcesses.length) {
-      return res.status(404).json({ message: "No processes found for this BOM", data: [] });
+      return res
+        .status(404)
+        .json({ message: "No processes found for this BOM", data: [] });
     }
 
     res.status(200).json({
       message: "BOM processes retrieved successfully",
       data: bomProcesses,
     });
-
   } catch (error) {
     console.error("Error:", error);
-    res.status(500).json({ message: "Something went wrong!", error: error.message });
+    res
+      .status(500)
+      .json({ message: "Something went wrong!", error: error.message });
   }
 }
 

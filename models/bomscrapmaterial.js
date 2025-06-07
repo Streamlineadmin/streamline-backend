@@ -11,9 +11,16 @@ module.exports = (sequelize, DataTypes) => {
      */
     static associate(models) {
       // define association here
+      BOMScrapMaterial.belongsTo(models.BOMDetails, {
+        foreignKey: 'bomId',
+        targetKey: 'id',
+        onDelete: 'CASCADE',
+        onUpdate: 'CASCADE',
+      });
     }
   }
   BOMScrapMaterial.init({
+    bomId: DataTypes.INTEGER,
     itemId: DataTypes.STRING,
     itemName: DataTypes.STRING,
     uom: DataTypes.STRING,

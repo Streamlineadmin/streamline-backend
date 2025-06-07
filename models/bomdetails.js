@@ -1,27 +1,54 @@
 "use strict";
 const { Model } = require("sequelize");
+
 module.exports = (sequelize, DataTypes) => {
   class BOMDetails extends Model {
-    /**
-     * Helper method for defining associations.
-     * This method is not a part of Sequelize lifecycle.
-     * The `models/index` file will call this method automatically.
-     */
     static associate(models) {
       BOMDetails.hasMany(models.BOMAttachments, {
-        foreignKey: 'BOMID',
-        sourceKey: 'bomId',
-        onDelete: 'CASCADE',
-        onUpdate: 'CASCADE',
+        foreignKey: "BOMID",
+        sourceKey: "bomId",
+        as: "attachments",
+        onDelete: "CASCADE",
+        onUpdate: "CASCADE",
       });
-      // define association here
+
       BOMDetails.hasMany(models.BOMProductionProcess, {
-        foreignKey: 'bomId',
-        onDelete: 'CASCADE',
-        onUpdate: 'CASCADE',
+        foreignKey: "bomId",
+        as: "BOMProductionProcesses",
+        onDelete: "CASCADE",
+        onUpdate: "CASCADE",
+      });
+
+      BOMDetails.hasMany(models.BOMFinishedGoods, {
+        foreignKey: "bomId",
+        as: "finishedGoods",
+        onDelete: "CASCADE",
+        onUpdate: "CASCADE",
+      });
+
+      BOMDetails.hasMany(models.BOMRawMaterial, {
+        foreignKey: "bomId",
+        as: "rawMaterials",
+        onDelete: "CASCADE",
+        onUpdate: "CASCADE",
+      });
+
+      BOMDetails.hasMany(models.BOMScrapMaterial, {
+        foreignKey: "bomId",
+        as: "scrapMaterials",
+        onDelete: "CASCADE",
+        onUpdate: "CASCADE",
+      });
+
+      BOMDetails.hasMany(models.BOMAdditionalCharges, {
+        foreignKey: "bomId",
+        as: "additionalCharges",
+        onDelete: "CASCADE",
+        onUpdate: "CASCADE",
       });
     }
   }
+
   BOMDetails.init(
     {
       bomId: {
@@ -30,6 +57,7 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: false,
       },
       bomName: DataTypes.STRING,
+      status: DataTypes.STRING,
       bomDescription: DataTypes.STRING,
       companyId: DataTypes.INTEGER,
       userId: DataTypes.INTEGER,
@@ -40,5 +68,6 @@ module.exports = (sequelize, DataTypes) => {
       timestamps: true,
     }
   );
+
   return BOMDetails;
 };

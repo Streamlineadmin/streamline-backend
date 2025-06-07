@@ -11,9 +11,16 @@ module.exports = (sequelize, DataTypes) => {
      */
     static associate(models) {
       // define association here
+      BOMAdditionalCharges.belongsTo(models.BOMDetails, {
+        foreignKey: 'bomId',
+        targetKey: 'id',
+        onDelete: 'CASCADE',
+        onUpdate: 'CASCADE',
+      });
     }
   }
   BOMAdditionalCharges.init({
+    bomId: DataTypes.INTEGER,
     chargesName: DataTypes.STRING,
     amount: DataTypes.FLOAT,
     userId: DataTypes.INTEGER,

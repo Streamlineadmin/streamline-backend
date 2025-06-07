@@ -1,15 +1,17 @@
 const models = require("../models");
 
-// CREATE - Bulk Insert raw materials
 async function createBOMRawMaterials(req, res) {
   try {
-    const { rawMaterials, userId, companyId } = req.body;
+    const { bomId, rawMaterials, userId, companyId } = req.body;
 
-    if (!Array.isArray(rawMaterials) || rawMaterials.length === 0) {
-      return res.status(400).json({ message: "No raw materials provided." });
+    if (!bomId || !Array.isArray(rawMaterials) || rawMaterials.length === 0) {
+      return res
+        .status(400)
+        .json({ message: "bomId and raw materials are required." });
     }
 
-    const payload = rawMaterials.map(item => ({
+    const payload = rawMaterials.map((item) => ({
+      bomId,
       itemId: item.itemId,
       itemName: item.itemName,
       uom: item.uom,
@@ -39,16 +41,23 @@ async function createBOMRawMaterials(req, res) {
 
 async function getAllBOMRawMaterials(req, res) {
   try {
-    const rawMaterials = await models.BOMRawMaterial.findAll();
+    const { bomId } = req.body;
+
+    if (!bomId) {
+      return res.status(400).json({ message: "bomId is required." });
+    }
+
+    const rawMaterials = await models.BOMRawMaterial.findAll({
+      where: { bomId },
+    });
 
     return res.status(200).json({
       message: "Raw materials retrieved successfully.",
       data: rawMaterials,
     });
   } catch (error) {
-    console.error("Get Error:", error);
     return res.status(500).json({
-      message: "Failed to retrieve raw materials.",
+      message: "Something went wrong!",
       error: error.message,
     });
   }

@@ -2,13 +2,14 @@ const models = require("../models");
 
 async function createBOMScrapMaterials(req, res) {
   try {
-    const { scrapLogs, userId, companyId } = req.body;
+    const { bomId, scrapLogs, userId, companyId } = req.body;
 
-    if (!scrapLogs || !Array.isArray(scrapLogs) || scrapLogs.length === 0) {
-      return res.status(400).json({ message: "No scrap materials provided" });
+    if (!scrapLogs || !bomId || !Array.isArray(scrapLogs) || scrapLogs.length === 0) {
+      return res.status(400).json({ message: "bomId and scrap logs materials are required." });
     }
 
     const payload = scrapLogs.map((item) => ({
+      bomId,
       itemId: item.itemId,
       itemName: item.itemName,
       uom: item.uom,
@@ -39,13 +40,18 @@ async function createBOMScrapMaterials(req, res) {
 // GET - Get all scrap materials
 async function getAllBOMScrapMaterials(req, res) {
   try {
-    const scrapMaterials = await models.BOMScrapMaterial.findAll();
+    const { bomId } = req.body;
+    if (!bomId) {
+      return res.status(400).json({ message: "bomId is required." });
+    }
+    const scrapMaterials = await models.BOMScrapMaterial.findAll({
+      where: { bomId },
+    });
     res.status(200).json({
       message: "Scrap materials retrieved successfully",
       data: scrapMaterials,
     });
   } catch (error) {
-    console.error("Get Error:", error);
     res
       .status(500)
       .json({ message: "Something went wrong!", error: error.message });

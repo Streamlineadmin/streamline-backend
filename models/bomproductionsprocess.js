@@ -9,7 +9,7 @@ module.exports = (sequelize, DataTypes) => {
       this.belongsTo(models.ProductionProcess, { foreignKey: 'processId' });
       BOMProductionProcess.belongsTo(models.BOMDetails, {
         foreignKey: "bomId",
-        targetKey: "bomId",
+        targetKey: "id",
         onDelete: "CASCADE",
         onUpdate: "CASCADE",
       });
@@ -33,6 +33,7 @@ module.exports = (sequelize, DataTypes) => {
       },
       companyId: DataTypes.INTEGER,
       userId: DataTypes.INTEGER,
+      status: DataTypes.STRING,
     },
     {
       sequelize,

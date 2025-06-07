@@ -3,15 +3,16 @@ const models = require("../models");
 // CREATE - Bulk insert additional charges
 async function createBOMAdditionalCharges(req, res) {
   try {
-    const { charges, userId, companyId } = req.body;
+    const { bomId, charges, userId, companyId } = req.body;
 
-    if (!charges || !Array.isArray(charges) || charges.length === 0) {
+    if (!bomId || !charges || !Array.isArray(charges) || charges.length === 0) {
       return res
         .status(400)
         .json({ message: "No additional charges provided" });
     }
 
     const payload = charges.map((item) => ({
+      bomId,
       chargesName: item.chargesName,
       amount: item.amount || 0,
       userId,
@@ -25,6 +26,31 @@ async function createBOMAdditionalCharges(req, res) {
       payload
     );
 
+    const isFinalSave = charges.some((item) => item.status === 1);
+
+    if (isFinalSave) {
+      const updateStatusPayload = { status: 1 };
+
+      await Promise.all([
+        models.BOMRawMaterial.update(updateStatusPayload, { where: { bomId } }),
+        models.BOMFinishedGoods.update(updateStatusPayload, {
+          where: { bomId },
+        }),
+        models.BOMScrapMaterial.update(updateStatusPayload, {
+          where: { bomId },
+        }),
+        models.BOMProductionProcess.update(updateStatusPayload, {
+          where: { bomId },
+        }),
+        models.BOMAdditionalCharges.update(updateStatusPayload, {
+          where: { bomId },
+        }),
+        models.BOMDetails.update(updateStatusPayload, {
+          where: { id: bomId },
+        }),
+      ]);
+    }
+
     res.status(201).json({
       message: "Additional charges created successfully",
       data: createdCharges,
@@ -37,10 +63,16 @@ async function createBOMAdditionalCharges(req, res) {
   }
 }
 
-// GET - Get all additional charges
 async function getAllBOMAdditionalCharges(req, res) {
   try {
-    const additionalCharges = await models.BOMAdditionalCharges.findAll();
+    const { bomId } = req.body;
+
+    if (!bomId) {
+      return res.status(400).json({ message: "bomId is required." });
+    }
+    const additionalCharges = await models.BOMAdditionalCharges.findAll({
+      where: { bomId },
+    });
     res.status(200).json({
       message: "Additional charges retrieved successfully",
       data: additionalCharges,
