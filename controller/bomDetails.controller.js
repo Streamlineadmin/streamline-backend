@@ -78,57 +78,75 @@ async function getBOMDetails(req, res) {
   }
 }
 
-function updateBOMDetails(req, res) {
-  const bomId = req.body.bomId;
-  const companyId = req.body.companyId;
-  const updatedBOMDetails = {
-    bomName: req.body.bomName,
-    status: req.body.status,
-    bomDescription: req.body.bomDescription,
-    companyId: req.body.companyId,
-    userId: req.body.userId,
-  };
+async function updateBOMDetails(req, res) {
+  const t = await models.sequelize.transaction();
+  try {
+    const { bomId, bomName, status, bomDescription, companyId, userId } =
+      req.body;
 
-  models.BOMDetails.findOne({
-    where: {
-      bomName: req.body.bomName,
-      companyId,
-      id: { [models.Sequelize.Op.ne]: bomId },
-    },
-  })
-    .then((existingBOM) => {
-      if (existingBOM) {
-        return res.status(409).json({
-          message: "BOM name already exists for this company!",
-        });
-      } else {
-        models.BOMDetails.update(updatedBOMDetails, { where: { id: bomId } })
-          .then((result) => {
-            if (result[0] > 0) {
-              res.status(200).json({
-                message: "BOM details updated successfully",
-                post: updatedBOMDetails,
-              });
-            } else {
-              res.status(404).json({
-                message: "BOM details not found",
-              });
-            }
-          })
-          .catch((error) => {
-            res.status(500).json({
-              message: "Something went wrong, please try again later!",
-              error: error.message || error,
-            });
-          });
-      }
-    })
-    .catch((error) => {
-      res.status(500).json({
-        message: "Something went wrong, please try again later!",
-        error: error.message || error,
-      });
+    if (!bomId || !companyId) {
+      await t.rollback();
+      return res
+        .status(400)
+        .json({ message: "bomId and companyId are required" });
+    }
+
+    // Check if BOM entry exists
+    const existingBOM = await models.BOMDetails.findOne({
+      where: { bomId, companyId },
+      transaction: t,
     });
+
+    if (!existingBOM) {
+      await t.rollback();
+      return res.status(404).json({ message: "BOM not found" });
+    }
+
+    // Check for duplicate BOM name within company, excluding current bomId
+    const duplicateName = await models.BOMDetails.findOne({
+      where: {
+        bomName,
+        companyId,
+        bomId: { [models.Sequelize.Op.ne]: bomId },
+      },
+      transaction: t,
+    });
+
+    if (duplicateName) {
+      await t.rollback();
+      return res
+        .status(409)
+        .json({ message: "BOM name already exists for this company!" });
+    }
+
+    // Update BOM
+    await models.BOMDetails.update(
+      {
+        bomName,
+        status,
+        bomDescription,
+        companyId,
+        userId,
+      },
+      {
+        where: { bomId, companyId },
+        transaction: t,
+      }
+    );
+
+    await t.commit();
+    return res.status(200).json({
+      message: "BOM details updated successfully",
+      post: { bomId, bomName, status, bomDescription, companyId, userId },
+    });
+  } catch (error) {
+    await t.rollback();
+    console.error("Update BOM Error:", error);
+    return res.status(500).json({
+      message: "Something went wrong while updating BOM details!",
+      error: error.message || error,
+    });
+  }
 }
 
 function deleteBOMDetails(req, res) {
