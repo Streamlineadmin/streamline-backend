@@ -147,6 +147,31 @@ async function updateBOMAdditionalCharge(req, res) {
       await models.BOMAdditionalCharges.bulkCreate(payload);
     }
 
+    const isFinalSave = charges.some((item) => item.status === 1);
+
+    if (isFinalSave) {
+      const updateStatusPayload = { status: 1 };
+
+      await Promise.all([
+        models.BOMRawMaterial.update(updateStatusPayload, { where: { bomId } }),
+        models.BOMFinishedGoods.update(updateStatusPayload, {
+          where: { bomId },
+        }),
+        models.BOMScrapMaterial.update(updateStatusPayload, {
+          where: { bomId },
+        }),
+        models.BOMProductionProcess.update(updateStatusPayload, {
+          where: { bomId },
+        }),
+        models.BOMAdditionalCharges.update(updateStatusPayload, {
+          where: { bomId },
+        }),
+        models.BOMDetails.update(updateStatusPayload, {
+          where: { id: bomId },
+        }),
+      ]);
+    }
+
     return res.status(200).json({
       message: "Additional charges synchronized successfully",
     });
