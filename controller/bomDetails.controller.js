@@ -312,6 +312,126 @@ async function getAllBOMs(req, res) {
   }
 }
 
+async function deleteBillOfMaterials(req, res) {
+  const t = await models.sequelize.transaction();
+  try {
+    const { id } = req.body;
+
+    if (!id) {
+      await t.rollback();
+      return res
+        .status(400)
+        .json({ message: "id (BOM primary key) is required" });
+    }
+
+    const bom = await models.BOMDetails.findOne({
+      where: { id },
+      transaction: t,
+    });
+
+    if (!bom) {
+      await t.rollback();
+      return res.status(404).json({ message: "BOM not found" });
+    }
+
+    const bomIdString = bom.bomId;
+
+    await Promise.all([
+      models.BOMAttachments.destroy({
+        where: { BOMID: bomIdString },
+        transaction: t,
+      }),
+      models.BOMAdditionalCharges.destroy({
+        where: { bomId: id },
+        transaction: t,
+      }),
+      models.BOMScrapMaterial.destroy({ where: { bomId: id }, transaction: t }),
+      models.BOMRawMaterial.destroy({ where: { bomId: id }, transaction: t }),
+      models.BOMFinishedGoods.destroy({ where: { bomId: id }, transaction: t }),
+      models.BOMProductionProcess.destroy({
+        where: { bomId: id },
+        transaction: t,
+      }),
+    ]);
+
+    await models.BOMDetails.destroy({ where: { id }, transaction: t });
+
+    await t.commit();
+    return res.status(200).json({
+      message: "BOM and all related records deleted successfully.",
+    });
+  } catch (error) {
+    await t.rollback();
+    console.error("Error deleting BOM:", error);
+    return res.status(500).json({
+      message: "Failed to delete BOM.",
+      error: error.message,
+    });
+  }
+}
+
+async function editBillOfMaterials(req, res) {
+  try {
+    const { id } = req.params;
+
+    if (!id) {
+      return res.status(400).json({ message: "BOM id is required" });
+    }
+
+    const bom = await BOMDetails.findOne({
+      where: { id },
+      include: [
+        {
+          model: BOMAttachments,
+          as: "attachments",
+          attributes: ["id", "BOMID", "attachmentName", "companyId", "userId"],
+        },
+        {
+          model: BOMProductionProcess,
+          as: "BOMProductionProcesses",
+          include: [
+            {
+              model: require("../models").ProductionProcess,
+              attributes: ["processCode", "processName", "plannedTime", "cost"],
+            },
+          ],
+        },
+        {
+          model: BOMFinishedGoods,
+          as: "finishedGoods",
+        },
+        {
+          model: BOMRawMaterial,
+          as: "rawMaterials",
+        },
+        {
+          model: BOMScrapMaterial,
+          as: "scrapMaterials",
+        },
+        {
+          model: BOMAdditionalCharges,
+          as: "additionalCharges",
+        },
+      ],
+    });
+
+    if (!bom) {
+      return res.status(404).json({ message: "BOM not found" });
+    }
+
+    return res.status(200).json({
+      message: "BOM fetched successfully for edit",
+      data: bom,
+    });
+  } catch (error) {
+    console.error("Error in editBillOfMaterials:", error);
+    return res.status(500).json({
+      message: "Failed to fetch BOM for edit",
+      error: error.message,
+    });
+  }
+}
+
 module.exports = {
   createBOMDetails: createBOMDetails,
   updateBOMDetails: updateBOMDetails,
@@ -319,4 +439,6 @@ module.exports = {
   deleteBOMDetails: deleteBOMDetails,
   getBOMById: getBOMById,
   getAllBOMs: getAllBOMs,
+  deleteBillOfMaterials: deleteBillOfMaterials,
+  editBillOfMaterials: editBillOfMaterials,
 };

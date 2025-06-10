@@ -85,25 +85,74 @@ async function getAllBOMAdditionalCharges(req, res) {
   }
 }
 
-// UPDATE - Update additional charge by ID
 async function updateBOMAdditionalCharge(req, res) {
   try {
-    const { id } = req.params;
+    const { bomId, companyId, userId, charges } = req.body;
 
-    const updated = await models.BOMAdditionalCharges.update(req.body, {
-      where: { id },
-    });
-
-    if (updated[0] === 0) {
-      return res
-        .status(404)
-        .json({ message: "Additional charge not found or no changes made" });
+    if (!bomId || !Array.isArray(charges)) {
+      return res.status(400).json({ message: "Invalid request data" });
     }
 
-    res.status(200).json({ message: "Additional charge updated successfully" });
+    // Fetch existing charges for this BOM
+    const existing = await models.BOMAdditionalCharges.findAll({
+      where: { bomId },
+      attributes: ["id"],
+    });
+
+    const existingIds = existing.map((row) => row.id);
+    const incomingIds = charges
+      .filter((item) => item.id)
+      .map((item) => Number(item.id));
+
+    const toUpdate = charges.filter((item) => item.id);
+    const toCreate = charges.filter((item) => !item.id);
+    const toDelete = existingIds.filter((id) => !incomingIds.includes(id));
+
+    // Delete removed charges
+    if (toDelete.length) {
+      await models.BOMAdditionalCharges.destroy({
+        where: { id: toDelete },
+      });
+    }
+
+    // Update existing charges
+    await Promise.all(
+      toUpdate.map((item) =>
+        models.BOMAdditionalCharges.update(
+          {
+            chargesName: item.chargesName,
+            amount: item.amount,
+            status: item.status,
+            updatedBy: userId,
+            updatedAt: new Date(),
+          },
+          { where: { id: item.id } }
+        )
+      )
+    );
+
+    // Create new charges
+    if (toCreate.length) {
+      const payload = toCreate.map((item) => ({
+        bomId,
+        companyId,
+        userId,
+        chargesName: item.chargesName,
+        amount: item.amount,
+        status: item.status,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }));
+
+      await models.BOMAdditionalCharges.bulkCreate(payload);
+    }
+
+    return res.status(200).json({
+      message: "Additional charges synchronized successfully",
+    });
   } catch (error) {
-    console.error("Update Error:", error);
-    res
+    console.error("Upsert Error:", error);
+    return res
       .status(500)
       .json({ message: "Something went wrong!", error: error.message });
   }
