@@ -1,4 +1,5 @@
 const models = require("../models");
+const { Op } = require('sequelize');
 
 async function createBOMDetails(req, res) {
   const t = await models.sequelize.transaction();
@@ -432,6 +433,52 @@ async function editBillOfMaterials(req, res) {
   }
 }
 
+async function getAllItemsBoms(req, res) {
+  try {
+    const { companyId } = req.body;
+
+    const finishedGoods = await models.BOMFinishedGoods.findAll({
+      where: {
+        companyId: Number(companyId)
+      }
+    });
+
+    const bomIds = finishedGoods.map(finishGood => finishGood.bomId);
+
+    const bomDetails = await models.BOMDetails.findAll({
+      where: {
+        companyId,
+        id: {
+          [Op.in]: bomIds
+        }
+      },
+      raw: true
+    });
+
+    const bomDetailsMap = bomDetails?.reduce((acc, current) => {
+      acc[current.id] = current;
+      return acc;
+    }, {});
+
+    const bomItems = {};
+    for (const finishedGood of finishedGoods) {
+      if (bomItems[finishedGood?.itemId]) {
+        bomItems[finishedGood?.itemId].push(bomDetailsMap[finishedGood.bomId]);
+      }
+      else {
+        bomItems[finishedGood?.itemId] = [bomDetailsMap[finishedGood.bomId]];
+      }
+    }
+
+    res.status(200).json({bomItems,message:'Items Bom fetched.'});
+  } catch (error) {
+    res.status(500).json({
+      message: "Failed to retrieve BOM details.",
+      error: error?.message || 'Something went wrong.',
+    });
+  }
+}
+
 module.exports = {
   createBOMDetails: createBOMDetails,
   updateBOMDetails: updateBOMDetails,
@@ -441,4 +488,5 @@ module.exports = {
   getAllBOMs: getAllBOMs,
   deleteBillOfMaterials: deleteBillOfMaterials,
   editBillOfMaterials: editBillOfMaterials,
+  getAllItemsBoms: getAllItemsBoms
 };
