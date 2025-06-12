@@ -29,7 +29,6 @@ module.exports = (sequelize, DataTypes) => {
       processCode: {
         type: DataTypes.STRING,
         allowNull: false,
-        unique: true,
       },
       processName: {
         type: DataTypes.STRING,
@@ -67,6 +66,12 @@ module.exports = (sequelize, DataTypes) => {
       sequelize,
       modelName: "ProductionProcess",
       tableName: "ProductionProcess",
+      indexes: [
+      {
+        unique: true,
+        fields: ['processCode', 'companyId'],
+      },
+    ],
     }
   );
 

@@ -15,7 +15,7 @@ async function createProductionProcess(req, res) {
     } = req.body;
 
     const existingProcess = await models.ProductionProcess.findOne({
-      where: { processCode },
+      where: { processCode, companyId },
     });
     if (existingProcess) {
       return res.status(409).json({ message: "Process ID already exists!" });

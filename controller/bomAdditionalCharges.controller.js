@@ -49,6 +49,24 @@ async function createBOMAdditionalCharges(req, res) {
           where: { id: bomId },
         }),
       ]);
+
+      const bomSeries = await models.BOMSeries.findOne({
+        where: {
+          companyId,
+          default: 1,
+        },
+      });
+
+      if (bomSeries) {
+        await models.BOMSeries.update(
+          { nextNumber: bomSeries.nextNumber + 1 },
+          {
+            where: {
+              id: bomSeries.id,
+            },
+          }
+        );
+      }
     }
 
     res.status(201).json({
@@ -170,6 +188,23 @@ async function updateBOMAdditionalCharge(req, res) {
           where: { id: bomId },
         }),
       ]);
+      const bomSeries = await models.BOMSeries.findOne({
+        where: {
+          companyId,
+          default: 1,
+        },
+      });
+
+      if (bomSeries) {
+        await models.BOMSeries.update(
+          { nextNumber: bomSeries.nextNumber + 1 },
+          {
+            where: {
+              id: bomSeries.id,
+            },
+          }
+        );
+      }
     }
 
     return res.status(200).json({
