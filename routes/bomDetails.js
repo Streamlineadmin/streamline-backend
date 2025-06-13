@@ -9,5 +9,7 @@ router.post('/deleteBOMDetails', bomDetailsController.deleteBOMDetails);
 router.post('/getBOMById', bomDetailsController.getBOMById);
 router.post('/getAllBOMs', bomDetailsController.getAllBOMs);
 router.post('/getAllItemsBoms', bomDetailsController.getAllItemsBoms);
+router.post('/deleteBillOfMaterials', bomDetailsController.deleteBillOfMaterials);
+router.post('/editBillOfMaterials', bomDetailsController.editBillOfMaterials);
 
 module.exports = router;

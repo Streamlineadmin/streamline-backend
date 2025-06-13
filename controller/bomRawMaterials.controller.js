@@ -63,28 +63,77 @@ async function getAllBOMRawMaterials(req, res) {
   }
 }
 
-// UPDATE - Update a raw material by ID
 async function updateBOMRawMaterial(req, res) {
   try {
-    const { id } = req.params;
+    const { bomId, rawMaterials, userId, companyId, status } = req.body;
 
-    const [updatedCount] = await models.BOMRawMaterial.update(req.body, {
-      where: { id },
+    if (!bomId || !Array.isArray(rawMaterials)) {
+      return res.status(400).json({ message: "Missing required data" });
+    }
+
+    const existing = await models.BOMRawMaterial.findAll({
+      where: { bomId },
+      attributes: ["id"],
     });
+    const existingIds = existing.map((row) => row.id);
+    const incomingIds = rawMaterials
+      .filter((item) => item.id)
+      .map((item) => Number(item.id));
 
-    if (updatedCount === 0) {
-      return res.status(404).json({
-        message: "Raw material not found or no changes made.",
+    const toUpdate = rawMaterials.filter((item) => item.id);
+    const toCreate = rawMaterials.filter((item) => !item.id);
+    const toDelete = existingIds.filter((id) => !incomingIds.includes(id));
+
+    if (toDelete.length) {
+      await models.BOMRawMaterial.destroy({
+        where: { id: toDelete },
       });
     }
 
+    await Promise.all(
+      toUpdate.map((item) =>
+        models.BOMRawMaterial.update(
+          {
+            itemId: item.itemId,
+            itemName: item.itemName,
+            uom: item.UOM,
+            quantity: item.quantity,
+            store: item.store,
+            costAllocation: item.costAllocation,
+            status,
+            updatedAt: new Date(),
+          },
+          { where: { id: item.id } }
+        )
+      )
+    );
+
+    if (toCreate.length) {
+      const payload = toCreate.map((item) => ({
+        bomId,
+        itemId: item.itemId,
+        itemName: item.itemName,
+        uom: item.UOM,
+        quantity: item.quantity,
+        store: item.store,
+        costAllocation: item.costAllocation,
+        userId,
+        companyId,
+        status,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }));
+
+      await models.BOMRawMaterial.bulkCreate(payload);
+    }
+
     return res.status(200).json({
-      message: "Raw material updated successfully.",
+      message: "Raw materials synchronized successfully",
     });
   } catch (error) {
-    console.error("Update Error:", error);
+    console.error("Upsert Error:", error);
     return res.status(500).json({
-      message: "Failed to update raw material.",
+      message: "Something went wrong!",
       error: error.message,
     });
   }

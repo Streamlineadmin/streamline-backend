@@ -70,31 +70,66 @@ async function getBOMProductionProcesses(req, res) {
 
 async function updateBOMProductionProcess(req, res) {
   try {
-    const { bomId, processIds } = req.body;
-    if (!bomId || !Array.isArray(processIds)) {
+    const { bomId, processes, companyId, userId, status } = req.body;
+
+    if (!bomId || !Array.isArray(processes)) {
       return res
         .status(400)
-        .json({ message: "bomId and processIds[] are required" });
+        .json({ message: "Missing or invalid bomId or processes" });
     }
-    // Remove old links
-    await BOMProductionProcess.destroy({ where: { bomId } });
-    // Create new links
-    const payload = processIds.map((procId, idx) => ({
-      bomId,
-      processId: procId,
-      sequence: idx + 1,
-    }));
-    const result = await BOMProductionProcess.bulkCreate(payload, {
-      validate: true,
+
+    const existingProcesses = await models.BOMProductionProcess.findAll({
+      where: { bomId, companyId },
     });
-    return res
-      .status(200)
-      .json({ message: "BOM processes updated", data: result });
+
+    const existingProcessIds = existingProcesses.map((p) => p.processId);
+    const newProcessIds = processes.map((p) => p.processId);
+
+    const toAdd = processes
+      .map((p, index) => ({
+        ...p,
+        sequence: index + 1,
+      }))
+      .filter((p) => !existingProcessIds.includes(p.processId));
+
+    const toDelete = existingProcesses.filter(
+      (p) => !newProcessIds.includes(p.processId)
+    );
+
+    if (toAdd.length > 0) {
+      await models.BOMProductionProcess.bulkCreate(
+        toAdd.map((process) => ({
+          bomId,
+          processId: process.processId,
+          companyId,
+          status,
+          userId,
+          sequence: process.sequence,
+        }))
+      );
+    }
+
+    if (toDelete.length > 0) {
+      const deleteIds = toDelete.map((p) => p.id);
+      await models.BOMProductionProcess.destroy({
+        where: { id: deleteIds },
+      });
+    }
+
+    res.status(200).json({
+      message: "BOM processes updated successfully with sequence",
+      added: toAdd.map((p) => ({
+        processId: p.processId,
+        sequence: p.sequence,
+      })),
+      deleted: toDelete.map((p) => p.processId),
+    });
   } catch (error) {
-    console.error(error);
-    return res
-      .status(500)
-      .json({ message: "Internal Server Error", error: error.message });
+    console.error("Error updating BOM processes:", error);
+    res.status(500).json({
+      message: "Failed to update BOM processes",
+      error: error.message,
+    });
   }
 }
 

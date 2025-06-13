@@ -63,22 +63,72 @@ async function getAllBOMFinishedGoods(req, res) {
   }
 }
 
-// UPDATE (single or multiple)
 async function updateBOMFinishedGood(req, res) {
   try {
-    const { id } = req.params;
-    const updated = await models.BOMFinishedGoods.update(req.body, {
-      where: { id },
-    });
+    const { bomId, finishedGoods, userId, companyId, status } = req.body;
 
-    if (updated[0] === 0) {
-      return res.status(404).json({ message: "Item not found or no changes" });
+    if (!bomId || !finishedGoods || !Array.isArray(finishedGoods)) {
+      return res.status(400).json({ message: "Missing required data" });
+    }
+    const existing = await models.BOMFinishedGoods.findAll({
+      where: { bomId },
+      attributes: ["id"],
+    });
+    const existingIds = existing.map((row) => row.id);
+    const incomingIds = finishedGoods
+      .filter((item) => item.id)
+      .map((item) => Number(item.id));
+
+    const toUpdate = finishedGoods.filter((item) => item.id);
+    const toCreate = finishedGoods.filter((item) => !item.id);
+    const toDelete = existingIds.filter((id) => !incomingIds.includes(id));
+    if (toDelete.length) {
+      await models.BOMFinishedGoods.destroy({
+        where: { id: toDelete },
+      });
+    }
+    await Promise.all(
+      toUpdate.map((item) =>
+        models.BOMFinishedGoods.update(
+          {
+            itemId: item.itemId,
+            itemName: item.itemName,
+            uom: item.UOM,
+            quantity: item.quantity,
+            store: item.store,
+            costAllocation: item.costAllocation,
+            status,
+            updatedAt: new Date(),
+          },
+          { where: { id: item.id } }
+        )
+      )
+    );
+
+    if (toCreate.length) {
+      const payload = toCreate.map((item) => ({
+        bomId,
+        itemId: item.itemId,
+        itemName: item.itemName,
+        uom: item.UOM,
+        quantity: item.quantity,
+        store: item.store,
+        costAllocation: item.costAllocation,
+        userId,
+        companyId,
+        status,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }));
+      await models.BOMFinishedGoods.bulkCreate(payload);
     }
 
-    res.status(200).json({ message: "Updated successfully" });
+    return res.status(200).json({
+      message: "Finished goods synchronized successfully",
+    });
   } catch (error) {
-    console.error("Update Error:", error);
-    res
+    console.error("Upsert Error:", error);
+    return res
       .status(500)
       .json({ message: "Something went wrong!", error: error.message });
   }
