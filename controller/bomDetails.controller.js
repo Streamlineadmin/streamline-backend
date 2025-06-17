@@ -79,57 +79,75 @@ async function getBOMDetails(req, res) {
   }
 }
 
-function updateBOMDetails(req, res) {
-  const bomId = req.body.bomId;
-  const companyId = req.body.companyId;
-  const updatedBOMDetails = {
-    bomName: req.body.bomName,
-    status: req.body.status,
-    bomDescription: req.body.bomDescription,
-    companyId: req.body.companyId,
-    userId: req.body.userId,
-  };
+async function updateBOMDetails(req, res) {
+  const t = await models.sequelize.transaction();
+  try {
+    const { bomId, bomName, status, bomDescription, companyId, userId } =
+      req.body;
 
-  models.BOMDetails.findOne({
-    where: {
-      bomName: req.body.bomName,
-      companyId,
-      id: { [models.Sequelize.Op.ne]: bomId },
-    },
-  })
-    .then((existingBOM) => {
-      if (existingBOM) {
-        return res.status(409).json({
-          message: "BOM name already exists for this company!",
-        });
-      } else {
-        models.BOMDetails.update(updatedBOMDetails, { where: { id: bomId } })
-          .then((result) => {
-            if (result[0] > 0) {
-              res.status(200).json({
-                message: "BOM details updated successfully",
-                post: updatedBOMDetails,
-              });
-            } else {
-              res.status(404).json({
-                message: "BOM details not found",
-              });
-            }
-          })
-          .catch((error) => {
-            res.status(500).json({
-              message: "Something went wrong, please try again later!",
-              error: error.message || error,
-            });
-          });
-      }
-    })
-    .catch((error) => {
-      res.status(500).json({
-        message: "Something went wrong, please try again later!",
-        error: error.message || error,
-      });
+    if (!bomId || !companyId) {
+      await t.rollback();
+      return res
+        .status(400)
+        .json({ message: "bomId and companyId are required" });
+    }
+
+    // Check if BOM entry exists
+    const existingBOM = await models.BOMDetails.findOne({
+      where: { bomId, companyId },
+      transaction: t,
     });
+
+    if (!existingBOM) {
+      await t.rollback();
+      return res.status(404).json({ message: "BOM not found" });
+    }
+
+    // Check for duplicate BOM name within company, excluding current bomId
+    const duplicateName = await models.BOMDetails.findOne({
+      where: {
+        bomName,
+        companyId,
+        bomId: { [models.Sequelize.Op.ne]: bomId },
+      },
+      transaction: t,
+    });
+
+    if (duplicateName) {
+      await t.rollback();
+      return res
+        .status(409)
+        .json({ message: "BOM name already exists for this company!" });
+    }
+
+    // Update BOM
+    await models.BOMDetails.update(
+      {
+        bomName,
+        status,
+        bomDescription,
+        companyId,
+        userId,
+      },
+      {
+        where: { bomId, companyId },
+        transaction: t,
+      }
+    );
+
+    await t.commit();
+    return res.status(200).json({
+      message: "BOM details updated successfully",
+      post: { bomId, bomName, status, bomDescription, companyId, userId },
+    });
+  } catch (error) {
+    await t.rollback();
+    console.error("Update BOM Error:", error);
+    return res.status(500).json({
+      message: "Something went wrong while updating BOM details!",
+      error: error.message || error,
+    });
+  }
 }
 
 function deleteBOMDetails(req, res) {
@@ -295,6 +313,126 @@ async function getAllBOMs(req, res) {
   }
 }
 
+async function deleteBillOfMaterials(req, res) {
+  const t = await models.sequelize.transaction();
+  try {
+    const { id } = req.body;
+
+    if (!id) {
+      await t.rollback();
+      return res
+        .status(400)
+        .json({ message: "id (BOM primary key) is required" });
+    }
+
+    const bom = await models.BOMDetails.findOne({
+      where: { id },
+      transaction: t,
+    });
+
+    if (!bom) {
+      await t.rollback();
+      return res.status(404).json({ message: "BOM not found" });
+    }
+
+    const bomIdString = bom.bomId;
+
+    await Promise.all([
+      models.BOMAttachments.destroy({
+        where: { BOMID: bomIdString },
+        transaction: t,
+      }),
+      models.BOMAdditionalCharges.destroy({
+        where: { bomId: id },
+        transaction: t,
+      }),
+      models.BOMScrapMaterial.destroy({ where: { bomId: id }, transaction: t }),
+      models.BOMRawMaterial.destroy({ where: { bomId: id }, transaction: t }),
+      models.BOMFinishedGoods.destroy({ where: { bomId: id }, transaction: t }),
+      models.BOMProductionProcess.destroy({
+        where: { bomId: id },
+        transaction: t,
+      }),
+    ]);
+
+    await models.BOMDetails.destroy({ where: { id }, transaction: t });
+
+    await t.commit();
+    return res.status(200).json({
+      message: "BOM and all related records deleted successfully.",
+    });
+  } catch (error) {
+    await t.rollback();
+    console.error("Error deleting BOM:", error);
+    return res.status(500).json({
+      message: "Failed to delete BOM.",
+      error: error.message,
+    });
+  }
+}
+
+async function editBillOfMaterials(req, res) {
+  try {
+    const { id } = req.params;
+
+    if (!id) {
+      return res.status(400).json({ message: "BOM id is required" });
+    }
+
+    const bom = await BOMDetails.findOne({
+      where: { id },
+      include: [
+        {
+          model: BOMAttachments,
+          as: "attachments",
+          attributes: ["id", "BOMID", "attachmentName", "companyId", "userId"],
+        },
+        {
+          model: BOMProductionProcess,
+          as: "BOMProductionProcesses",
+          include: [
+            {
+              model: require("../models").ProductionProcess,
+              attributes: ["processCode", "processName", "plannedTime", "cost"],
+            },
+          ],
+        },
+        {
+          model: BOMFinishedGoods,
+          as: "finishedGoods",
+        },
+        {
+          model: BOMRawMaterial,
+          as: "rawMaterials",
+        },
+        {
+          model: BOMScrapMaterial,
+          as: "scrapMaterials",
+        },
+        {
+          model: BOMAdditionalCharges,
+          as: "additionalCharges",
+        },
+      ],
+    });
+
+    if (!bom) {
+      return res.status(404).json({ message: "BOM not found" });
+    }
+
+    return res.status(200).json({
+      message: "BOM fetched successfully for edit",
+      data: bom,
+    });
+  } catch (error) {
+    console.error("Error in editBillOfMaterials:", error);
+    return res.status(500).json({
+      message: "Failed to fetch BOM for edit",
+      error: error.message,
+    });
+  }
+}
+
 async function getAllItemsBoms(req, res) {
   try {
     const { companyId } = req.body;
@@ -348,5 +486,7 @@ module.exports = {
   deleteBOMDetails: deleteBOMDetails,
   getBOMById: getBOMById,
   getAllBOMs: getAllBOMs,
+  deleteBillOfMaterials: deleteBillOfMaterials,
+  editBillOfMaterials: editBillOfMaterials,
   getAllItemsBoms: getAllItemsBoms
 };

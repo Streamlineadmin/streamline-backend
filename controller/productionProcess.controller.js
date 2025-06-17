@@ -15,7 +15,7 @@ async function createProductionProcess(req, res) {
     } = req.body;
 
     const existingProcess = await models.ProductionProcess.findOne({
-      where: { processCode },
+      where: { processCode, companyId },
     });
     if (existingProcess) {
       return res.status(409).json({ message: "Process ID already exists!" });
@@ -68,7 +68,7 @@ async function getAllProductionProcesses(req, res) {
 // Get a single Production Process by ID
 async function getProductionProcessById(req, res) {
   try {
-    const { id } = req.params;
+    const { id } = req.body;
     const process = await models.ProductionProcess.findOne({ where: { id } });
 
     if (!process) {
@@ -87,7 +87,7 @@ async function getProductionProcessById(req, res) {
 // Update a Production Process
 async function updateProductionProcess(req, res) {
   try {
-    const { id } = req.params;
+    const { id } = req.body;
     const {
       processCode,
       processName,
@@ -137,7 +137,7 @@ async function updateProductionProcess(req, res) {
 // Delete a Production Process
 async function deleteProductionProcess(req, res) {
   try {
-    const { id } = req.params;
+    const { id } = req.body;
 
     const process = await models.ProductionProcess.findOne({ where: { id } });
 

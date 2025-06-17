@@ -58,27 +58,83 @@ async function getAllBOMScrapMaterials(req, res) {
   }
 }
 
-// UPDATE - Update scrap material by ID
 async function updateBOMScrapMaterial(req, res) {
   try {
-    const { id } = req.params;
+    const { bomId, scrapLogs, userId, companyId } = req.body;
 
-    const updated = await models.BOMScrapMaterial.update(req.body, {
-      where: { id },
-    });
-
-    if (updated[0] === 0) {
-      return res
-        .status(404)
-        .json({ message: "Scrap material not found or no changes made" });
+    if (!bomId || !Array.isArray(scrapLogs)) {
+      return res.status(400).json({ message: "Missing required data" });
     }
 
-    res.status(200).json({ message: "Scrap material updated successfully" });
+    const existing = await models.BOMScrapMaterial.findAll({
+      where: { bomId },
+      attributes: ["id"],
+    });
+
+    const existingIds = existing.map((row) => row.id);
+    const incomingIds = scrapLogs
+      .filter((item) => item.id)
+      .map((item) => Number(item.id));
+
+    const toUpdate = scrapLogs.filter((item) => item.id);
+    const toCreate = scrapLogs.filter((item) => !item.id);
+    const toDelete = existingIds.filter((id) => !incomingIds.includes(id));
+
+    // DELETE
+    if (toDelete.length) {
+      await models.BOMScrapMaterial.destroy({
+        where: { id: toDelete },
+      });
+    }
+
+    // UPDATE
+    await Promise.all(
+      toUpdate.map((item) =>
+        models.BOMScrapMaterial.update(
+          {
+            itemId: item.itemId,
+            itemName: item.itemName,
+            uom: item.uom,
+            quantity: item.quantity,
+            store: item.store,
+            costAllocationPercent: item.costAllocation,
+            status: item.status,
+            updatedAt: new Date(),
+          },
+          { where: { id: item.id } }
+        )
+      )
+    );
+
+    // CREATE
+    if (toCreate.length) {
+      const payload = toCreate.map((item) => ({
+        bomId,
+        itemId: item.itemId,
+        itemName: item.itemName,
+        uom: item.uom,
+        quantity: item.quantity,
+        store: item.store,
+        costAllocation: item.costAllocation,
+        status: item.status,
+        companyId,
+        userId,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }));
+
+      await models.BOMScrapMaterial.bulkCreate(payload);
+    }
+
+    return res.status(200).json({
+      message: "Scrap materials synchronized successfully",
+    });
   } catch (error) {
     console.error("Update Error:", error);
-    res
-      .status(500)
-      .json({ message: "Something went wrong!", error: error.message });
+    return res.status(500).json({
+      message: "Something went wrong!",
+      error: error.message,
+    });
   }
 }
 
