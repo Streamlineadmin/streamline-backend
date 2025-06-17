@@ -17,7 +17,8 @@ documentTypes = {
     purchaseReturn: 'Purchase Return',
     serviceChallan: 'Service Challan',
     serviceGrn: 'Service Grn',
-    serviceQr: 'Service Qr'
+    serviceQr: 'Service Qr',
+    salesOrder: 'Sales Order'
 };
 
 const salesDocuments = [

@@ -298,7 +298,7 @@ async function getItems(req, res) {
         const itemIds = items.map(item => item.id);
 
         const storeItems = await models.StoreItems.findAll({
-            where: { itemId: itemIds, isRejected: false, price: { [Op.gt]: 0 } },
+            where: { itemId: itemIds, isRejected: false,  },
             attributes: ['itemId', 'storeId', 'quantity'],
             raw: true
         });
