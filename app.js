@@ -40,6 +40,7 @@ const bomFinishedGoodsRoutes = require('./routes/bomFinishedGoods');
 const bomRawMaterialsRoutes = require('./routes/bomRawMaterials');
 const bomScrapMaterialsRoutes = require('./routes/bomScrapmaterials');
 const bomAdditionalChargesRoutes = require('./routes/bomAdditionalCharges');
+const prouctionRoutes = require('./routes/production');
 
 const app = express();
 
@@ -100,5 +101,6 @@ app.use('/bomFinishedGoods', bomFinishedGoodsRoutes);
 app.use('/bomRawMaterials', bomRawMaterialsRoutes);
 app.use('/bomScrapMaterials', bomScrapMaterialsRoutes);
 app.use('/bomAdditionalCharges', bomAdditionalChargesRoutes);
+app.use('/production', prouctionRoutes);
 
 module.exports = app;
