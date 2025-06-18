@@ -22,51 +22,22 @@ async function createBOMAdditionalCharges(req, res) {
       updatedAt: new Date(),
     }));
 
-    const createdCharges = await models.BOMAdditionalCharges.bulkCreate(
-      payload
-    );
+    const createdCharges = await models.BOMAdditionalCharges.bulkCreate(payload);
 
-    const isFinalSave = charges.some((item) => item.status === 1);
+    const isFinalSave = charges.some((item) => item.status == 1);
+    const isDraftSave = charges.every((item) => item.status == 0);
 
-    if (isFinalSave) {
-      const updateStatusPayload = { status: 1 };
+    if (isFinalSave || isDraftSave) {
+      const updateStatusPayload = { status: isFinalSave ? 1 : 0 };
 
       await Promise.all([
         models.BOMRawMaterial.update(updateStatusPayload, { where: { bomId } }),
-        models.BOMFinishedGoods.update(updateStatusPayload, {
-          where: { bomId },
-        }),
-        models.BOMScrapMaterial.update(updateStatusPayload, {
-          where: { bomId },
-        }),
-        models.BOMProductionProcess.update(updateStatusPayload, {
-          where: { bomId },
-        }),
-        models.BOMAdditionalCharges.update(updateStatusPayload, {
-          where: { bomId },
-        }),
-        models.BOMDetails.update(updateStatusPayload, {
-          where: { id: bomId },
-        }),
+        models.BOMFinishedGoods.update(updateStatusPayload, { where: { bomId } }),
+        models.BOMScrapMaterial.update(updateStatusPayload, { where: { bomId } }),
+        models.BOMProductionProcess.update(updateStatusPayload, { where: { bomId } }),
+        models.BOMAdditionalCharges.update(updateStatusPayload, { where: { bomId } }),
+        models.BOMDetails.update(updateStatusPayload, { where: { id: bomId } }),
       ]);
-
-      const bomSeries = await models.BOMSeries.findOne({
-        where: {
-          companyId,
-          default: 1,
-        },
-      });
-
-      if (bomSeries) {
-        await models.BOMSeries.update(
-          { nextNumber: bomSeries.nextNumber + 1 },
-          {
-            where: {
-              id: bomSeries.id,
-            },
-          }
-        );
-      }
     }
 
     res.status(201).json({
@@ -75,11 +46,13 @@ async function createBOMAdditionalCharges(req, res) {
     });
   } catch (error) {
     console.error("Create Error:", error);
-    res
-      .status(500)
-      .json({ message: "Something went wrong!", error: error.message });
+    res.status(500).json({
+      message: "Something went wrong!",
+      error: error.message,
+    });
   }
 }
+
 
 async function getAllBOMAdditionalCharges(req, res) {
   try {
@@ -111,16 +84,14 @@ async function updateBOMAdditionalCharge(req, res) {
       return res.status(400).json({ message: "Invalid request data" });
     }
 
-    // Fetch existing charges for this BOM
+    // Fetch existing charges
     const existing = await models.BOMAdditionalCharges.findAll({
       where: { bomId },
       attributes: ["id"],
     });
 
     const existingIds = existing.map((row) => row.id);
-    const incomingIds = charges
-      .filter((item) => item.id)
-      .map((item) => Number(item.id));
+    const incomingIds = charges.filter((item) => item.id).map((item) => Number(item.id));
 
     const toUpdate = charges.filter((item) => item.id);
     const toCreate = charges.filter((item) => !item.id);
@@ -133,7 +104,7 @@ async function updateBOMAdditionalCharge(req, res) {
       });
     }
 
-    // Update existing charges
+    // Update existing
     await Promise.all(
       toUpdate.map((item) =>
         models.BOMAdditionalCharges.update(
@@ -149,7 +120,7 @@ async function updateBOMAdditionalCharge(req, res) {
       )
     );
 
-    // Create new charges
+    // Create new
     if (toCreate.length) {
       const payload = toCreate.map((item) => ({
         bomId,
@@ -165,46 +136,20 @@ async function updateBOMAdditionalCharge(req, res) {
       await models.BOMAdditionalCharges.bulkCreate(payload);
     }
 
-    const isFinalSave = charges.some((item) => item.status === 1);
+    const isFinalSave = charges.some((item) => item.status == 1);
+    const isDraftSave = charges.every((item) => item.status == 0);
 
-    if (isFinalSave) {
-      const updateStatusPayload = { status: 1 };
+    if (isFinalSave || isDraftSave) {
+      const updateStatusPayload = { status: isFinalSave ? 1 : 0 };
 
       await Promise.all([
         models.BOMRawMaterial.update(updateStatusPayload, { where: { bomId } }),
-        models.BOMFinishedGoods.update(updateStatusPayload, {
-          where: { bomId },
-        }),
-        models.BOMScrapMaterial.update(updateStatusPayload, {
-          where: { bomId },
-        }),
-        models.BOMProductionProcess.update(updateStatusPayload, {
-          where: { bomId },
-        }),
-        models.BOMAdditionalCharges.update(updateStatusPayload, {
-          where: { bomId },
-        }),
-        models.BOMDetails.update(updateStatusPayload, {
-          where: { id: bomId },
-        }),
+        models.BOMFinishedGoods.update(updateStatusPayload, { where: { bomId } }),
+        models.BOMScrapMaterial.update(updateStatusPayload, { where: { bomId } }),
+        models.BOMProductionProcess.update(updateStatusPayload, { where: { bomId } }),
+        models.BOMAdditionalCharges.update(updateStatusPayload, { where: { bomId } }),
+        models.BOMDetails.update(updateStatusPayload, { where: { id: bomId } }),
       ]);
-      const bomSeries = await models.BOMSeries.findOne({
-        where: {
-          companyId,
-          default: 1,
-        },
-      });
-
-      if (bomSeries) {
-        await models.BOMSeries.update(
-          { nextNumber: bomSeries.nextNumber + 1 },
-          {
-            where: {
-              id: bomSeries.id,
-            },
-          }
-        );
-      }
     }
 
     return res.status(200).json({
@@ -217,6 +162,7 @@ async function updateBOMAdditionalCharge(req, res) {
       .json({ message: "Something went wrong!", error: error.message });
   }
 }
+
 
 // DELETE - Delete additional charge by ID
 async function deleteBOMAdditionalCharge(req, res) {
