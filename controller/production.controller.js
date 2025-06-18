@@ -142,7 +142,10 @@ async function getProductions(req, res) {
         const salesDocuments = await models.Documents.findAll({
             where: {
                 companyId: Number(companyId),
-                documentType: documentTypes.salesOrder
+                documentType: documentTypes.salesOrder,
+                status: {
+                    [Op.notIn]: [0, 2]
+                }
             },
             raw: true,
             order: [['createdAt', 'DESC']]
