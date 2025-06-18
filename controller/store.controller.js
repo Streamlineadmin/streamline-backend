@@ -105,7 +105,6 @@ function editStore(req, res) {
     });
 }
 
-
 async function deleteStore(req, res) {
   const storeId = req.body.storeId;
   const store = await models.Store.findOne({
@@ -572,7 +571,6 @@ async function getItemStockTransferHistory(req, res) {
   }
 }
 
-
 async function getStockTransferHistory(req, res) {
   const { companyId } = req.body; // Extract companyId from the payload
 
@@ -691,7 +689,6 @@ async function getStockTransferHistory(req, res) {
   }
 }
 
-
 async function getStoreItemsByStoreId(req, res) {
   const { storeId, isRejected = false } = req.body;
   if (!storeId) return res.status(404).json({ message: "Store Not found." });
@@ -778,33 +775,41 @@ async function getStoreItemsByStoreId(req, res) {
   }
 }
 
-
 async function getAllStoreItemsByStoresID(req, res) {
   let { storeIds, isRejected } = req.body;
 
   try {
-    // If no storeIds provided, fetch all store IDs
+    // Step 1: Get all store IDs if not provided
     if (!Array.isArray(storeIds) || storeIds.length === 0) {
       const stores = await models.Store.findAll({ attributes: ['id'] });
       storeIds = stores.map(s => s.id);
     }
 
-    // Build filter: always include storeIds, optionally filter on isRejected
+    // Step 2: Build filter
     const whereClause = { storeId: storeIds };
-    if (typeof isRejected === 'boolean') whereClause.isRejected = isRejected;
+    if (typeof isRejected === 'boolean') {
+      whereClause.isRejected = isRejected;
+    }
 
-    // Fetch items and UOM data in parallel
+    // Step 3: Fetch storeItems and UOMs
     const [storeItems, uomData] = await Promise.all([
       models.StoreItems.findAll({ where: whereClause }),
       models.UOM.findAll()
     ]);
 
-    // Map UOM IDs to codes
+    if (storeItems.length === 0) {
+      const emptyResponse = storeIds.map(id => ({ storeId: id, storeItems: [] }));
+      return res.status(200).json({ data: emptyResponse });
+    }
+
+    // Step 4: Prepare maps
     const uomMap = new Map(uomData.map(u => [u.id, u.code]));
 
-    // Aggregate quantity by storeId and itemId
+    // Aggregate quantities and prepare unique itemIds for batch queries
     const aggregated = {};
-    storeItems.forEach(si => {
+    const itemIdsSet = new Set();
+
+    for (const si of storeItems) {
       const key = `${si.storeId}_${si.itemId}_${si.isRejected}`;
       if (!aggregated[key]) {
         aggregated[key] = {
@@ -815,34 +820,142 @@ async function getAllStoreItemsByStoresID(req, res) {
         };
       }
       aggregated[key].quantity += si.quantity;
-    });
+      itemIdsSet.add(si.itemId);
+    }
 
+    // Step 5: Batch fetch Items and AlternateUnits
+    const [items, alternateUnits] = await Promise.all([
+      models.Items.findAll({ where: { id: Array.from(itemIdsSet) } }),
+      models.AlternateUnits.findAll({ where: { itemId: Array.from(itemIdsSet) } })
+    ]);
+
+    // Map items and their alternate units
+    const itemMap = new Map();
+    for (const item of items) {
+      itemMap.set(item.id, item.toJSON());
+    }
+
+    const altUnitMap = new Map();
+    for (const alt of alternateUnits) {
+      if (!altUnitMap.has(alt.itemId)) altUnitMap.set(alt.itemId, []);
+      altUnitMap.get(alt.itemId).push({
+        ...alt.dataValues,
+        code: uomMap.get(alt.alternateUnits) || null
+      });
+    }
+
+    // Step 6: Build final result by storeId
     const resultByStore = {};
     for (const entry of Object.values(aggregated)) {
       const { storeId, itemId, quantity, isRejected } = entry;
       if (!resultByStore[storeId]) resultByStore[storeId] = [];
 
-      const item = await models.Items.findByPk(itemId);
-      let alternateUnits = [];
-      if (item) {
-        const altUnits = await models.AlternateUnits.findAll({ where: { itemId } });
-        alternateUnits = altUnits.map(au => ({
-          ...au.dataValues,
-          code: uomMap.get(au.alternateUnits) || null
-        }));
-        item.alternateUnit = alternateUnits;
-      }
-      resultByStore[storeId].push({
-        item: item || { id: itemId, message: 'Item not found' },
-        quantity,
-        isRejected
-      });
+      const item = itemMap.get(itemId) || { id: itemId, message: 'Item not found' };
+      item.alternateUnit = altUnitMap.get(itemId) || [];
+
+      resultByStore[storeId].push({ item, quantity, isRejected });
     }
-    const response = storeIds.map(id => ({ storeId: id, storeItems: resultByStore[id] || [] }));
+
+    // Step 7: Return data per store
+    const response = storeIds.map(id => ({
+      storeId: id,
+      storeItems: resultByStore[id] || []
+    }));
+
     return res.status(200).json({ data: response });
   } catch (error) {
     console.error('Error in getAllStoreItemsByStoresID:', error);
     return res.status(500).json({ message: 'Something went wrong.', error: error.message });
+  }
+}
+
+
+async function getAllStoresWithItems(req, res) {
+  const { storeIds, isRejected = false } = req.body;
+  if (!storeIds?.length) return res.status(404).json({ message: "Store Not found." });
+
+  try {
+    const storeItemsData = [];
+    for (const storeId of storeIds) {
+      // Fetch StoreItems and UOMs
+      const [storeItemsRaw, uomData] = await Promise.all([
+        models.StoreItems.findAll({
+          where: { storeId, isRejected },
+          raw: true
+        }),
+        models.UOM.findAll({ raw: true })
+      ]);
+
+      // Map UOM IDs to codes
+      const uomMap = uomData.reduce((map, uom) => {
+        map[uom.id] = uom.code;
+        return map;
+      }, {});
+
+      const itemQuantityMap = {};
+      const itemPriceMap = {};
+      const uniqueStoreItems = {};
+
+      for (const item of storeItemsRaw) {
+        const itemId = item.itemId;
+        const quantity = item.quantity;
+        const price = item.price;
+
+        // Aggregate quantity and price
+        itemQuantityMap[itemId] = (itemQuantityMap[itemId] || 0) + quantity;
+        if (quantity > 0) {
+          itemPriceMap[itemId] = (itemPriceMap[itemId] || 0) + (price * quantity);
+        }
+
+        // Store one instance of each item
+        if (!uniqueStoreItems[itemId]) {
+          uniqueStoreItems[itemId] = item;
+        }
+      }
+
+      const itemIds = Object.keys(uniqueStoreItems);
+
+      // Fetch item data and alternate units in bulk
+      const [itemsData, alternateUnitsData] = await Promise.all([
+        models.Items.findAll({
+          where: { id: itemIds },
+          raw: true
+        }),
+        models.AlternateUnits.findAll({
+          where: { itemId: itemIds },
+          raw: true
+        })
+      ]);
+
+      // Map alternate units by itemId
+      const alternateUnitsMap = alternateUnitsData.reduce((acc, unit) => {
+        const itemId = unit.itemId;
+        const unitWithCode = { ...unit, code: uomMap[unit.alternateUnits] || null };
+        acc[itemId] = acc[itemId] || [];
+        acc[itemId].push(unitWithCode);
+        return acc;
+      }, {});
+
+      // Build final store items
+      const storeItems = itemIds.map(itemId => {
+        const baseItem = uniqueStoreItems[itemId];
+        return {
+          ...baseItem,
+          quantity: itemQuantityMap[itemId],
+          averagePrice: itemPriceMap[itemId] || 0,
+          itemId: {
+            ...itemsData.find(item => item.id === Number(itemId)),
+            alternateUnit: alternateUnitsMap[itemId] || []
+          }
+        };
+      });
+      storeItemsData.push(storeItems);
+    }
+    return res.status(200).json({ storeItemsData });
+
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ message: "Something went wrong." });
   }
 }
 
@@ -858,4 +971,5 @@ module.exports = {
   getStockTransferHistory: getStockTransferHistory,
   getStoreItemsByStoreId: getStoreItemsByStoreId,
   getAllStoreItemsByStoresID: getAllStoreItemsByStoresID,
+  getAllStoresWithItems: getAllStoresWithItems
 };
