@@ -99,7 +99,7 @@ async function startProduction(req, res) {
 
             const bulkProcess = process.map((data) => {
 
-                const [hours, minutes, seconds] = data.plannedTime.split(":").map(Number);
+                const [hours, minutes, seconds] = !data?.plannedTime ? [0, 0, 0] : data?.plannedTime?.split(":")?.map(Number);
                 const totalMinutes = hours * 60 + minutes;
                 const miniute = (productions[index]?.quantity) * (totalMinutes / finishedGoods[0]?.quantity);
                 const totalSeconds = miniute * 60;
