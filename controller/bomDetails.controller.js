@@ -38,6 +38,24 @@ async function createBOMDetails(req, res) {
       await models.BOMAttachments.bulkCreate(bulkData, { transaction: t });
     }
 
+    const bomSeries = await models.BOMSeries.findOne({
+            where: {
+              companyId,
+              default: 1,
+            },
+          });
+    
+          if (bomSeries) {
+            await models.BOMSeries.update(
+              { nextNumber: bomSeries.nextNumber + 1 },
+              {
+                where: {
+                  id: bomSeries.id,
+                },
+              }
+            );
+          }
+          
     await t.commit();
     return res
       .status(201)
@@ -135,10 +153,16 @@ async function updateBOMDetails(req, res) {
       }
     );
 
+    const updatedDetail = await models.BOMDetails.findOne({
+      where: { bomId, companyId },
+      include: [{ model: models.BOMAttachments, as: "attachments" }],
+      transaction: t,
+    });
+
     await t.commit();
     return res.status(200).json({
       message: "BOM details updated successfully",
-      post: { bomId, bomName, status, bomDescription, companyId, userId },
+      post: updatedDetail,
     });
   } catch (error) {
     await t.rollback();
