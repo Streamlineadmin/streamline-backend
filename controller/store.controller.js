@@ -451,7 +451,9 @@ async function getItemStockTransferHistory(req, res) {
         'comment',
         'price',
         'documentNumber',
-        'documentType'
+        'documentType',
+        'productionId',
+        'productionNavigationId'
       ],
       order: [['createdAt', 'ASC']], // Order by date for cumulative calculations
       raw: true,  // Ensures data is returned as plain objects
@@ -554,7 +556,9 @@ async function getItemStockTransferHistory(req, res) {
         comment: transfer.comment,
         price: transfer.price,
         documentNumber: transfer.documentNumber || '',
-        documentType: transfer.documentType || ''
+        documentType: transfer.documentType || '',
+        'productionId': transfer?.productionId || '',
+        'productionNavigationId': transfer?.productionNavigationId || ''
       };
     });
 

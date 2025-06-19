@@ -270,6 +270,11 @@ async function getProductionById(req, res) {
 async function issueRawMaterial(req, res) {
     try {
         const { rawMaterialData, companyId } = req.body;
+        const production = await models.Production.findOne({
+            where: {
+                id: rawMaterialData[0]?.productionId
+            }
+        });
         for (const element of rawMaterialData) {
             const store = await models.Store.findOne({
                 where: {
@@ -311,7 +316,9 @@ async function issueRawMaterial(req, res) {
                     transferDate: new Date().toISOString(),
                     transferredBy: companyId,
                     companyId,
-                    price: stock.price
+                    price: stock.price,
+                    productionId: production.productionId,
+                    productionNavigationId: production.id
                 });
                 price += (stock.price * deductQty);
             }
@@ -410,6 +417,11 @@ async function updateCost(req, res) {
 async function updateScrapLogs(req, res) {
     try {
         const { scrapLogs, companyId } = req.body;
+        const production = await models.Production.findOne({
+            where: {
+                id: scrapLogs[0]?.productionId
+            }
+        });
         for (const element of scrapLogs) {
             await models.ProductionScrapMaterials.update({ producedQuantity: (element?.producedQuantity || 0) + element.value }, {
                 where: {
@@ -448,7 +460,9 @@ async function updateScrapLogs(req, res) {
                 transferDate: new Date().toISOString(),
                 transferredBy: Number(companyId),
                 companyId: Number(companyId),
-                price: 0
+                price: 0,
+                productionId: production.productionId,
+                productionNavigationId: production.id
             });
 
         }
@@ -477,6 +491,12 @@ async function saveFinishedGoods(req, res) {
             rejectQty,
             companyId
         } = req.body;
+
+        const production = await models.Production.findOne({
+            where: {
+                id: finishedGoods[0]?.productionId
+            }
+        });
 
         let total = 0;
 
@@ -536,7 +556,9 @@ async function saveFinishedGoods(req, res) {
             transferDate: new Date().toISOString(),
             transferredBy: companyId,
             companyId,
-            price: costPerUnit
+            price: costPerUnit,
+            productionId: production.productionId,
+            productionNavigationId: production.id
         }, { transaction });
 
         if (rejectQty) {
@@ -560,7 +582,9 @@ async function saveFinishedGoods(req, res) {
                 transferredBy: companyId,
                 companyId,
                 price: 0,
-                isRejected: true
+                isRejected: true,
+                productionId: production.productionId,
+                productionNavigationId: production.id
             }, { transaction });
         }
 

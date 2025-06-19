@@ -1,47 +1,56 @@
 const models = require('../models');
 const documentseries = require('../models/documentseries');
 
-function addDocumentSeries(req, res) {
-    // Check if team name already exists for the given company
-    models.DocumentSeries.findOne({ where: { DocType: req.body.docType, prefix: req.body.series, companyId: req.body.companyId } }).then(documentseries => {
-        if (documentseries) {
+async function addDocumentSeries(req, res) {
+    try {
+        const existingSeries = await models.DocumentSeries.findOne({
+            where: {
+                DocType: req.body.docType,
+                prefix: req.body.series,
+                companyId: req.body.companyId
+            }
+        });
+
+        if (existingSeries) {
             return res.status(409).json({
                 message: "Document series already exists!",
             });
-        } else {
-            // Document series not exist, proceed to create
-            const series = {
-                DocType: req.body.docType,
-                seriesName: req.body.seriesName,
-                prefix: req.body.series,
-                number: req.body.number,
-                companyId: req.body.companyId,
-                default: req.body.default,
-                nextNumber: req.body.nextNumber,
-                status: 1,
-                ip_address: req.body.ip_address,
-                createdBy: req.body.userId
-            };
-
-            models.DocumentSeries.create(series).then(result => {
-                res.status(201).json({
-                    message: "Document series added successfully",
-                    post: result
-                });
-            }).catch(error => {
-                res.status(500).json({
-                    message: "Something went wrong, please try again later!",
-                    error: error
-                });
-            });
         }
-    }).catch(error => {
-        res.status(500).json({
-            message: "Something went wrong, please try again later!",
-            error: error
+
+        const exist = await models.DocumentSeries.findAll({
+            where: {
+                companyId: req.body.companyId,
+                DocType: req.body.docType,
+            }
         });
-    });
+
+        const series = {
+            DocType: req.body.docType,
+            seriesName: req.body.seriesName,
+            prefix: req.body.series,
+            number: req.body.number,
+            companyId: req.body.companyId,
+            default: !exist.length ? 1 : req.body.default,
+            nextNumber: req.body.nextNumber,
+            status: 1,
+            ip_address: req.body.ip_address,
+            createdBy: req.body.userId
+        };
+
+        const result = await models.DocumentSeries.create(series);
+
+        return res.status(201).json({
+            message: "Document series added successfully",
+            post: result
+        });
+    } catch (error) {
+        return res.status(500).json({
+            message: "Something went wrong, please try again later!",
+            error: error.message || error
+        });
+    }
 }
+
 
 function editDocumentSeries(req, res) {
     const DocType = req.body.docType;
