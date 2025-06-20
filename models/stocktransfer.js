@@ -31,11 +31,13 @@ module.exports = (sequelize, DataTypes) => {
     actualPrice: DataTypes.FLOAT,
     documentNumber: DataTypes.STRING,
     documentType: DataTypes.STRING,
-    isRejected: DataTypes.BOOLEAN
+    isRejected: DataTypes.BOOLEAN,
+    productionId: DataTypes.STRING,
+    productionNavigationId: DataTypes.INTEGER
   }, {
     sequelize,
     modelName: 'StockTransfer',
   });
-  
+
   return StockTransfer;
 };

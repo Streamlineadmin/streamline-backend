@@ -1,6 +1,6 @@
 const models = require("../models");
 
-function addAddress(req, res) {
+async function addAddress(req, res) {
   const { addressType, companyId, ip_address, addressLineOne, addressLineTwo, pinCode, city, state, country } = req.body;
 
   // Define the common data for both addresses
@@ -13,22 +13,26 @@ function addAddress(req, res) {
     city,
     state,
     country,
-    status: 1,
   };
 
   // Prepare an array for storing the promises of address creation
   const addressPromises = [];
 
   // Check for addressType and insert accordingly
+  let type = addressType.includes(2) ? 2 : 1;
+  const exist = await models.Addresses.findOne({
+    where:
+      { companyId: Number(companyId), addressType: type }
+  });
   if (addressType.includes(1)) {
     // Create delivery address
-    const deliveryAddress = { ...baseAddress, addressType: 1 }; // Delivery Address
+    const deliveryAddress = { ...baseAddress, addressType: 1, status: exist ? 1 : 0 }; // Delivery Address
     addressPromises.push(models.Addresses.create(deliveryAddress));
   }
 
   if (addressType.includes(2)) {
     // Create billing address
-    const billingAddress = { ...baseAddress, addressType: 2 }; // Billing Address
+    const billingAddress = { ...baseAddress, addressType: 2, status: exist ? 1 : 0 }; // Billing Address
     addressPromises.push(models.Addresses.create(billingAddress));
   }
 
@@ -167,7 +171,7 @@ async function setDefaultAddress(req, res) {
       // Set all addresses of the same type and company as normal (status: 1)
       await models.Addresses.update(
         { status: 1 }, // Non-default (normal)
-        { 
+        {
           where: { companyId, addressType, status: 0 }, // Update only default addresses of this type
           transaction
         }

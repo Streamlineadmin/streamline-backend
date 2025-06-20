@@ -435,13 +435,13 @@ async function addBulkItem(req, res) {
             if (item["Sub Category"] && !subCategory) {
                 err += "Sub Category Not Found. ";
             }
-            if (item["Sub Category"] && category.id != subCategory.parentId) {
+            if (item["Sub Category"] && category?.id != subCategory?.parentId) {
                 err += "Sub Category Not Found under this Category. "
             }
             if (item["Micro Category"] && !microCategory) {
                 err += "Micro Category Not Found. ";
             }
-            if (item["Micro Category"] && subCategory.id != microCategory.parentId) {
+            if (item["Micro Category"] && subCategory?.id != microCategory?.parentId) {
                 err += "Micro Category Not Found under this Sub Category. "
             }
 

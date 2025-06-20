@@ -1002,7 +1002,7 @@ async function createDocument(req, res) {
           }
         });
         const existingStock = await models.StoreItems.findAll({
-          where: { storeId: storeId.id, itemId: item.id },
+          where: { storeId: storeId?.id, itemId: item?.id },
           order: [['createdAt', 'ASC']],
         });
         for (const stock of existingStock) {
