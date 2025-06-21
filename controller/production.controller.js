@@ -5,16 +5,17 @@ const models = require('../models');
 
 async function startProduction(req, res) {
     try {
-        const { companyId, productions } = req.body;
+        const { companyId, productions, mto } = req.body;
         const bulkProduction = productions.map(production => ({
             companyId: Number(companyId),
             productionId: generateProductionId(),
-            documentNumber: production.documentNumber,
+            documentNumber: production?.documentNumber,
             bomId: production.bomId,
             productionEndDate: production.productionEndDate,
             assignedTo: production.assignedTo,
             createdBy: Number(companyId),
-            status: 1
+            status: 1,
+            mto: mto ?? 0
         }));
         const bulkProductions = await models.Production.bulkCreate(bulkProduction);
         const bulkProductionItems = bulkProductions.map((production, index) => ({
@@ -153,9 +154,6 @@ async function getProductions(req, res) {
         const salesDocumentsId = salesDocuments.map(doc => doc.documentNumber);
         const productions = await models.Production.findAll({
             where: {
-                documentNumber: {
-                    [Op.in]: salesDocumentsId
-                },
                 companyId: Number(companyId)
             },
             raw: true
@@ -179,7 +177,7 @@ async function getProductions(req, res) {
             element.items = itemsMap[element.documentNumber] || [];
         }
         const productionsIds = productions.map(prod => prod.id);
-        const productionItems = await models.ProductionItems.findAll({
+        const productionItems = await models.ProductionFinishedGoods.findAll({
             where: {
                 productionId: {
                     [Op.in]: productionsIds
@@ -218,8 +216,17 @@ async function getProductions(req, res) {
                 items.push(item);
             }
         }
+        const manualProductions = [];
+        for (const element of productions) {
+            if (!element.documentNumber) {
+                manualProductions.push({
+                    items: [{ production: element }]
+                });
+            }
+        }
 
-        return res.status(200).json({ salesDocuments });
+        return res.status(200).json({ salesDocuments: [...manualProductions, ...salesDocuments,] });
+
 
     } catch (error) {
         res.status(500).json({ message: 'Something went wrong' });
@@ -237,7 +244,7 @@ async function getProductionById(req, res) {
             raw: true
         });
         const [salesOrder, productionItem, bom, scrapLogs, rawMaterials, finishedGoods, process, additionalCharges] = await Promise.all([
-            models.Documents.findOne({ where: { documentNumber: production.documentNumber } }),
+            models.Documents.findOne({ where: { documentNumber: production?.documentNumber || '' } }),
             models.ProductionItems.findOne({ where: { productionId: production.id } }),
             models.BOMDetails.findOne({ where: { id: production.bomId } }),
             models.ProductionScrapMaterials.findAll({ where: { productionId: production.id } }),
@@ -667,7 +674,10 @@ async function saveFinishedGoods(req, res) {
 async function updateProductionStatus(req, res) {
     const { productionId, status } = req.body;
     try {
-        await models.Production.update({ status }, {
+        await models.Production.update({
+            status, ...(status == 2 ? { productionStartDate: new Date().toISOString() } : {}),
+            ...(status == 4 ? { productionCompletionDate: new Date().toISOString() } : {})
+        }, {
             where: {
                 id: productionId
             }
@@ -713,6 +723,7 @@ async function saveProduction(req, res) {
         });
     }
 }
+
 
 module.exports = {
     startProduction: startProduction,

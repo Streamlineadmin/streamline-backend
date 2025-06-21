@@ -14,6 +14,9 @@ module.exports = (sequelize, DataTypes) => {
         bomId: DataTypes.INTEGER,
         productionEndDate: DataTypes.STRING,
         assignedTo: DataTypes.INTEGER,
+        productionStartDate: DataTypes.STRING,
+        productionCompletionDate: DataTypes.STRING,
+        mto: DataTypes.INTEGER,
         createdBy: DataTypes.INTEGER,
         ip_address: DataTypes.STRING,
         status: DataTypes.INTEGER
