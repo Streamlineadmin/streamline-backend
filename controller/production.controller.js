@@ -724,6 +724,473 @@ async function saveProduction(req, res) {
     }
 }
 
+async function materialPlanning(req, res) {
+    try {
+        const { companyId, items } = req.body;
+        const itemIds = items.map(item => item.itemId);
+
+        // Fetch all items for the company and map by itemId
+        const allItems = await models.Items.findAll({
+            where: { companyId: Number(companyId) },
+            raw: true,
+        });
+        const allItemsMap = Object.fromEntries(allItems.map(item => [item.itemId, item]));
+
+        // Map of required quantities from request
+        const requiredItemsMap = Object.fromEntries(items.map(item => [item.itemId, item.quantity]));
+
+        // Fetch all BOM finished goods for itemIds
+        const bomFinishedGoods = await models.BOMFinishedGoods.findAll({
+            where: { itemId: itemIds },
+            raw: true,
+        });
+
+        // Get latest BOM by itemId (assuming sorted by createdAt)
+        const latestBomFinishedGoods = {};
+        bomFinishedGoods.forEach(bom => {
+            if (!latestBomFinishedGoods[bom.itemId] || new Date(bom.createdAt) > new Date(latestBomFinishedGoods[bom.itemId].createdAt)) {
+                latestBomFinishedGoods[bom.itemId] = bom;
+            }
+        });
+
+        const latestBomFinishedGoodsIds = Object.values(latestBomFinishedGoods).map(bom => bom.bomId);
+
+        const bomIdToItemIdMap = Object.fromEntries(
+            Object.values(latestBomFinishedGoods).map(bom => [bom.bomId, bom.itemId])
+        );
+
+        // Fetch BOM raw materials for latest BOMs
+        const bomRawMaterials = await models.BOMRawMaterial.findAll({
+            where: { bomId: latestBomFinishedGoodsIds },
+            raw: true,
+        });
+
+        // Map BOM raw materials by itemId (finished goods itemId)
+        const bomRawMaterialsMap = {};
+        for (const material of bomRawMaterials) {
+            const itemId = bomIdToItemIdMap[material.bomId];
+            if (!bomRawMaterialsMap[itemId]) bomRawMaterialsMap[itemId] = [];
+            bomRawMaterialsMap[itemId].push(material);
+        }
+
+        // Calculate required raw material quantities
+        const requiredRawMaterials = {};
+        for (const finishedItemId in latestBomFinishedGoods) {
+            const finishedBom = latestBomFinishedGoods[finishedItemId];
+            const rawMaterials = bomRawMaterialsMap[finishedItemId] || [];
+            const requiredQty = requiredItemsMap[finishedItemId];
+
+            for (const material of rawMaterials) {
+                const qtyPerUnit = material.quantity / finishedBom.quantity;
+                requiredRawMaterials[material.itemId] = (requiredRawMaterials[material.itemId] || 0) + (requiredQty * qtyPerUnit);
+            }
+        }
+
+        // Get distinct raw material items
+        const rawMaterialItems = Array.from(new Set(bomRawMaterials.map(material => material.itemId)))
+            .map(itemId => allItemsMap[itemId])
+            .filter(Boolean);
+
+        const itemsPid = rawMaterialItems.map(item => item.id);
+        const itemsPidMap = Object.fromEntries(rawMaterialItems.map(item => [item.id, item]));
+
+        // Fetch store stock
+        const storeItems = await models.StoreItems.findAll({
+            where: {
+                itemId: itemsPid,
+                isRejected: false,
+            },
+            raw: true,
+        });
+
+        // Calculate current stock
+        const currentStockMap = {};
+        for (const storeItem of storeItems) {
+            const rawItemId = itemsPidMap[storeItem.itemId]?.itemId;
+            if (!rawItemId) continue;
+            if (storeItem.quantity > 0) {
+                currentStockMap[rawItemId] = (currentStockMap[rawItemId] || 0) + storeItem.quantity;
+            }
+        }
+
+        const productions = await models.Production.findAll({
+            where: {
+                companyId: Number(companyId)
+            },
+            raw: true
+        });
+
+        const productionIds = productions.map(pro => pro.id);
+
+        const productionRawMaterials = await models.ProductionRawMaterials.findAll({
+            where: {
+                productionId: productionIds
+            },
+            raw: true
+        });
+
+        const rawMaterialQueueMap = productionRawMaterials?.reduce((acc, curr) => {
+            acc[curr.itemId] = (acc[curr.itemId] || 0) + Math.max((curr.quantity - ((curr.consumedQuantity || 0) + (curr.issuedQuantity || 0))), 0);
+            return acc;
+        });
+
+        const purchaseOrders = await models.Documents.findAll({
+            where: {
+                documentType: documentTypes.purchaseOrder,
+                companyId: Number(companyId),
+                status: {
+                    [Op.in]: [1, 4]
+                }
+            },
+            raw: true
+        });
+
+        const purchaseOrdersNumber = purchaseOrders.map(po => po.documentNumber);
+        const grns = await models.Documents.findAll({
+            where: {
+                companyId: Number(companyId),
+                documentType: documentTypes.goodsReceive,
+                purchaseOrderNumber: purchaseOrdersNumber
+            },
+            raw: true
+        });
+
+        const latestGrnsMap = {};
+        for (const element of grns) {
+            latestGrnsMap[element.purchaseOrderNumber] = element;
+        }
+
+        const grnNumbers = Object.values(latestGrnsMap)?.map(grn => grn.documentNumber);
+        const documentItems = await models.DocumentItems.findAll({
+            where: {
+                companyId: Number(companyId),
+                documentNumber: grnNumbers
+            }
+        });
+
+        const purchaseQuantityInQueue = documentItems?.reduce((acc, curr) => {
+            acc[curr.itemId] = (acc?.[curr.itemId] || 0) + Math.max(((curr.pendingQuantity || 0) * (curr?.conversionFactor || 1)), 0);
+            return acc;
+        }, {});
+
+
+        // Prepare final material planning output
+        const mergedMap = {}
+        bomRawMaterials.forEach(material => {
+            const itemId = material.itemId;
+
+            if (!mergedMap[itemId]) {
+                mergedMap[itemId] = {
+                    ...material,
+                    requiredQty: requiredRawMaterials[itemId] || 0,
+                    minStock: allItemsMap[itemId]?.minStock || 0,
+                    currentStock: currentStockMap[itemId] || 0,
+                    wip: rawMaterialQueueMap[itemId] || 0,
+                    poQuantityInQueue: purchaseQuantityInQueue[itemId] || 0
+                };
+            } else {
+                // Merge logic for duplicate itemId
+                mergedMap[itemId].requiredQty += requiredRawMaterials[itemId] || 0;
+            }
+        });
+
+        const finalArray = Object.values(mergedMap);
+
+        return res.status(200).json({ materialPlanningData: finalArray });
+    } catch (error) {
+        console.error("Transaction Error:", error);
+        return res.status(500).json({
+            message: "Failed to Get Material Planning Production.",
+        });
+    }
+}
+
+async function bomBasedMaterialPlanning(req, res) {
+    try {
+        const { companyId, data } = req.body;
+        const bomDetails = await models.BOMDetails.findOne({
+            where: { id: data.bomId }
+        });
+
+        const bomFinishedGoods = await models.BOMFinishedGoods.findOne({
+            where: { bomId: data.bomId },
+            raw: true
+        });
+        const bomRawMaterial = await models.BOMRawMaterial.findAll({
+            where: {
+                bomId: data.bomId
+            },
+            raw: true
+        });
+
+        const requiredQtyMap = {};
+        for (const element of bomRawMaterial) {
+            const perUnitQtyRequired = element.quantity / bomFinishedGoods.quantity;
+            requiredQtyMap[element.itemId] = data.quantity * perUnitQtyRequired;
+        }
+
+        const items = await models.Items.findAll({
+            where: {
+                companyId: Number(companyId),
+                itemId: Object.keys(requiredQtyMap)
+            },
+            raw: true
+        });
+
+        const itemIds = items.map(item => item.id);
+
+        const itemMap = items.reduce((acc, curr) => {
+            acc[curr.itemId] = curr;
+            return acc;
+        }, {});
+
+        const itemToPIdMap = items?.reduce((acc, curr) => {
+            acc[curr.id] = curr.itemId;
+            return acc;
+        }, {});
+
+        const storeItems = await models.StoreItems.findAll({
+            where: {
+                itemId: itemIds,
+                isRejected: false,
+            },
+            raw: true,
+        });
+
+        const availableStockMap = storeItems?.reduce((acc, curr) => {
+            if (curr.quantity > 0) acc[itemToPIdMap[curr.itemId]] = (acc[itemToPIdMap[curr.itemId]] ?? 0) + curr.quantity;
+            return acc;
+        }, {});
+
+        const productions = await models.Production.findAll({
+            where: {
+                companyId: Number(companyId)
+            }
+        });
+
+        const productionIds = productions.map(prod => prod.id);
+        const productionRawmaterials = await models.ProductionRawMaterials.findAll({
+            where: {
+                productionId: productionIds,
+                itemId: Object.keys(itemMap)
+            }
+        });
+
+        const rawMaterialQueueMap = productionRawmaterials?.reduce((acc, curr) => {
+            acc[curr.itemId] = (acc[curr.itemId] || 0) + Math.max((curr.quantity - ((curr.consumedQuantity || 0) + (curr.issuedQuantity || 0))), 0);
+            return acc;
+        }, {});
+
+        const purchaseOrders = await models.Documents.findAll({
+            where: {
+                documentType: documentTypes.purchaseOrder,
+                companyId: Number(companyId),
+                status: {
+                    [Op.in]: [1, 4]
+                }
+            },
+            raw: true
+        });
+
+        const purchaseOrdersNumber = purchaseOrders.map(po => po.documentNumber);
+        const grns = await models.Documents.findAll({
+            where: {
+                companyId: Number(companyId),
+                documentType: documentTypes.goodsReceive,
+                purchaseOrderNumber: purchaseOrdersNumber
+            },
+            raw: true
+        });
+
+        const latestGrnsMap = {};
+        for (const element of grns) {
+            latestGrnsMap[element.purchaseOrderNumber] = element;
+        }
+
+        const grnNumbers = Object.values(latestGrnsMap)?.map(grn => grn.documentNumber);
+        const documentItems = await models.DocumentItems.findAll({
+            where: {
+                companyId: Number(companyId),
+                documentNumber: grnNumbers
+            }
+        });
+
+        const purchaseQuantityInQueue = documentItems?.reduce((acc, curr) => {
+            acc[curr.itemId] = (acc?.[curr.itemId] || 0) + Math.max(((curr.pendingQuantity || 0) * (curr?.conversionFactor || 1)), 0);
+            return acc;
+        }, {});
+
+        const finalArray = bomRawMaterial.map(material => ({
+            ...material,
+            requiredQty: requiredQtyMap[material.itemId] || 0,
+            minStock: itemMap[material.itemId]?.minStock || 0,
+            currentStock: availableStockMap[material.itemId] || 0,
+            wip: rawMaterialQueueMap[material.itemId] || 0,
+            poQuantityInQueue: purchaseQuantityInQueue[material.itemId] || 0
+        }));
+        return res.status(200).json({ materialPlanningData: finalArray });
+    } catch (error) {
+        console.error("Transaction Error:", error);
+        return res.status(500).json({
+            message: "Failed to Get Material Planning Production.",
+        });
+    }
+}
+
+async function getProductionsByCompanyId(req, res) {
+    try {
+        const { companyId } = req.body;
+        const productions = await models.Production.findAll({
+            where: {
+                companyId: Number(companyId)
+            },
+            raw: true
+        });
+        res.status(200).json({ productions });
+    } catch (error) {
+        console.error("Transaction Error:", error);
+        return res.status(500).json({
+            message: "Failed to Get Material Planning Production.",
+        });
+    }
+}
+
+async function productionBasedMaterialPlanning(req, res) {
+    try {
+        const { companyId, productionsIds } = req.body;
+
+
+        const productionRawMaterials = await models.ProductionRawMaterials.findAll({
+            where: { productionId: productionsIds },
+            raw: true
+        });
+
+
+        const requiredQtyMap = {};
+        for (const element of productionRawMaterials) {
+            requiredQtyMap[element.itemId] = (requiredQtyMap[element.itemId] || 0) + Math.max((element.quantity - (element.issuedQuantity + element.consumedQuantity)));
+        }
+
+        const items = await models.Items.findAll({
+            where: {
+                companyId: Number(companyId),
+                itemId: Object.keys(requiredQtyMap)
+            },
+            raw: true
+        });
+
+        const itemIds = items.map(item => item.id);
+
+        const itemMap = items.reduce((acc, curr) => {
+            acc[curr.itemId] = curr;
+            return acc;
+        }, {});
+
+        const itemToPIdMap = items?.reduce((acc, curr) => {
+            acc[curr.id] = curr.itemId;
+            return acc;
+        }, {});
+
+        const storeItems = await models.StoreItems.findAll({
+            where: {
+                itemId: itemIds,
+                isRejected: false,
+            },
+            raw: true,
+        });
+
+        const availableStockMap = storeItems?.reduce((acc, curr) => {
+            if (curr.quantity > 0) acc[itemToPIdMap[curr.itemId]] = (acc[itemToPIdMap[curr.itemId]] ?? 0) + curr.quantity;
+            return acc;
+        }, {});
+
+        const productions = await models.Production.findAll({
+            where: {
+                companyId: Number(companyId)
+            }
+        });
+
+        const productionIds = productions?.filter(prod => !productionsIds?.includes(prod.id)).map(prod => prod.id);
+        const productionRawmaterials = await models.ProductionRawMaterials.findAll({
+            where: {
+                productionId: productionIds,
+                itemId: Object.keys(itemMap)
+            }
+        });
+
+        const rawMaterialQueueMap = productionRawmaterials?.reduce((acc, curr) => {
+            acc[curr.itemId] = (acc[curr.itemId] || 0) + Math.max((curr.quantity - ((curr.consumedQuantity || 0) + (curr.issuedQuantity || 0))), 0);
+            return acc;
+        }, {});
+
+        const purchaseOrders = await models.Documents.findAll({
+            where: {
+                documentType: documentTypes.purchaseOrder,
+                companyId: Number(companyId),
+                status: {
+                    [Op.in]: [1, 4]
+                }
+            },
+            raw: true
+        });
+
+        const purchaseOrdersNumber = purchaseOrders.map(po => po.documentNumber);
+        const grns = await models.Documents.findAll({
+            where: {
+                companyId: Number(companyId),
+                documentType: documentTypes.goodsReceive,
+                purchaseOrderNumber: purchaseOrdersNumber
+            },
+            raw: true
+        });
+
+        const latestGrnsMap = {};
+        for (const element of grns) {
+            latestGrnsMap[element.purchaseOrderNumber] = element;
+        }
+
+        const grnNumbers = Object.values(latestGrnsMap)?.map(grn => grn.documentNumber);
+        const documentItems = await models.DocumentItems.findAll({
+            where: {
+                companyId: Number(companyId),
+                documentNumber: grnNumbers
+            }
+        });
+
+        const purchaseQuantityInQueue = documentItems?.reduce((acc, curr) => {
+            acc[curr.itemId] = (acc?.[curr.itemId] || 0) + Math.max(((curr.pendingQuantity || 0) * (curr?.conversionFactor || 1)), 0);
+            return acc;
+        }, {});
+
+        const mergedMap = {};
+
+        productionRawMaterials.forEach(material => {
+            const itemId = material.itemId;
+
+            if (!mergedMap[itemId]) {
+                mergedMap[itemId] = {
+                    ...material,
+                    requiredQty: requiredQtyMap[itemId] || 0,
+                    minStock: itemMap[itemId]?.minStock || 0,
+                    currentStock: availableStockMap[itemId] || 0,
+                    wip: rawMaterialQueueMap[itemId] || 0,
+                    poQuantityInQueue: purchaseQuantityInQueue[itemId] || 0
+                };
+            } else {
+                // If already exists, just accumulate requiredQty
+                mergedMap[itemId].requiredQty += requiredQtyMap[itemId] || 0;
+            }
+        });
+
+        const finalArray = Object.values(mergedMap);
+        return res.status(200).json({ materialPlanningData: finalArray });
+    } catch (error) {
+        console.error("Transaction Error:", error);
+        return res.status(500).json({
+            message: "Failed to Get Material Planning Production.",
+        });
+    }
+}
 
 module.exports = {
     startProduction: startProduction,
@@ -735,5 +1202,9 @@ module.exports = {
     updateScrapLogs: updateScrapLogs,
     saveFinishedGoods: saveFinishedGoods,
     updateProductionStatus: updateProductionStatus,
-    saveProduction: saveProduction
+    saveProduction: saveProduction,
+    materialPlanning: materialPlanning,
+    bomBasedMaterialPlanning: bomBasedMaterialPlanning,
+    getProductionsByCompanyId: getProductionsByCompanyId,
+    productionBasedMaterialPlanning: productionBasedMaterialPlanning
 }

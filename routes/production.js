@@ -12,5 +12,9 @@ router.post('/updateScrapLogs', productionController.updateScrapLogs);
 router.post('/saveFinishedGoods', productionController.saveFinishedGoods);
 router.post('/updateProductionStatus', productionController.updateProductionStatus);
 router.post('/saveProduction', productionController.saveProduction);
+router.post('/materialPlanning', productionController.materialPlanning);
+router.post('/bomBasedMaterialPlanning', productionController.bomBasedMaterialPlanning);
+router.post('/getProductionsByCompanyId', productionController.getProductionsByCompanyId);
+router.post('/productionBasedMaterialPlanning', productionController.productionBasedMaterialPlanning);
 
 module.exports = router;
