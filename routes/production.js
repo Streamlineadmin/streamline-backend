@@ -16,5 +16,6 @@ router.post('/materialPlanning', productionController.materialPlanning);
 router.post('/bomBasedMaterialPlanning', productionController.bomBasedMaterialPlanning);
 router.post('/getProductionsByCompanyId', productionController.getProductionsByCompanyId);
 router.post('/productionBasedMaterialPlanning', productionController.productionBasedMaterialPlanning);
+router.post('/updateTable', productionController.updateTable);
 
 module.exports = router;
