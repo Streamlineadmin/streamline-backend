@@ -1194,46 +1194,54 @@ async function productionBasedMaterialPlanning(req, res) {
 
 async function updateTable(req, res) {
     try {
-        const { companyId, chargesName, amount, itemId, plannedQty, updateTableType, productionId, itemName, store, uom, processName, description, plannedTime } = req.body;
+        const { companyId, data, chargesName, amount, updateTableType, productionId, processName, description, plannedTime } = req.body;
         if (updateTableType === 'Raw Material') {
-            await models.ProductionRawMaterials.create({
-                productionId,
-                itemId,
-                itemName,
-                store,
-                uom,
-                quantity: plannedQty,
-                status: 1
-            });
+            for (const element of data) {
+                await models.ProductionRawMaterials.create({
+                    productionId: element.productionId,
+                    itemId: element.itemId,
+                    itemName: element.itemName,
+                    store: element.store,
+                    uom: element.uom,
+                    quantity: element.plannedQty,
+                    status: 1
+                });
+            }
         }
         else if (updateTableType === 'Left Over Item') {
-            await models.ProductionScrapMaterials.create({
-                productionId,
-                itemId,
-                itemName,
-                store,
-                uom,
-                quantity: plannedQty,
-                status: 1
-            });
+            for (const element of data) {
+                await models.ProductionScrapMaterials.create({
+                    productionId: element.productionId,
+                    itemId: element.itemId,
+                    itemName: element.itemName,
+                    store: element.store,
+                    uom: element.uom,
+                    quantity: element.plannedQty,
+                    status: 1
+                });
+            }
         }
         else if (updateTableType === 'Additional Charges') {
-            await models.ProductionAdditionalCharges.create({
-                productionId,
-                chargesName,
-                amount,
-                status: 1
-            });
+            for (const element of data) {
+                await models.ProductionAdditionalCharges.create({
+                    productionId: element.productionId,
+                    chargesName: element.chargesName,
+                    amount: element.amount,
+                    status: 1
+                });
+            }
         }
         else if (updateTableType === 'Process') {
-            await models.ProductionSalesProcess.create({
-                productionId,
-                cost: amount,
-                plannedTime,
-                description,
-                processName,
-                status: 1,
-            });
+            for (const element of data) {
+                await models.ProductionSalesProcess.create({
+                    productionId: element.productionId,
+                    cost: element.amount,
+                    plannedTime: element.plannedTime,
+                    description: element.description,
+                    processName: element?.processName,
+                    status: 1,
+                });
+            }
         }
         res.status(200).json({ message: 'Table Updated' });
     } catch (error) {
