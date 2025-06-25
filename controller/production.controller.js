@@ -1233,9 +1233,14 @@ async function updateTable(req, res) {
         }
         else if (updateTableType === 'Process') {
             for (const element of data) {
+                const time = element.plannedTime;
+                const ratePerHour = element.amount;
+                const [hours, minutes, seconds] = time.split(':').map(Number);
+                const totalHours = hours + (minutes / 60) + (seconds / 3600);
+                const cost = totalHours * ratePerHour;
                 await models.ProductionSalesProcess.create({
                     productionId: element.productionId,
-                    cost: element.amount,
+                    cost,
                     plannedTime: element.plannedTime,
                     description: element.description,
                     processName: element?.processName,
