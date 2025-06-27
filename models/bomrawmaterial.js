@@ -27,7 +27,8 @@ module.exports = (sequelize, DataTypes) => {
     store: DataTypes.STRING,
     userId: DataTypes.INTEGER,
     companyId: DataTypes.INTEGER,
-    status: DataTypes.STRING
+    status: DataTypes.STRING,
+    parentId: DataTypes.INTEGER
   }, {
     sequelize,
     modelName: 'BOMRawMaterial',

@@ -8,5 +8,7 @@ router.post('/addBOMRawMaterials', bomRawMaterialsController.createBOMRawMateria
 router.post('/updateBOMRawMaterials', bomRawMaterialsController.updateBOMRawMaterial);
 router.post('/deleteBOMRawMaterials', bomRawMaterialsController.deleteBOMRawMaterial);
 router.post('/', bomRawMaterialsController.getAllBOMRawMaterials);
+router.post('/linkBom', bomRawMaterialsController.linkBOM);
+router.post('/unlinkBom', bomRawMaterialsController.unlinkBOM);
 
 module.exports = router;
