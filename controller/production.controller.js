@@ -1192,6 +1192,92 @@ async function productionBasedMaterialPlanning(req, res) {
     }
 }
 
+async function updateTable(req, res) {
+  try {
+    const { data, updateTableType } = req.body;
+
+    const insertData = [];
+
+    if (!Array.isArray(data) || data.length === 0) {
+      return res.status(400).json({ message: 'Invalid or empty data array.' });
+    }
+
+    switch (updateTableType) {
+      case 'Raw Material':
+        data.forEach(element => {
+          insertData.push({
+            productionId: element.productionId,
+            itemId: element.itemId,
+            itemName: element.itemName,
+            store: element.store,
+            uom: element.uom,
+            quantity: element.plannedQty,
+            status: 1
+          });
+        });
+        await models.ProductionRawMaterials.bulkCreate(insertData);
+        break;
+
+      case 'Left Over Item':
+        data.forEach(element => {
+          insertData.push({
+            productionId: element.productionId,
+            itemId: element.itemId,
+            itemName: element.itemName,
+            store: element.store,
+            uom: element.uom,
+            quantity: element.plannedQty,
+            status: 1
+          });
+        });
+        await models.ProductionScrapMaterials.bulkCreate(insertData);
+        break;
+
+      case 'Additional Charges':
+        data.forEach(element => {
+          insertData.push({
+            productionId: element.productionId,
+            chargesName: element.chargesName,
+            amount: element.amount,
+            status: 1
+          });
+        });
+        await models.ProductionAdditionalCharges.bulkCreate(insertData);
+        break;
+
+      case 'Process':
+        data.forEach(element => {
+          const [h, m, s] = element.plannedTime.split(':').map(Number);
+          const totalHours = h + m / 60 + s / 3600;
+          const cost = totalHours * Number(element.amount || 0);
+          insertData.push({
+            productionId: element.productionId,
+            cost,
+            plannedTime: element.plannedTime,
+            description: element.description,
+            processName: element.processName,
+            status: 1
+          });
+        });
+        await models.ProductionSalesProcess.bulkCreate(insertData);
+        break;
+
+      default:
+        return res.status(400).json({ message: 'Invalid updateTableType' });
+    }
+
+    res.status(200).json({ message: 'Table Updated' });
+
+  } catch (error) {
+    console.error("Update Table Error:", error);
+    res.status(500).json({
+      message: "Failed to update production data.",
+      error: error.message
+    });
+  }
+}
+
+
 module.exports = {
     startProduction: startProduction,
     getProductions: getProductions,
@@ -1206,5 +1292,6 @@ module.exports = {
     materialPlanning: materialPlanning,
     bomBasedMaterialPlanning: bomBasedMaterialPlanning,
     getProductionsByCompanyId: getProductionsByCompanyId,
-    productionBasedMaterialPlanning: productionBasedMaterialPlanning
+    productionBasedMaterialPlanning: productionBasedMaterialPlanning,
+    updateTable: updateTable
 }

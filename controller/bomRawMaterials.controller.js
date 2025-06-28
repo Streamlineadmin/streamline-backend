@@ -164,10 +164,106 @@ async function deleteBOMRawMaterial(req, res) {
   }
 }
 
+async function linkBOM(req, res) {
+  try {
+    const { data, companyId } = req.body;
+    const finishedGood = await models.BOMFinishedGoods.findOne({
+      where: {
+        companyId: Number(companyId),
+        itemId: data.itemId
+      },
+      order: [['createdAt', 'DESC']],
+      raw: true
+    });
+    const rawMaterials = await models.BOMRawMaterial.findAll({
+      where: {
+        bomId: finishedGood.bomId
+      },
+      raw: true
+    });
+
+    const payload = rawMaterials.map(item => {
+      return {
+        bomId: data.bomId,
+        itemId: item.itemId,
+        itemName: item.itemName,
+        uom: item.uom,
+        quantity: (data.quantity * (item.quantity / finishedGood.quantity)),
+        store: item.store,
+        userId: item.userId || null,
+        companyId: companyId || null,
+        status: 1,
+        parentId: data.id
+      }
+    });
+    await models.BOMRawMaterial.bulkCreate(payload);
+    res.status(201).json({ message: 'Bom Linked Successfully' });
+  } catch (error) {
+    console.log(error);
+    res.status(401).json({ message: 'Error while linking BOM.' });
+  }
+}
+
+async function unlinkBOM(req, res) {
+  try {
+    const { data, companyId } = req.body;
+
+    if (!data?.id || !companyId) {
+      return res.status(400).json({ message: "Material ID and companyId are required" });
+    }
+
+    // Step 1: Fetch all raw materials of the company
+    const allMaterials = await models.BOMRawMaterial.findAll({
+      where: { companyId },
+      raw: true
+    });
+
+    // Step 2: Build a map of parentId => children IDs
+    const childMap = {};
+    allMaterials.forEach(material => {
+      if (material.parentId) {
+        if (!childMap[material.parentId]) childMap[material.parentId] = [];
+        childMap[material.parentId].push(material.id);
+      }
+    });
+
+    // Step 3: Traverse from data.id, collect all descendant IDs (exclude data.id itself)
+    const idsToDelete = [];
+    const stack = childMap[data.id] || [];
+
+    while (stack.length) {
+      const currentId = stack.pop();
+      idsToDelete.push(currentId);
+
+      if (childMap[currentId]) {
+        stack.push(...childMap[currentId]);
+      }
+    }
+
+    // Step 4: Delete all collected children
+    if (idsToDelete.length) {
+      await models.BOMRawMaterial.destroy({
+        where: { id: idsToDelete }
+      });
+    }
+
+    return res.status(200).json({
+      message: "BOM children unlinked successfully"
+    });
+
+  } catch (error) {
+    console.error("Unlink BOM Error:", error);
+    return res.status(500).json({ message: "Error while unlinking BOM." });
+  }
+}
+
+
 
 module.exports = {
   createBOMRawMaterials,
   getAllBOMRawMaterials,
   updateBOMRawMaterial,
   deleteBOMRawMaterial,
+  linkBOM,
+  unlinkBOM
 };

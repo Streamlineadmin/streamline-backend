@@ -1,3 +1,4 @@
+const { buildRawMaterialTreeWithLevel } = require("../helpers/add-level");
 const models = require("../models");
 const { Op } = require('sequelize');
 
@@ -39,23 +40,23 @@ async function createBOMDetails(req, res) {
     }
 
     const bomSeries = await models.BOMSeries.findOne({
-            where: {
-              companyId,
-              default: 1,
-            },
-          });
-    
-          if (bomSeries) {
-            await models.BOMSeries.update(
-              { nextNumber: bomSeries.nextNumber + 1 },
-              {
-                where: {
-                  id: bomSeries.id,
-                },
-              }
-            );
-          }
-          
+      where: {
+        companyId,
+        default: 1,
+      },
+    });
+
+    if (bomSeries) {
+      await models.BOMSeries.update(
+        { nextNumber: bomSeries.nextNumber + 1 },
+        {
+          where: {
+            id: bomSeries.id,
+          },
+        }
+      );
+    }
+
     await t.commit();
     return res
       .status(201)
@@ -260,9 +261,25 @@ async function getBOMById(req, res) {
       });
     }
 
+    const rawMaterials = bom.rawMaterials.map(material => material.get({ plain: true }));
+    const treeWithLevel = buildRawMaterialTreeWithLevel(rawMaterials);
+    // const obj = {};
+    // for (const element of rawMaterials) {
+    //   if (element.parentId) {
+    //     if (obj[element.parentId]) obj[element.parentId].push(element);
+    //     else obj[element.parentId] = [element];
+    //   }
+    // }
+    // for (const element of rawMaterials) {
+    //   if (obj[element.id]) element.children = obj[element.id];
+    // }
+
+    const plainBOM = bom.get({ plain: true });
+    plainBOM.rawMaterials = treeWithLevel;
+
     return res.status(200).json({
       message: "BOM details retrieved successfully.",
-      data: bom,
+      data: plainBOM,
     });
   } catch (error) {
     console.error("Get BOM Error:", error);
@@ -494,7 +511,7 @@ async function getAllItemsBoms(req, res) {
       }
     }
 
-    res.status(200).json({bomItems,message:'Items Bom fetched.'});
+    res.status(200).json({ bomItems, message: 'Items Bom fetched.' });
   } catch (error) {
     res.status(500).json({
       message: "Failed to retrieve BOM details.",
