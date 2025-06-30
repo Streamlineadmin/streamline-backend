@@ -1,43 +1,51 @@
 const models = require('../models');
 const { Op } = require("sequelize");
-function addBlog(req, res) {
-  const blog = {
-    title: req.body.title,
-    shortDesc: req.body.shortDesc,
-    author: req.body.author,
-    content: req.body.content,
-    imageURL: req.body.imageURL,
-    userId: req.body.userId,
-    blogCategory: req.body.blogCategory,
-    URLTitle: req.body.URLTitle, 
-  };
+async function addBlog(req, res) {
+  try {
+    const blog = {
+      title: req.body.title,
+      shortDesc: req.body.shortDesc,
+      author: req.body.author,
+      content: req.body.content,
+      imageURL: req.body.imageURL,
+      userId: req.body.userId,
+      blogCategory: req.body.blogCategory,
+      URLTitle: req.body.URLTitle?.replaceAll(" ", "-"),
+    };
 
-  models.Blogs.create(blog)
-    .then((result) => { 
-      return models.Blogs.findOne({
-        where: { id: result.id },
-        include: [
-          {
-            model: models.BlogCategory,
-            as: "category", 
-            attributes: ["id", "category"],
-          },
-        ],
-      });
-    })
-    .then((result) => {
-      res.status(201).json({
-        message: "Blog added successfully",
-        post: result,
-      });
-    })
-    .catch((error) => {
-      res.status(500).json({
-        message: "Something went wrong, please try again later!",
-        error: error,
-      });
+    // Create the blog
+    const existingBlog = await models.Blogs.findOne({
+      where: {
+        URLTitle: req.body.URLTitle?.replaceAll(" ", "-")
+      }
     });
+    if (existingBlog) return res.status(409).json({ message: 'Blog URLTitle Already exist.' })
+    const createdBlog = await models.Blogs.create(blog);
+
+    // Fetch blog with associated category
+    const blogWithCategory = await models.Blogs.findOne({
+      where: { id: createdBlog.id },
+      include: [
+        {
+          model: models.BlogCategory,
+          as: "category",
+          attributes: ["id", "category"],
+        },
+      ],
+    });
+
+    res.status(201).json({
+      message: "Blog added successfully",
+      post: blogWithCategory,
+    });
+  } catch (error) {
+    res.status(500).json({
+      message: "Something went wrong, please try again later!",
+      error: error.message || error,
+    });
+  }
 }
+
 
 function editBlog(req, res) {
   const blogId = req.body.blogId;
@@ -50,7 +58,7 @@ function editBlog(req, res) {
     imageURL: req.body.imageURL,
     userId: req.body.userId,
     blogCategory: req.body.blogCategory,
-    URLTitle: req.body.URLTitle, 
+    URLTitle: req.body.URLTitle,
   };
 
   models.Blogs.update(updatedBlogData, { where: { id: blogId } })
@@ -86,76 +94,84 @@ function editBlog(req, res) {
 }
 
 function deleteBlog(req, res) {
-    const blogId = req.body.id;
+  const blogId = req.body.id;
 
-    models.Blogs.destroy({ where: { id: blogId } })
-        .then(result => {
-            if (result) {
-                res.status(200).json({
-                    message: "Blog deleted successfully"
-                });
-            } else {
-                res.status(200).json({
-                    message: "Blog not found"
-                });
-            }
-        })
-        .catch(error => {
-            res.status(500).json({
-                message: "Something went wrong, please try again later!",
-                error: error
-            });
+  models.Blogs.destroy({ where: { id: blogId } })
+    .then(result => {
+      if (result) {
+        res.status(200).json({
+          message: "Blog deleted successfully"
         });
-}
-
-function getblogsById(req, res) {
-    const id = req.params.id;
-
-    models.Blogs.findByPk(id).then(result => {
-        res.status(200).json(result);
-    }).catch(error => {
-        res.status(500).json({
-            message: "something went wrong, please try again later!"
+      } else {
+        res.status(200).json({
+          message: "Blog not found"
         });
+      }
+    })
+    .catch(error => {
+      res.status(500).json({
+        message: "Something went wrong, please try again later!",
+        error: error
+      });
     });
 }
 
+async function getblogsById(req, res) {
+  try {
+    const url = req.params.url;
+
+    const blog = await models.Blogs.findOne({
+      where: {
+        URLTitle: url
+      }
+    });
+
+    res.status(200).json(blog);
+  } catch (error) {
+    res.status(500).json({
+      message: "Something went wrong, please try again later!",
+      error: error.message || error,
+    });
+  }
+}
+
+
 function getblogs(req, res) {
-    models.Blogs.findAll({
-        include: [
-            {
-                model: models.BlogCategory,
-                as: 'category',  
-                attributes: ['id', 'category'] ,
-                required: true,
-            }
-        ],
-    }).then(result => {
-        if (!result || result.length === 0) {
-            return res.status(200).json([]);
-        }
-        res.status(200).json(result);
-    })
+  models.Blogs.findAll({
+    include: [
+      {
+        model: models.BlogCategory,
+        as: 'category',
+        attributes: ['id', 'category'],
+        required: true,
+      }
+    ],
+  }).then(result => {
+    if (!result || result.length === 0) {
+      return res.status(200).json([]);
+    }
+    res.status(200).json(result);
+  })
     .catch(error => {
-        console.error("Error fetching blogs:", error);
-        res.status(500).json({
-            message: "Something went wrong, please try again later!"
-        });
+      console.error("Error fetching blogs:", error);
+      res.status(500).json({
+        message: "Something went wrong, please try again later!"
+      });
     });
 }
 
 function getblogscategories(req, res) {
-    models.BlogCategory.findAll().then(result => {
-        if (!result || result.length === 0) {
-            return res.status(200).json([]);
-        }
-        res.status(200).json(result);
-    })
+  models.BlogCategory.findAll().then(result => {
+    if (!result || result.length === 0) {
+      return res.status(200).json([]);
+    }
+    res.status(200).json(result);
+  })
     .catch(error => {
-        console.error("Error fetching blogs:", error);
-        res.status(500).json({
-            message: "Something went wrong, please try again later!"
-        });
+      console.error("Error fetching blogs:", error);
+      res.status(500).json({
+        message: "Something went wrong, please try again later!"
+      });
     });
 }
 
@@ -178,7 +194,7 @@ async function searchBlogs(req, res) {
       ];
     }
 
-    if (blogCategory !== null) { 
+    if (blogCategory !== null) {
       searchConditions.blogCategory = blogCategory;
     }
 
@@ -200,11 +216,11 @@ async function searchBlogs(req, res) {
 }
 
 module.exports = {
-    addBlog: addBlog,
-    getblogsById : getblogsById,
-    getblogs: getblogs,
-    editBlog: editBlog,
-    deleteBlog: deleteBlog,
-    getblogscategories: getblogscategories,
-    searchBlogs: searchBlogs,
+  addBlog: addBlog,
+  getblogsById: getblogsById,
+  getblogs: getblogs,
+  editBlog: editBlog,
+  deleteBlog: deleteBlog,
+  getblogscategories: getblogscategories,
+  searchBlogs: searchBlogs,
 }
