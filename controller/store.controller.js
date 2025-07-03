@@ -311,7 +311,7 @@ async function getStoresByItem(req, res) {
 }
 
 async function stockTransfer(req, res) {
-  const { transferNumber, stockData, transferDate, transferredBy, companyId, useFIFO, addReduce } = req.body;
+  const { transferNumber, stockData, transferDate, transferredBy, companyId, useFIFO, addReduce, comment } = req.body;
 
   try {
     // Iterate through each stock transfer item
@@ -356,9 +356,9 @@ async function stockTransfer(req, res) {
               itemId: element.itemId,
               quantity: deductQty,
               toStoreId: element.toStore,
-              transferDate,
+              transferDate: element.transferDate || transferDate,
               transferredBy,
-              comment: stock.comment,
+              comment: element.comment || comment,
               companyId,
               price: stock.price,
               isRejected: false
@@ -370,9 +370,9 @@ async function stockTransfer(req, res) {
             itemId: element.itemId,
             quantity: -deductQty,
             toStoreId: !addReduce ? element?.toStore : addReduce == 2 ? null : element.toStore,
-            transferDate,
+            transferDate: element.transferDate || transferDate,
             transferredBy,
-            comment: stockData.comment,
+            comment: element.comment || comment,
             companyId,
             price: (!addReduce ? stock.price : element?.price / (element?.conversionFactor || 1))
           });
@@ -387,9 +387,9 @@ async function stockTransfer(req, res) {
         itemId: element.itemId,
         quantity: (addReduce == 2 ? -element.quantity : element.quantity) * (element?.conversionFactor || 1),
         toStoreId: element.toStore,
-        transferDate,
+        transferDate: element.transferDate || transferDate,
         transferredBy,
-        comment: stockData.comment,
+        comment: element.comment || comment,
         companyId,
         price: element.price / (element?.conversionFactor || 1)
       });
