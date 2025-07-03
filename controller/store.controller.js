@@ -1,4 +1,5 @@
 const models = require("../models");
+const { Op, Sequelize } = require('sequelize');
 
 function addStore(req, res) {
   // Check if team name already exists for the given company
@@ -146,7 +147,7 @@ async function deleteStore(req, res) {
 }
 
 function getStoresById(req, res) {
-  const id = req.params.id;
+  const id = req.body.id;
 
   models.Store.findByPk(id)
     .then((result) => {
@@ -873,7 +874,6 @@ async function getAllStoreItemsByStoresID(req, res) {
   }
 }
 
-
 async function getAllStoresWithItems(req, res) {
   const { storeIds, isRejected = false } = req.body;
   if (!storeIds?.length) return res.status(404).json({ message: "Store Not found." });
@@ -963,6 +963,70 @@ async function getAllStoresWithItems(req, res) {
   }
 }
 
+async function getCompanyStoreTotals(req, res) {
+  const { companyId } = req.body;
+  if (!companyId) {
+    return res
+      .status(400)
+      .json({ message: "companyId parameter is required." });
+  }
+
+  try {
+    const stores = await models.Store.findAll({
+      where: { companyId },
+      attributes: ["id", "name"],
+      raw: true,
+    });
+
+    if (stores.length === 0) {
+      return res
+        .status(404)
+        .json({ message: "No stores found for this company." });
+    }
+
+    const storeIds = stores.map((s) => s.id);
+    const totals = await models.StoreItems.findAll({
+      where: {
+        storeId: { [Op.in]: storeIds },
+        quantity: { [Op.gt]: 0 },
+      },
+      attributes: [
+        "storeId",
+        "isRejected",
+        [
+          Sequelize.fn("SUM", Sequelize.literal("price * quantity")),
+          "totalPrice",
+        ],
+      ],
+      group: ["storeId", "isRejected"],
+      raw: true,
+    });
+
+    const totalMap = {};
+    totals.forEach((row) => {
+      const sid = row.storeId;
+      totalMap[sid] = totalMap[sid] || { inStockTotal: 0, rejectedTotal: 0 };
+      if (row.isRejected) {
+        totalMap[sid].rejectedTotal = parseFloat(row.totalPrice);
+      } else {
+        totalMap[sid].inStockTotal = parseFloat(row.totalPrice);
+      }
+    });
+
+    const response = stores.map((store) => ({
+      storeId: store.id,
+      storeName: store.name,
+      inStockTotal: totalMap[store.id]?.inStockTotal || 0,
+      rejectedTotal: totalMap[store.id]?.rejectedTotal || 0,
+    }));
+
+    return res.status(200).json({ data: response });
+  } catch (err) {
+    console.error("Error in getCompanyStoreTotals:", err);
+    return res.status(500).json({ message: "Internal server error." });
+  }
+}
+
 module.exports = {
   addStore: addStore,
   getStoresById: getStoresById,
@@ -975,5 +1039,6 @@ module.exports = {
   getStockTransferHistory: getStockTransferHistory,
   getStoreItemsByStoreId: getStoreItemsByStoreId,
   getAllStoreItemsByStoresID: getAllStoreItemsByStoresID,
-  getAllStoresWithItems: getAllStoresWithItems
+  getAllStoresWithItems: getAllStoresWithItems,
+  getCompanyStoreTotals: getCompanyStoreTotals,
 };
