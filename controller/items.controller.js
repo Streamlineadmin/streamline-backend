@@ -278,8 +278,6 @@ async function deleteItems(req, res) {
     }
 }
 
-
-
 async function getItems(req, res) {
     const { companyId } = req.body;
 
@@ -294,41 +292,47 @@ async function getItems(req, res) {
             return res.status(200).json([]);
         }
 
-        // Step 2: Retrieve store IDs and quantities associated with each item
+        // Step 2: Retrieve store IDs and quantities for ALL items (rejected + non-rejected)
         const itemIds = items.map(item => item.id);
 
         const storeItems = await models.StoreItems.findAll({
-            where: { itemId: itemIds, isRejected: false,  },
-            attributes: ['itemId', 'storeId', 'quantity'],
+            where: { itemId: itemIds },
+            attributes: ['itemId', 'storeId', 'quantity', 'isRejected'],
             raw: true
         });
 
-        // Step 3: Retrieve all alternate units for the given item IDs
+        // Step 3: Retrieve alternate units
         const alternateUnits = await models.AlternateUnits.findAll({
             where: { itemId: itemIds },
             attributes: ['itemId', 'alternateUnits', 'conversionfactor', 'ip_address'],
             raw: true
         });
 
-        // Step 4: Structure the response with unique stores, net quantities, and alternate units
+        // Step 4: Structure the response
         const itemsWithStores = items.map(item => {
-            // Aggregate quantities for each storeId related to the current item
-            const storeQuantities = storeItems
-                .filter(storeItem => storeItem.itemId === item.id)
-                .reduce((acc, { storeId, quantity }) => {
-                    acc[storeId] = (acc[storeId] || 0) + quantity; // Sum quantities for each store
-                    return acc;
-                }, {});
+            const relatedStoreItems = storeItems.filter(si => si.itemId === item.id);
 
-            // Filter out stores with a non-positive (0 or negative) net quantity
-            const storesWithPositiveQuantity = Object.entries(storeQuantities)
-                .filter(([_, quantity]) => quantity > 0)
-                .map(([storeId, quantity]) => ({
+            // Group quantities by store and isRejected
+            const storeDataMap = {};
+            relatedStoreItems.forEach(({ storeId, quantity, isRejected }) => {
+                if (!storeDataMap[storeId]) {
+                    storeDataMap[storeId] = { quantity: 0, rejectedQuantity: 0 };
+                }
+                if (isRejected) {
+                    storeDataMap[storeId].rejectedQuantity += quantity;
+                } else {
+                    storeDataMap[storeId].quantity += quantity;
+                }
+            });
+
+            const stores = Object.entries(storeDataMap)
+                .filter(([_, data]) => data.quantity > 0 || data.rejectedQuantity > 0)
+                .map(([storeId, data]) => ({
                     storeId: parseInt(storeId),
-                    quantity
+                    quantity: data.quantity,
+                    rejectedQuantity: data.rejectedQuantity
                 }));
 
-            // Get alternate units for the current item
             const itemAlternateUnits = alternateUnits
                 .filter(unit => unit.itemId === item.id)
                 .map(({ alternateUnits, conversionfactor, ip_address }) => ({
@@ -339,13 +343,14 @@ async function getItems(req, res) {
 
             return {
                 ...item,
-                stores: storesWithPositiveQuantity,
+                stores,
                 alternateUnits: itemAlternateUnits
             };
         });
 
         res.status(200).json(itemsWithStores);
     } catch (error) {
+        console.error(error);
         res.status(500).json({
             message: "Something went wrong, please try again later!"
         });

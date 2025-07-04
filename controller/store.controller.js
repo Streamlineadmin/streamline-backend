@@ -312,13 +312,14 @@ async function getStoresByItem(req, res) {
 }
 
 async function stockTransfer(req, res) {
-  const { transferNumber, stockData, transferDate, transferredBy, companyId, useFIFO, addReduce, comment } = req.body;
+  const { transferNumber, stockData, transferDate, transferredBy, companyId, useFIFO, comment } = req.body;
 
   try {
     // Iterate through each stock transfer item
     for (const element of stockData) {
       let price = 0;
       let remainingQuantity = element.quantity * (element?.conversionFactor || 1);
+      const addReduce = element.addReduce;
       const item = await models.Items.findOne({
         where: {
           id: element.itemId
@@ -341,6 +342,7 @@ async function stockTransfer(req, res) {
             { quantity: (stock.quantity - deductQty) },
             { where: { id: stock.id } }
           );
+          
           if (!addReduce) {
             await models.StoreItems.create({
               storeId: element.toStore,
@@ -351,6 +353,7 @@ async function stockTransfer(req, res) {
               price: stock.price,
               isRejected: false
             });
+            
             await models.StockTransfer.create({
               transferNumber,
               fromStoreId: element?.fromStore,
@@ -365,6 +368,7 @@ async function stockTransfer(req, res) {
               isRejected: false
             });
           }
+          
           addReduce && await models.StockTransfer.create({
             transferNumber,
             fromStoreId: !addReduce ? element?.fromStore : addReduce == 2 ? element?.toStore : (element?.fromStore || null),
@@ -377,34 +381,39 @@ async function stockTransfer(req, res) {
             companyId,
             price: (!addReduce ? stock.price : element?.price / (element?.conversionFactor || 1))
           });
+          
           price += (stock.price * deductQty);
         }
       }
 
-      // Create StockTransfer entry
-      (addReduce && addReduce != 2) && await models.StockTransfer.create({
-        transferNumber,
-        fromStoreId: element?.fromStore || null,
-        itemId: element.itemId,
-        quantity: (addReduce == 2 ? -element.quantity : element.quantity) * (element?.conversionFactor || 1),
-        toStoreId: element.toStore,
-        transferDate: element.transferDate || transferDate,
-        transferredBy,
-        comment: element.comment || comment,
-        companyId,
-        price: element.price / (element?.conversionFactor || 1)
-      });
+      if (addReduce && addReduce != 2) {
+        await models.StockTransfer.create({
+          transferNumber,
+          fromStoreId: element?.fromStore || null,
+          itemId: element.itemId,
+          quantity: element.quantity * (element?.conversionFactor || 1),
+          toStoreId: element.toStore,
+          transferDate: element.transferDate || transferDate,
+          transferredBy,
+          comment: element.comment || comment,
+          companyId,
+          price: element.price / (element?.conversionFactor || 1)
+        });
+      }
 
-      // Add quantity to destination store
-      (addReduce && addReduce) != 2 && await models.StoreItems.create({
-        storeId: element.toStore,
-        itemId: element.itemId,
-        quantity: element.quantity * (element?.conversionFactor || 1),
-        status: 1,
-        addedBy: transferredBy,
-        price: element?.price / (element?.conversionFactor || 1)
-      });
+      // Add quantity to destination store for Add operations
+      if (addReduce && addReduce != 2) {
+        await models.StoreItems.create({
+          storeId: element.toStore,
+          itemId: element.itemId,
+          quantity: element.quantity * (element?.conversionFactor || 1),
+          status: 1,
+          addedBy: transferredBy,
+          price: element?.price / (element?.conversionFactor || 1)
+        });
+      }
 
+      // Update item's current stock if no fromStore specified
       if (!element.fromStore) {
         await models.Items.update(
           {
