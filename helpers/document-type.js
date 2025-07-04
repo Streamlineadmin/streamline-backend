@@ -18,7 +18,7 @@ documentTypes = {
     serviceChallan: 'Service Challan',
     serviceGrn: 'Service Grn',
     serviceQr: 'Service Qr',
-    salesOrder: 'Sales Order'
+    salesOrder: 'Sales Order',
 };
 
 const salesDocuments = [

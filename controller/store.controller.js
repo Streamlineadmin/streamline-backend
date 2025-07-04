@@ -258,8 +258,8 @@ async function getStoresByItem(req, res) {
   try {
     // Step 2: Find all storeIds that have the given itemId in StoreItems
     const storeItems = await models.StoreItems.findAll({
-      where: { itemId, isRejected: false, price: { [models.Sequelize.Op.gt]: 0 } },
-      attributes: ['storeId', 'quantity'], // Only retrieve storeId and quantity
+      where: { itemId, price: { [models.Sequelize.Op.gt]: 0 } },
+      attributes: ['storeId', 'quantity', 'isRejected'],
     });
 
     // Check if any store was found for the given itemId
@@ -268,13 +268,19 @@ async function getStoresByItem(req, res) {
     }
 
     // Aggregate the quantities for each storeId
-    const storeQuantities = storeItems.reduce((acc, { storeId, quantity }) => {
-      acc[storeId] = (acc[storeId] || 0) + quantity;
+    const rejectStoreQuantities = {};
+    const storeQuantities = storeItems.reduce((acc, { storeId, quantity, isRejected }) => {
+      if (!isRejected) acc[storeId] = (acc[storeId] || 0) + quantity;
+      else rejectStoreQuantities[storeId] = (rejectStoreQuantities[storeId] || 0) + quantity;
       return acc;
     }, {});
 
     // Step 3: Filter out stores with a total negative quantity
     const validStoreIds = Object.entries(storeQuantities)
+      .filter(([_, quantity]) => quantity > 0)
+      .map(([storeId]) => parseInt(storeId));
+
+    const validRejectStoreIds = Object.entries(rejectStoreQuantities)
       .filter(([_, quantity]) => quantity > 0)
       .map(([storeId]) => parseInt(storeId));
 
@@ -287,16 +293,31 @@ async function getStoresByItem(req, res) {
 
     // Step 4: Retrieve store details from Stores table based on valid storeIds
     const stores = await models.Store.findAll({
-      where: { id: validStoreIds },
+      where: { id: [...validStoreIds, ...validRejectStoreIds] },
       attributes: ['id', 'name'], // Specify the columns you want from Store
     });
 
     // Step 5: Combine the store data with the total quantities
-    const storesWithItemDetails = stores.map(store => ({
-      storeId: store.id,
-      storeName: store.name,
-      quantity: storeQuantities[store.id], // Use aggregated quantity
-    }));
+    const storesWithItemDetails = [];
+    stores.forEach(store => {
+      if (storeQuantities[store.id]) {
+        storesWithItemDetails.push({
+          storeId: store.id,
+          storeName: store.name,
+          quantity: storeQuantities[store.id] || 0,
+          isReject: false
+        });
+      }
+
+      if (rejectStoreQuantities[store.id]) {
+        storesWithItemDetails.push({
+          storeId: store.id,
+          storeName: store.name,
+          quantity: rejectStoreQuantities[store.id] || 0,
+          isReject: true
+        });
+      }
+    });
 
     // Step 6: Send the combined response
     res.status(200).json(storesWithItemDetails);
@@ -326,7 +347,7 @@ async function stockTransfer(req, res) {
       if ((useFIFO && addReduce == 2) || !addReduce) {
         // Fetch existing stock based on FIFO (oldest stock first)
         const existingStock = await models.StoreItems.findAll({
-          where: { storeId: (element.fromStore || element.toStore), itemId: element.itemId, isRejected: false },
+          where: { storeId: (element.fromStore || element.toStore), itemId: element.itemId, isRejected: (element?.isReject || false) },
           order: [['createdAt', 'ASC']], // Oldest entries first
         });
         for (const stock of existingStock) {
@@ -348,7 +369,7 @@ async function stockTransfer(req, res) {
               status: 1,
               addedBy: transferredBy,
               price: stock.price,
-              isRejected: false
+              isRejected: element?.toReject || false
             });
             await models.StockTransfer.create({
               transferNumber,
@@ -361,7 +382,7 @@ async function stockTransfer(req, res) {
               comment: stock.comment,
               companyId,
               price: stock.price,
-              isRejected: false
+              isRejected: element?.toReject || false
             });
           }
           addReduce && await models.StockTransfer.create({

@@ -1132,6 +1132,27 @@ async function createDocument(req, res) {
       }
     }
 
+    if (status && (documentType === documentTypes.debitNote || documentType === documentTypes.creditNote) && invoiceNumber) {
+      const invoice = await models.Documents.findOne({
+        where: {
+          companyId,
+          documentNumber: invoiceNumber
+        }
+      });
+      const total = items?.reduce((acc, curr) => acc + (curr?.totalAfterTax || 0), 0);
+      if (invoice) {
+        if (documentType === documentTypes.creditNote) {
+          await invoice.update({
+            creditSetOff: Number(invoice.creditSetOff || 0) + Number(total)
+          });
+        } else {
+          await invoice.update({
+            debitSetOff: Number(invoice.debitSetOff || 0) + Number(total)
+          });
+        }
+      }
+    }
+
     res.status(201).json({
       message: "Document and related data created successfully!"
     });

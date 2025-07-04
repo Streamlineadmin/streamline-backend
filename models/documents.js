@@ -167,7 +167,10 @@ module.exports = (sequelize, DataTypes) => {
     salesReturnNumber: DataTypes.STRING,
     salesReturnDate: DataTypes.STRING,
     showUnits: DataTypes.INTEGER,
-    supplyState: DataTypes.STRING
+    supplyState: DataTypes.STRING,
+    creditSetOff: DataTypes.FLOAT,
+    debitSetOff: DataTypes.FLOAT,
+    amountPaid: DataTypes.FLOAT
   }, {
     sequelize,
     modelName: 'Documents',
