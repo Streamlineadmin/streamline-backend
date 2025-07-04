@@ -363,7 +363,7 @@ async function stockTransfer(req, res) {
             { quantity: (stock.quantity - deductQty) },
             { where: { id: stock.id } }
           );
-          
+
           if (!addReduce) {
             await models.StoreItems.create({
               storeId: element.toStore,
@@ -374,7 +374,7 @@ async function stockTransfer(req, res) {
               price: stock.price,
               isRejected: element?.toReject || false
             });
-            
+
             await models.StockTransfer.create({
               transferNumber,
               fromStoreId: element?.fromStore,
@@ -389,7 +389,7 @@ async function stockTransfer(req, res) {
               isRejected: element?.toReject || false
             });
           }
-          
+
           addReduce && await models.StockTransfer.create({
             transferNumber,
             fromStoreId: !addReduce ? element?.fromStore : addReduce == 2 ? element?.toStore : (element?.fromStore || null),
@@ -400,9 +400,10 @@ async function stockTransfer(req, res) {
             transferredBy,
             comment: element.comment || comment,
             companyId,
-            price: (!addReduce ? stock.price : element?.price / (element?.conversionFactor || 1))
+            price: (!addReduce ? stock.price : element?.price / (element?.conversionFactor || 1)),
+            isRejected: element?.isReject || false
           });
-          
+
           price += (stock.price * deductQty);
         }
       }
@@ -418,7 +419,8 @@ async function stockTransfer(req, res) {
           transferredBy,
           comment: element.comment || comment,
           companyId,
-          price: element.price / (element?.conversionFactor || 1)
+          price: element.price / (element?.conversionFactor || 1),
+          isRejected: element?.isReject || false
         });
       }
 
@@ -430,7 +432,8 @@ async function stockTransfer(req, res) {
           quantity: element.quantity * (element?.conversionFactor || 1),
           status: 1,
           addedBy: transferredBy,
-          price: element?.price / (element?.conversionFactor || 1)
+          price: element?.price / (element?.conversionFactor || 1),
+          isRejected: element?.isReject || false
         });
       }
 
