@@ -1,3 +1,4 @@
+const { documentTypes } = require("../helpers/document-type");
 const models = require("../models");
 
 async function addLogPayment(req, res) {
@@ -29,6 +30,22 @@ async function addLogPayment(req, res) {
     bankName,
     transactionNumber,
   }));
+
+  for (const element of documents) {
+    if (element.documentType === documentTypes.invoice) {
+      const invoice = await models.Documents.findOne({
+        where: {
+          companyId,
+          documentNumber: element.documentNumber
+        }
+      });
+      if (invoice) {
+        await invoice.update({
+          amountPaid: Number(invoice.amountPaid || 0) + Number(element.logPaymentAmount)
+        });
+      }
+    }
+  }
 
   try {
     const newPayments = await models.LogPayment.bulkCreate(toCreate);
