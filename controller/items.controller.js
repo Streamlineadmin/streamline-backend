@@ -4,7 +4,7 @@ const models = require('../models');
 const { Op } = require("sequelize");
 
 function addItem(req, res) {
-    const { itemId, itemName, itemType, metricsUnit, companyId } = req.body;
+    const { itemId, itemName, itemType, metricsUnit, companyId, useCustomSeries } = req.body;
 
     // Check for mandatory fields
     if (!itemId || !itemName || !itemType || !metricsUnit) {
@@ -84,6 +84,22 @@ function addItem(req, res) {
                             price: req.body.price
                         });
 
+                        if (useCustomSeries && itemId) {
+                            const prefixMatch = itemId.match(/^[A-Za-z\-]+/);
+                            const prefix = prefixMatch ? prefixMatch[0] : null;
+
+                            if (prefix) {
+                                await models.ItemSeries.increment(
+                                    { nextNumber: 1 },
+                                    {
+                                        where: {
+                                            prefix: prefix,
+                                            companyId: companyId
+                                        }
+                                    }
+                                ); 
+                            }
+                        }
                         models.StoreItems.create(storeItemData)
                             .then(() => {
                                 res.status(201).json({
