@@ -1,5 +1,6 @@
 const { json } = require('body-parser');
 const models = require('../models');
+const convertXlsxToJson = require('../helpers/bulk-upload');
 
 
 function addBuyerSupplier(req, res) {
@@ -102,7 +103,7 @@ async function editBuyerSupplier(req, res) {
                         pincode: address.pincode,
                         state: address.state,
                         ip_address,
-                        status:  address.status || 1,
+                        status: address.status || 1,
                     });
                 }
             }
@@ -181,9 +182,133 @@ async function getBuyerSupplier(req, res) {
     }
 }
 
+async function bulkUploadBuyerSuppliers(req, res) {
+    try {
+        const { file, body } = req;
+        const { companyId } = body;
+
+        if (!file || !companyId) {
+            return res.status(400).json({ message: "Missing required data." });
+        }
+
+        const sheetData = await convertXlsxToJson(file.filename, "bulkUploadCompany");
+
+        const buyerSuppliersPayload = [];
+        const addressPayload = [];
+        const errorData = [];
+        const requiredFields = [
+            "* Company Name",
+            "* Company Email",
+            "* Company Type",
+            "* Address",
+            "* Address Type",
+            "* City",
+            "* State",
+        ];
+
+        for (const row of sheetData) {
+            const missingFields = [];
+
+            for (const field of requiredFields) {
+                const value = row[field];
+                if (!value || `${value}`.trim() === "") {
+                    missingFields.push(field.replace("* ", ""));
+                }
+            }
+
+            if (missingFields.length > 0) {
+                row["Error"] = `Missing required fields: ${missingFields.join(", ")}`;
+                errorData.push(row);
+                continue;
+            }
+
+            const {
+                "Person Name": personName,
+                "Person Email": personEmail,
+                "Phone": phone,
+                "* Company Name": companyName,
+                "* Company Email": companyEmail,
+                "* Company Type": companyType,
+                "GST Number": gstNumber,
+                "GST Type": gstType,
+                "* Address": address,
+                "* Address Type": addressType,
+                "Pin Code": pinCode,
+                "* City": city,
+                "* State": state,
+            } = row;
+
+            buyerSuppliersPayload.push({
+                name: personName?.trim() || "",
+                email: personEmail?.trim() || "",
+                phone: phone || "",
+                companyId: Number(companyId),
+                companyName: companyName.trim(),
+                companyEmail: companyEmail.trim(),
+                companyType: companyType == 'Both' ? 3 : companyType == 'Buyer' ? 1 : 2,
+                GSTNumber: gstNumber?.trim() || "",
+                GSTType: gstType?.trim() || "",
+                status: 1,
+                customerType: "company",
+            });
+
+            addressPayload.push({
+                addressLineOne: address?.trim?.(),
+                addressType: addressType,
+                city: city?.trim?.(),
+                state: state?.trim?.(),
+                country: "India",
+                pincode: pinCode || "",
+                status: 1,
+            });
+        }
+
+        if (buyerSuppliersPayload.length) {
+            const buyerSuppliers = await models.BuyerSupplier.bulkCreate(buyerSuppliersPayload, {
+                returning: true,
+            });
+
+            const bulkAddress = [];
+            let i = 0;
+            for (const element of addressPayload) {
+                if (element.addressType === 'Both') {
+                    bulkAddress.push({ ...element, addressType: 1, buyerSupplierId: buyerSuppliers[i].id });
+                    bulkAddress.push({ ...element, addressType: 2, buyerSupplierId: buyerSuppliers[i].id });
+                }
+                else {
+                    if (element.addressType === 'Delivery Address') {
+                        bulkAddress.push({ ...element, addressType: 1, buyerSupplierId: buyerSuppliers[i].id });
+                    } else {
+                        bulkAddress.push({ ...element, addressType: 2, buyerSupplierId: buyerSuppliers[i].id });
+                    }
+                }
+                i++;
+            }
+
+            await models.BuyerSupplierAddress.bulkCreate(bulkAddress);
+        }
+
+        const msg = !errorData.length
+            ? 'Bulk Company uploaded successfully.'
+            : errorData.length !== sheetData.length
+                ? 'Bulk company uploaded successfully. Some rows contain invalid data. We Download Those Rows for you.'
+                : 'All rows contain invalid data. We Download Those Rows for you.';
+
+        res.status(200).json({ message: msg, invalidData: errorData });
+
+    } catch (error) {
+        console.error("Bulk Upload Error:", error);
+        return res.status(500).json({
+            message: "Something went wrong during bulk upload.",
+            error,
+        });
+    }
+}
+
 module.exports = {
     addBuyerSupplier: addBuyerSupplier,
     getBuyerSupplier: getBuyerSupplier,
     deleteBuyerSupplier: deleteBuyerSupplier,
     editBuyerSupplier: editBuyerSupplier,
+    bulkUploadBuyerSuppliers: bulkUploadBuyerSuppliers
 }
