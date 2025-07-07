@@ -1899,6 +1899,36 @@ async function getDocumentItems(req, res) {
   }
 }
 
+async function shortCloseTransaction(req, res) {
+  const { documentId } = req.body;
+  try {
+    if (!documentId) {
+      return res.status(400).json({
+        message: "Document ID is required",
+      });
+    }
+    const document = await models.Documents.findOne({
+      where: {
+        id: documentId
+      }
+    });
+
+    if (!document) {
+      return res.status(404).json({ message: "Document not found" });
+    }
+    const status = document.documentType === documentTypes.purchaseOrder ? 5 : 11;
+    await document.update({ status });
+
+    return res.status(200).json({
+      message: 'Transction Short Closed Successfully.'
+    });
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Something went wrong.' });
+  }
+}
+
 
 module.exports = {
   getDocuments,
@@ -1907,5 +1937,6 @@ module.exports = {
   discardDocument,
   deleteDocument,
   getPreviewDocuments,
-  getDocumentItems
+  getDocumentItems,
+  shortCloseTransaction
 };

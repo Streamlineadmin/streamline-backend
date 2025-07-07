@@ -241,7 +241,7 @@ async function bulkUploadBuyerSuppliers(req, res) {
             buyerSuppliersPayload.push({
                 name: personName?.trim() || "",
                 email: personEmail?.trim() || "",
-                phone: phone?.trim() || "",
+                phone: phone || "",
                 companyId: Number(companyId),
                 companyName: companyName.trim(),
                 companyEmail: companyEmail.trim(),
