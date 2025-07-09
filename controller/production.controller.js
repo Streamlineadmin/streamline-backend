@@ -286,7 +286,7 @@ async function issueRawMaterial(req, res) {
             const store = await models.Store.findOne({
                 where: {
                     companyId: Number(companyId),
-                    name: element.store?.replaceAll("-fromrejectstore","")
+                    name: element.store?.replaceAll("-fromrejectstore", "")
                 }
             });
             if (!store) break;
@@ -439,7 +439,7 @@ async function updateScrapLogs(req, res) {
             const store = await models.Store.findOne({
                 where: {
                     companyId: Number(companyId),
-                    name: element.store
+                    name: element.store?.replaceAll("-fromrejectstore", "")
                 }
             });
 
@@ -456,7 +456,8 @@ async function updateScrapLogs(req, res) {
                 quantity: element.value,
                 status: 1,
                 addedBy: Number(companyId),
-                price: 0
+                price: 0,
+                isRejected: element?.isReject || false
             });
 
             await models.StockTransfer.create({
@@ -470,7 +471,8 @@ async function updateScrapLogs(req, res) {
                 companyId: Number(companyId),
                 price: 0,
                 productionId: production.productionId,
-                productionNavigationId: production.id
+                productionNavigationId: production.id,
+                isRejected: element?.isReject || false
             });
 
         }
