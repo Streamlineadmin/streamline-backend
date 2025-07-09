@@ -22,6 +22,12 @@ module.exports = (sequelize, DataTypes) => {
   }, {
     sequelize,
     modelName: 'AlternateUnits',
+    indexes: [
+      {
+        unique: true,
+        fields: ['itemId', 'alternateUnits']
+      }
+    ]
   });
   return AlternateUnits;
 };

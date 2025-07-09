@@ -97,7 +97,7 @@ function addItem(req, res) {
                                             companyId: companyId
                                         }
                                     }
-                                ); 
+                                );
                             }
                         }
                         models.StoreItems.create(storeItemData)
@@ -733,7 +733,9 @@ async function stockReconcilation(req, res) {
 async function bulkUploadAlternateUnit(req, res) {
     try {
         const file = req.file;
+        const { companyId } = req.body;
         const items = await convertXlsxToJson(file.filename, "alternateUnit");
+        // return res.status(200).json({ message: 'Success', invalidData: [] });
 
         if (!Array.isArray(items) || items.length === 0) {
             return res.status(400).json({ message: "Empty data found." });
@@ -750,14 +752,29 @@ async function bulkUploadAlternateUnit(req, res) {
         }
 
         const [existingItems, uomList] = await Promise.all([
-            models.Items.findAll({ where: { itemId: Array.from(itemIds) }, raw: true }),
-            models.UOM.findAll({ where: { code: Array.from(unitCodes) }, raw: true }),
+            models.Items.findAll({ where: { itemId: Array.from(itemIds), companyId: Number(companyId) }, raw: true }),
+            models.UOM.findAll({
+                where: {
+                    [Op.and]: [
+                        {
+                            [Op.or]: [
+                                { companyId: Number(companyId) },
+                                { companyId: null, status: 0 }
+                            ]
+                        },
+                        {
+                            code: {
+                                [Op.in]: Array.from(unitCodes)
+                            }
+                        }
+                    ]
+                },
+                raw: true
+            })
         ]);
 
         const itemMap = new Map(existingItems.map((i) => [i.itemId, i]));
         const uomMap = new Map(uomList.map((u) => [u.code, u.id]));
-
-        console.log(itemMap);
 
         for (const item of items) {
             let err = "";
@@ -794,7 +811,9 @@ async function bulkUploadAlternateUnit(req, res) {
         }
 
         if (newAlternateUnits.length) {
-            await models.AlternateUnits.bulkCreate(newAlternateUnits);
+            await models.AlternateUnits.bulkCreate(newAlternateUnits, {
+                updateOnDuplicate: ['conversionfactor']
+            });
         }
 
         const msg = errorArray.length === 0
