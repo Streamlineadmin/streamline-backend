@@ -484,6 +484,11 @@ async function getAllItemsBoms(req, res) {
       }
     });
 
+    const bomMap = finishedGoods?.reduce((acc, current) => {
+      acc[current.bomId] = current;
+      return acc;
+    }, {});
+
     const bomIds = finishedGoods.map(finishGood => finishGood.bomId);
 
     const bomDetails = await models.BOMDetails.findAll({
@@ -504,10 +509,10 @@ async function getAllItemsBoms(req, res) {
     const bomItems = {};
     for (const finishedGood of finishedGoods) {
       if (bomItems[finishedGood?.itemId]) {
-        bomItems[finishedGood?.itemId].push(bomDetailsMap[finishedGood.bomId]);
+        bomItems[finishedGood?.itemId].push({ ...bomDetailsMap[finishedGood.bomId], uom: bomMap[finishedGood.bomId]?.uom });
       }
       else {
-        bomItems[finishedGood?.itemId] = [bomDetailsMap[finishedGood.bomId]];
+        bomItems[finishedGood?.itemId] = [{ ...bomDetailsMap[finishedGood.bomId], uom: bomMap[finishedGood.bomId]?.uom }];
       }
     }
 
