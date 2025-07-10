@@ -465,6 +465,9 @@ async function addBulkItem(req, res) {
             if (item["Micro Category"] && subCategory?.id != microCategory?.parentId) {
                 err += "Micro Category Not Found under this Sub Category. "
             }
+            if (!uom) {
+                err += "Invalid uom. "
+            }
 
             if (err) {
                 errorArray.push({ ...item, Error: err });
