@@ -16,4 +16,5 @@ router.post("/getStoreItemsByStoreId", storeController.getStoreItemsByStoreId);
 router.post('/getAllStoreItemsByStoresID', storeController.getAllStoreItemsByStoresID);
 router.post('/getAllStoresWithItems', storeController.getAllStoresWithItems);
 router.post('/getCompanyStoreTotals', storeController.getCompanyStoreTotals);
+router.post('/getAllRejectStoreItems', storeController.getAllRejectStoreItems);
 module.exports = router;

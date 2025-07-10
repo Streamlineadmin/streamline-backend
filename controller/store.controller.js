@@ -1060,6 +1060,57 @@ async function getCompanyStoreTotals(req, res) {
   }
 }
 
+async function getAllRejectStoreItems(req, res) {
+  const { companyId } = req.body;
+  if (!companyId) {
+    return res
+      .status(400)
+      .json({ message: "companyId parameter is required." });
+  }
+
+  try {
+    const stores = await models.Store.findAll({
+      where: { companyId },
+      attributes: ["id", "name"],
+      raw: true,
+    });
+
+    const storeIds = stores.map((s) => s.id);
+    const StoresMap = stores?.reduce((acc, curr) => {
+      acc[curr.id] = curr.name;
+      return acc;
+    }, {});
+    const StoreItems = await models.StoreItems.findAll({
+      where: {
+        storeId: { [Op.in]: storeIds },
+        isRejected: true,
+        quantity: { [Op.gt]: 0 },
+      },
+      raw: true,
+    });
+
+    const items = await models.Items.findAll({
+      where: {
+        companyId: Number(companyId)
+      },
+      raw: true
+    });
+    const ItemsMap = items?.reduce((acc, curr) => {
+      acc[curr.id] = curr.itemId;
+      return acc;
+    }, {});
+    const storeMap = {};
+    for (const storeItem of StoreItems) {
+      if (!storeMap[StoresMap[storeItem.storeId]]) storeMap[StoresMap[storeItem.storeId]] = {};
+      storeMap[StoresMap[storeItem.storeId]][ItemsMap[storeItem.itemId]] = (storeMap[StoresMap[storeItem.storeId]][ItemsMap[storeItem.itemId]] || 0) + storeItem.quantity;
+    }
+    return res.status(200).json({ data: storeMap });
+  } catch (err) {
+    console.error("Error in getCompanyStoreTotals:", err);
+    return res.status(500).json({ message: "Internal server error." });
+  }
+}
+
 module.exports = {
   addStore: addStore,
   getStoresById: getStoresById,
@@ -1074,4 +1125,5 @@ module.exports = {
   getAllStoreItemsByStoresID: getAllStoreItemsByStoresID,
   getAllStoresWithItems: getAllStoresWithItems,
   getCompanyStoreTotals: getCompanyStoreTotals,
+  getAllRejectStoreItems
 };
