@@ -4,11 +4,22 @@ async function createBOMScrapMaterials(req, res) {
   try {
     const { bomId, scrapLogs, userId, companyId } = req.body;
 
-    if (!scrapLogs || !bomId || !Array.isArray(scrapLogs) || scrapLogs.length === 0) {
+    if (!scrapLogs || !bomId || !Array.isArray(scrapLogs)) {
       return res.status(400).json({ message: "bomId and scrap logs materials are required." });
     }
 
-    const payload = scrapLogs.map((item) => ({
+    const validScrapLogs = scrapLogs.filter(
+      (item) => item.itemId && item.itemName
+    );
+
+    if (validScrapLogs.length === 0) {
+      return res.status(200).json({
+        message: "No valid scrap materials to create.",
+        data: [],
+      });
+    }
+
+    const payload = validScrapLogs.map((item) => ({
       bomId,
       itemId: item.itemId,
       itemName: item.itemName,

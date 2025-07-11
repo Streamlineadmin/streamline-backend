@@ -5,24 +5,31 @@ async function createBOMAdditionalCharges(req, res) {
   try {
     const { bomId, charges, userId, companyId } = req.body;
 
-    if (!bomId || !charges || !Array.isArray(charges) || charges.length === 0) {
-      return res
-        .status(400)
-        .json({ message: "No additional charges provided" });
+    if (!bomId || !charges || !Array.isArray(charges)) {
+      return res.status(400).json({ message: "No additional charges provided" });
     }
 
-    const payload = charges.map((item) => ({
-      bomId,
-      chargesName: item.chargesName,
-      amount: item.amount || 0,
-      userId,
-      companyId,
-      status: item.status,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    }));
+    const validCharges = charges.filter(
+      (item) => item.chargesName?.trim() && item.amount != null
+    );
 
-    const createdCharges = await models.BOMAdditionalCharges.bulkCreate(payload);
+    let createdCharges = [];
+
+    // Insert valid rows only
+    if (validCharges.length > 0) {
+      const payload = validCharges.map((item) => ({
+        bomId,
+        chargesName: item.chargesName,
+        amount: item.amount,
+        userId,
+        companyId,
+        status: item.status,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }));
+
+      createdCharges = await models.BOMAdditionalCharges.bulkCreate(payload);
+    }
 
     const isFinalSave = charges.some((item) => item.status == 1);
     const isDraftSave = charges.every((item) => item.status == 0);
@@ -30,18 +37,38 @@ async function createBOMAdditionalCharges(req, res) {
     if (isFinalSave || isDraftSave) {
       const updateStatusPayload = { status: isFinalSave ? 1 : 0 };
 
-      await Promise.all([
+      const updatePromises = [
         models.BOMRawMaterial.update(updateStatusPayload, { where: { bomId } }),
         models.BOMFinishedGoods.update(updateStatusPayload, { where: { bomId } }),
-        models.BOMScrapMaterial.update(updateStatusPayload, { where: { bomId } }),
         models.BOMProductionProcess.update(updateStatusPayload, { where: { bomId } }),
-        models.BOMAdditionalCharges.update(updateStatusPayload, { where: { bomId } }),
         models.BOMDetails.update(updateStatusPayload, { where: { id: bomId } }),
+      ];
+
+      const [chargesCount, scrapCount] = await Promise.all([
+        models.BOMAdditionalCharges.count({ where: { bomId } }),
+        models.BOMScrapMaterial.count({ where: { bomId } }),
       ]);
+
+      if (chargesCount > 0) {
+        updatePromises.push(
+          models.BOMAdditionalCharges.update(updateStatusPayload, { where: { bomId } })
+        );
+      }
+
+      if (scrapCount > 0) {
+        updatePromises.push(
+          models.BOMScrapMaterial.update(updateStatusPayload, { where: { bomId } })
+        );
+      }
+
+      await Promise.all(updatePromises);
     }
 
-    res.status(201).json({
-      message: "Additional charges created successfully",
+    return res.status(201).json({
+      message:
+        validCharges.length > 0
+          ? "Additional charges created successfully, BOM created successfully."
+          : "BOM created successfully.",
       data: createdCharges,
     });
   } catch (error) {
@@ -52,7 +79,6 @@ async function createBOMAdditionalCharges(req, res) {
     });
   }
 }
-
 
 async function getAllBOMAdditionalCharges(req, res) {
   try {
