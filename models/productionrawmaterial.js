@@ -23,7 +23,8 @@ module.exports = (sequelize, DataTypes) => {
         averagePrice: DataTypes.FLOAT,
         consumedQuantity: DataTypes.FLOAT,
         currentAverage:DataTypes.FLOAT,
-        status: DataTypes.INTEGER
+        status: DataTypes.INTEGER,
+        conversionFactor: DataTypes.FLOAT
     }, {
         sequelize,
         modelName: 'ProductionRawMaterials',

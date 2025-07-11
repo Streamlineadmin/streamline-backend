@@ -11,7 +11,7 @@ module.exports = (sequelize, DataTypes) => {
      */
     static associate(models) {
       // define association here
-       BOMFinishedGoods.belongsTo(models.BOMDetails, {
+      BOMFinishedGoods.belongsTo(models.BOMDetails, {
         foreignKey: 'bomId',
         targetKey: 'id',
         onDelete: 'CASCADE',
@@ -29,7 +29,8 @@ module.exports = (sequelize, DataTypes) => {
     costAllocation: DataTypes.FLOAT,
     userId: DataTypes.INTEGER,
     companyId: DataTypes.INTEGER,
-    status: DataTypes.STRING
+    status: DataTypes.STRING,
+    conversionFactor: DataTypes.FLOAT
   }, {
     sequelize,
     modelName: 'BOMFinishedGoods',

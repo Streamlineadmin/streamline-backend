@@ -29,7 +29,8 @@ module.exports = (sequelize, DataTypes) => {
     costAllocationPercent: DataTypes.FLOAT,
     userId: DataTypes.INTEGER,
     companyId: DataTypes.INTEGER,
-    status: DataTypes.STRING
+    status: DataTypes.STRING,
+    conversionFactor: DataTypes.FLOAT
   }, {
     sequelize,
     modelName: 'BOMScrapMaterial',

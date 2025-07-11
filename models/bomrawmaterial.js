@@ -28,7 +28,8 @@ module.exports = (sequelize, DataTypes) => {
     userId: DataTypes.INTEGER,
     companyId: DataTypes.INTEGER,
     status: DataTypes.STRING,
-    parentId: DataTypes.INTEGER
+    parentId: DataTypes.INTEGER,
+    conversionFactor: DataTypes.FLOAT
   }, {
     sequelize,
     modelName: 'BOMRawMaterial',

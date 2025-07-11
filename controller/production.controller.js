@@ -48,8 +48,45 @@ async function startProduction(req, res) {
                 }
             });
 
+            const itemsId = [];
+            scrapLogs.forEach((data) => itemsId.push(data.itemId));
+            rawMaterials.forEach((data) => itemsId.push(data.itemId));
+            finishedGoods.forEach((data) => itemsId.push(data.itemId));
+
+            const items = await models.Items.findAll({
+                where: {
+                    itemId: {
+                        [Op.in]: itemsId
+                    },
+                    companyId: Number(companyId)
+                },
+                raw: true
+            });
+            const itemsMap = items?.reduce((acc, curr) => {
+                acc[curr.itemId] = curr;
+                return acc;
+            }, {});
+            const ids = items?.map(item => item.id);
+            const alternateUnits = await models.AlternateUnits.findAll({
+                where: {
+                    itemId: {
+                        [Op.in]: ids
+                    }
+                }, raw: true
+            });
+
             const bulkRawMaterial = rawMaterials.map((data) => {
                 const quantity = (data.quantity) / finishedGoods[0]?.quantity;
+                let conversionFactor = 1;
+                if (data.uom != itemsMap[data.itemId]?.metricsUnit) {
+                    for (const element of alternateUnits) {
+                        console.log(element.itemId, itemsMap[data.itemId]?.id, element.id, data.uom)
+                        if (element.itemId == itemsMap[data.itemId]?.id && element.alternateUnits == data.uom) {
+                            conversionFactor = element.conversionfactor;
+                            break;
+                        }
+                    }
+                }
                 return {
                     productionId: production.id,
                     itemId: data.itemId,
@@ -57,6 +94,7 @@ async function startProduction(req, res) {
                     store: data.store,
                     uom: data.uom,
                     quantity: productions[index].quantity * quantity,
+                    conversionFactor,
                     status: 1
                 }
             });
@@ -73,6 +111,15 @@ async function startProduction(req, res) {
 
             const bulkScrapMaterial = scrapLogs.map((data) => {
                 const quantity = (data.quantity) / finishedGoods[0]?.quantity;
+                let conversionFactor = 1;
+                if (data.uom != itemsMap[data.itemId]?.metricsUnit) {
+                    for (const element of alternateUnits) {
+                        if (element.itemId == itemsMap[data.itemId]?.id && element.alternateUnits == data.uom) {
+                            conversionFactor = element.conversionfactor;
+                            break;
+                        }
+                    }
+                }
                 return {
                     productionId: production.id,
                     itemId: data.itemId,
@@ -81,11 +128,21 @@ async function startProduction(req, res) {
                     quantity: productions[index].quantity * quantity,
                     store: data.store,
                     costAllocationPercent: data.costAllocationPercent,
+                    conversionFactor,
                     status: 1
                 }
             });
 
             const bulkFinishedGoods = finishedGoods.map((data) => {
+                let conversionFactor = 1;
+                if (data.uom != itemsMap[data.itemId]?.metricsUnit) {
+                    for (const element of alternateUnits) {
+                        if (element.itemId == itemsMap[data.itemId]?.id && element.alternateUnits == data.uom) {
+                            conversionFactor = element.conversionfactor;
+                            break;
+                        }
+                    }
+                }
                 return {
                     productionId: production.id,
                     itemId: data.itemId,
@@ -94,6 +151,7 @@ async function startProduction(req, res) {
                     quantity: productions[index].quantity,
                     store: data.store,
                     costAllocationPercent: data.costAllocationPercent,
+                    conversionFactor,
                     status: 1
                 }
             });
@@ -301,7 +359,7 @@ async function issueRawMaterial(req, res) {
                 where: { storeId: store.id, itemId: item.id, isRejected: element?.isReject || false },
                 order: [['createdAt', 'ASC']],
             });
-            let price = 0, remainingQuantity = element.issuedToday;
+            let price = 0, remainingQuantity = element.issuedToday * (element?.conversionFactor || 1);
             for (const stock of existingStock) {
                 if (remainingQuantity <= 0) break;
                 if (stock.quantity <= 0) continue;
@@ -337,7 +395,7 @@ async function issueRawMaterial(req, res) {
             });
             await models.ProductionRawMaterials.update({
                 issuedQuantity: (productionRawMaterial.issuedQuantity || 0) + element.issuedToday,
-                currentAverage: (((productionRawMaterial.currentAverage || 0) * (productionRawMaterial.issuedQuantity || 0)) + price) / ((productionRawMaterial.issuedQuantity || 0) + element.issuedToday)
+                currentAverage: (((productionRawMaterial.currentAverage || 0) * ((productionRawMaterial.issuedQuantity * (element?.conversionFactor || 1)) || 0)) + price) / (((productionRawMaterial.issuedQuantity * (element?.conversionFactor || 1)) || 0) + (element.issuedToday * (element?.conversionFactor || 1)))
             }, {
                 where: {
                     id: element.id
@@ -453,7 +511,7 @@ async function updateScrapLogs(req, res) {
             await models.StoreItems.create({
                 storeId: store.id,
                 itemId: item.id,
-                quantity: element.value,
+                quantity: element.value * (element?.conversionFactor || 1),
                 status: 1,
                 addedBy: Number(companyId),
                 price: 0,
@@ -464,7 +522,7 @@ async function updateScrapLogs(req, res) {
                 transferNumber: generateTransferNumber(),
                 fromStoreId: null,
                 itemId: item.id,
-                quantity: element.value,
+                quantity: element.value * (element?.conversionFactor || 1),
                 toStoreId: store.id,
                 transferDate: new Date().toISOString(),
                 transferredBy: Number(companyId),
@@ -551,7 +609,7 @@ async function saveFinishedGoods(req, res) {
         await models.StoreItems.create({
             storeId: stores.id,
             itemId: item.id,
-            quantity: passedQty,
+            quantity: passedQty * (finishedGoods[0]?.conversionFactor || 1),
             status: 1,
             addedBy: companyId,
             price: costPerUnit
@@ -561,7 +619,7 @@ async function saveFinishedGoods(req, res) {
             transferNumber: generateTransferNumber(),
             fromStoreId: null,
             itemId: item.id,
-            quantity: passedQty,
+            quantity: passedQty * (finishedGoods[0]?.conversionFactor || 1),
             toStoreId: stores.id,
             transferDate: new Date().toISOString(),
             transferredBy: companyId,
@@ -575,7 +633,7 @@ async function saveFinishedGoods(req, res) {
             await models.StoreItems.create({
                 storeId: rejectStores.id,
                 itemId: item.id,
-                quantity: rejectQty,
+                quantity: rejectQty * (finishedGoods[0]?.conversionFactor || 1),
                 status: 1,
                 addedBy: companyId,
                 price: 0,
@@ -586,7 +644,7 @@ async function saveFinishedGoods(req, res) {
                 transferNumber: generateTransferNumber(),
                 fromStoreId: null,
                 itemId: item.id,
-                quantity: rejectQty,
+                quantity: rejectQty * (finishedGoods[0]?.conversionFactor || 1),
                 toStoreId: rejectStores.id,
                 transferDate: new Date().toISOString(),
                 transferredBy: companyId,
@@ -1279,7 +1337,6 @@ async function updateTable(req, res) {
         });
     }
 }
-
 
 module.exports = {
     startProduction: startProduction,
