@@ -310,9 +310,11 @@ async function createDocument(req, res) {
     });
 
     if (documentType != documentTypes.purchaseInvoice) {
+      const lastIndex = documentNumber?.lastIndexOf("-");
+      const firstPart = documentNumber?.substring(0, lastIndex);
       const documentSeries = await models.DocumentSeries.findOne({
         where: {
-          prefix: documentNumber.split("-")[documentNumber.split("-").length - 2],
+          prefix: firstPart,
           companyId
         }
       });
@@ -880,8 +882,18 @@ async function createDocument(req, res) {
           }
         );
       }
-      const existingItems = await models.Items.findAll({});
-      const stores = await models.Store.findAll({});
+      const existingItems = await models.Items.findAll({
+        where: {
+          companyId: Number(companyId)
+        },
+        raw: true
+      });
+      const stores = await models.Store.findAll({
+        where: {
+          companyId: Number(companyId)
+        },
+        raw: true
+      });
       const itemsMap = new Map(existingItems.map(existingItem => [existingItem.itemId, existingItem.id]));
       const storesMap = new Map(stores.map(store => [store.name, store.id]));
       if ((documentType === documentTypes.goodsReceive && purchase_order.addStockOn == 'GRN') || (documentType === documentTypes.qualityReport && purchase_order.addStockOn == 'QR')) {
@@ -1243,8 +1255,8 @@ async function createDocument(req, res) {
               companyId
             }
           });
-        const existingItems = await models.Items.findAll({});
-        const stores = await models.Store.findAll({});
+        const existingItems = await models.Items.findAll({ where: { companyId: Number(companyId) } });
+        const stores = await models.Store.findAll({ where: { companyId: Number(companyId) } });
         const itemsMap = new Map(existingItems.map(existingItem => [existingItem.itemId, existingItem.id]));
         const storesMap = new Map(stores.map(store => [store.name, store.id]));
 
