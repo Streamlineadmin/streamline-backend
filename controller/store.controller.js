@@ -375,19 +375,52 @@ async function stockTransfer(req, res) {
               isRejected: element?.toReject || false
             });
 
-            await models.StockTransfer.create({
-              transferNumber,
-              fromStoreId: element?.fromStore,
-              itemId: element.itemId,
-              quantity: deductQty,
-              toStoreId: element.toStore,
-              transferDate: element.transferDate || transferDate,
-              transferredBy,
-              comment: element.comment || comment,
-              companyId,
-              price: stock.price,
-              isRejected: element?.toReject || false
-            });
+            if (element?.toStore == element?.fromStore) {
+              await models.StockTransfer.create({
+                transferNumber,
+                fromStoreId: element?.fromStore,
+                itemId: element.itemId,
+                quantity: deductQty,
+                toStoreId: element.toStore,
+                transferDate: element.transferDate || transferDate,
+                transferredBy,
+                comment: element.comment || comment,
+                companyId,
+                price: stock.price,
+                isRejected: element?.toReject || false
+              });
+              await models.StockTransfer.create({
+                transferNumber,
+                fromStoreId: element?.fromStore,
+                itemId: element.itemId,
+                quantity: deductQty * -1,
+                toStoreId: element.toStore,
+                transferDate: element.transferDate || transferDate,
+                transferredBy,
+                comment: element.comment || comment,
+                companyId,
+                price: stock.price,
+                isRejected: element?.toReject ? false : true
+              });
+
+            }
+
+            else {
+              await models.StockTransfer.create({
+                transferNumber,
+                fromStoreId: element?.fromStore,
+                itemId: element.itemId,
+                quantity: deductQty,
+                toStoreId: element.toStore,
+                transferDate: element.transferDate || transferDate,
+                transferredBy,
+                comment: element.comment || comment,
+                companyId,
+                price: stock.price,
+                isRejected: element?.toReject || false
+              });
+            }
+
           }
 
           addReduce && await models.StockTransfer.create({
@@ -462,12 +495,10 @@ async function stockTransfer(req, res) {
 }
 
 async function getItemStockTransferHistory(req, res) {
-  const { itemId } = req.body; // Extract itemId from the payload
+  const { itemId } = req.body;
 
   if (!itemId) {
-    return res.status(400).json({
-      message: "itemId is required",
-    });
+    return res.status(400).json({ message: "itemId is required" });
   }
 
   try {
@@ -487,10 +518,10 @@ async function getItemStockTransferHistory(req, res) {
         'documentNumber',
         'documentType',
         'productionId',
-        'productionNavigationId'
+        'productionNavigationId',
       ],
-      order: [['createdAt', 'ASC']], // Order by date for cumulative calculations
-      raw: true,  // Ensures data is returned as plain objects
+      order: [['createdAt', 'ASC']],
+      raw: true,
     });
 
     if (!stockTransfers.length) {
@@ -500,114 +531,124 @@ async function getItemStockTransferHistory(req, res) {
       });
     }
 
-    // Fetch the item name from the Items table
+    // Fetch item details
     const item = await models.Items.findOne({
       where: { id: itemId },
       attributes: ['itemName', 'itemId'],
     });
 
     if (!item) {
-      console.log(`No item found with itemId ${itemId}`); // Debugging the missing item
-      return res.status(404).json({
-        message: `No item found with itemId ${itemId}`,
-      });
+      return res.status(404).json({ message: `No item found with itemId ${itemId}` });
     }
 
-    // Fetch unique store IDs from stockTransfers (both from and to store)
+    // Get unique store IDs
     const storeIds = [
-      ...new Set(
-        stockTransfers.flatMap(transfer => [transfer.fromStoreId, transfer.toStoreId])
-      ),
+      ...new Set(stockTransfers.flatMap(transfer => [transfer.fromStoreId, transfer.toStoreId])),
     ];
 
-    // Fetch store names for the collected store IDs
     const stores = await models.Store.findAll({
       where: { id: storeIds },
       attributes: ['id', 'name'],
     });
 
-    // Map store IDs to store names
     const storeMap = stores.reduce((map, store) => {
       map[store.id] = store.name;
       return map;
     }, {});
 
-    // Fetch unique transferredBy user IDs
-    const userIds = [...new Set(stockTransfers.map(transfer => transfer.transferredBy))];
+    // Get user names
+    const userIds = [...new Set(stockTransfers.map(t => t.transferredBy))];
 
-    // Fetch user names for the collected user IDs
     const users = await models.Users.findAll({
       where: { id: userIds },
       attributes: ['id', 'name'],
     });
 
-    // Map user IDs to user names
     const userMap = users.reduce((map, user) => {
       map[user.id] = user.name;
       return map;
     }, {});
 
-    // Initialize cumulative quantities for stores
+    // Track cumulative quantities per store
     const storeQuantities = {};
 
     const enrichedTransfers = stockTransfers.map(transfer => {
-      // Initialize cumulative quantities for `fromStore` and `toStore` if not set
-      if (!storeQuantities[transfer.fromStoreId]) {
-        storeQuantities[transfer.fromStoreId] = 0;
+      const {
+        fromStoreId,
+        toStoreId,
+        quantity
+      } = transfer;
+
+      // Initialize quantities if not set
+      if (storeQuantities[fromStoreId] === undefined) {
+        storeQuantities[fromStoreId] = 0;
       }
-      if (!storeQuantities[transfer.toStoreId]) {
-        storeQuantities[transfer.toStoreId] = 0;
+      if (storeQuantities[toStoreId] === undefined) {
+        storeQuantities[toStoreId] = 0;
       }
 
-      // Previous and current quantities for `fromStore`
-      const fromStorePreviousQuantity = storeQuantities[transfer.fromStoreId];
-      storeQuantities[transfer.fromStoreId] = transfer.quantity < 0 ? (storeQuantities[transfer.fromStoreId] + transfer.quantity) : (storeQuantities[transfer.fromStoreId] - transfer.quantity);
-      const fromStoreCurrentQuantity = storeQuantities[transfer.fromStoreId];
+      const sameStore = fromStoreId === toStoreId;
 
-      // Previous and current quantities for `toStore`
-      const toStorePreviousQuantity = storeQuantities[transfer.toStoreId];
-      storeQuantities[transfer.toStoreId] = transfer.quantity > 0 ? (storeQuantities[transfer.toStoreId] + transfer.quantity) : (storeQuantities[transfer.toStoreId] - transfer.quantity);
-      const toStoreCurrentQuantity = storeQuantities[transfer.toStoreId];
+      const fromStorePreviousQuantity = storeQuantities[fromStoreId];
+      const toStorePreviousQuantity = storeQuantities[toStoreId];
 
-      // Enrich the transfer record
+      if (sameStore) {
+        // Only apply the quantity once if it's the same store
+        storeQuantities[fromStoreId] += quantity;
+      } else {
+        // Regular logic: subtract from source, add to destination
+        storeQuantities[fromStoreId] = quantity < 0
+          ? storeQuantities[fromStoreId] + quantity
+          : storeQuantities[fromStoreId] - quantity;
+
+        storeQuantities[toStoreId] = quantity > 0
+          ? storeQuantities[toStoreId] + quantity
+          : storeQuantities[toStoreId] - quantity;
+      }
+
+      const fromStoreCurrentQuantity = storeQuantities[fromStoreId];
+      const toStoreCurrentQuantity = storeQuantities[toStoreId];
+
       return {
         createdAt: transfer.createdAt,
         transferNumber: transfer.transferNumber,
         quantity: transfer.quantity,
-        itemName: item.itemName,  // Enrich with item name
+        itemName: item.itemName,
         itemId: item.itemId,
         fromStore: {
-          name: storeMap[transfer.fromStoreId] || 'Unknown Store',
+          name: storeMap[fromStoreId] || 'Unknown Store',
           previousQuantity: fromStorePreviousQuantity,
           currentQuantity: fromStoreCurrentQuantity,
         },
         toStore: {
-          name: storeMap[transfer.toStoreId] || 'Unknown Store',
+          name: storeMap[toStoreId] || 'Unknown Store',
           previousQuantity: toStorePreviousQuantity,
           currentQuantity: toStoreCurrentQuantity,
         },
-        transferredBy: userMap[transfer.transferredBy] || 'Unknown User',  // Enrich with user name
+        transferredBy: userMap[transfer.transferredBy] || 'Unknown User',
         comment: transfer.comment,
         price: transfer.price,
         documentNumber: transfer.documentNumber || '',
         documentType: transfer.documentType || '',
-        'productionId': transfer?.productionId || '',
-        'productionNavigationId': transfer?.productionNavigationId || ''
+        productionId: transfer?.productionId || '',
+        productionNavigationId: transfer?.productionNavigationId || '',
       };
     });
 
-    res.status(200).json({
+    return res.status(200).json({
       message: "Stock transfers fetched successfully",
       stockTransfers: enrichedTransfers,
     });
+
   } catch (error) {
     console.error("Error fetching stock transfers:", error);
-    res.status(500).json({
+    return res.status(500).json({
       message: "Something went wrong, please try again later!",
       error: error.message,
     });
   }
 }
+
 
 async function getStockTransferHistory(req, res) {
   const { companyId } = req.body; // Extract companyId from the payload

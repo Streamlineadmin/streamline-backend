@@ -809,7 +809,7 @@ async function materialPlanning(req, res) {
         // Get latest BOM by itemId (assuming sorted by createdAt)
         const latestBomFinishedGoods = {};
         bomFinishedGoods.forEach(bom => {
-            if (!latestBomFinishedGoods[bom.itemId] || new Date(bom.createdAt) > new Date(latestBomFinishedGoods[bom.itemId].createdAt)) {
+            if ((!latestBomFinishedGoods[bom.itemId] || new Date(bom.createdAt) > new Date(latestBomFinishedGoods[bom.itemId].createdAt)) && bom.uom == allItemsMap[bom.itemId]?.metricsUnit) {
                 latestBomFinishedGoods[bom.itemId] = bom;
             }
         });
@@ -984,26 +984,43 @@ async function bomBasedMaterialPlanning(req, res) {
             raw: true
         });
 
-        const requiredQtyMap = {};
-        for (const element of bomRawMaterial) {
-            const perUnitQtyRequired = element.quantity / bomFinishedGoods.quantity;
-            requiredQtyMap[element.itemId] = data.quantity * perUnitQtyRequired;
-        }
-
         const items = await models.Items.findAll({
             where: {
                 companyId: Number(companyId),
-                itemId: Object.keys(requiredQtyMap)
+                itemId: bomRawMaterial.map(data => data.itemId)
             },
             raw: true
         });
 
         const itemIds = items.map(item => item.id);
+        const alternateunits = await models.AlternateUnits.findAll({
+            where: {
+                itemId: {
+                    [Op.in]: itemIds
+                }
+            },
+            raw: true
+        });
 
         const itemMap = items.reduce((acc, curr) => {
             acc[curr.itemId] = curr;
             return acc;
         }, {});
+
+        const requiredQtyMap = {};
+        for (const element of bomRawMaterial) {
+            let conversionFactor = 1;
+            for (const au of alternateunits) {
+                if (au.alternateUnits == element.uom && au.itemId == itemMap[element.itemId]?.id) {
+                    conversionFactor = au.conversionfactor;
+                    break;
+                }
+            }
+            const perUnitQtyRequired = (element.quantity * conversionFactor) / bomFinishedGoods.quantity;
+            requiredQtyMap[element.itemId] = data.quantity * perUnitQtyRequired;
+        }
+
+
 
         const itemToPIdMap = items?.reduce((acc, curr) => {
             acc[curr.id] = curr.itemId;
@@ -1038,7 +1055,7 @@ async function bomBasedMaterialPlanning(req, res) {
         });
 
         const rawMaterialQueueMap = productionRawmaterials?.reduce((acc, curr) => {
-            acc[curr.itemId] = (acc[curr.itemId] || 0) + Math.max((curr.quantity - ((curr.consumedQuantity || 0) + (curr.issuedQuantity || 0))), 0);
+            acc[curr.itemId] = (acc[curr.itemId] || 0) + Math.max(((curr.quantity * (curr?.conversionFactor || 1)) - (((curr.consumedQuantity * (curr?.conversionFactor || 1)) || 0) + ((curr.issuedQuantity * (curr?.conversionFactor || 1)) || 0))), 0);
             return acc;
         }, {});
 
@@ -1129,7 +1146,7 @@ async function productionBasedMaterialPlanning(req, res) {
 
         const requiredQtyMap = {};
         for (const element of productionRawMaterials) {
-            requiredQtyMap[element.itemId] = (requiredQtyMap[element.itemId] || 0) + Math.max((element.quantity - (element.issuedQuantity + element.consumedQuantity)));
+            requiredQtyMap[element.itemId] = (requiredQtyMap[element.itemId] || 0) + Math.max(((element.quantity * (element?.conversionFactor || 1)) - ((element.issuedQuantity * (element?.conversionFactor || 1)) + (element.consumedQuantity * (element?.conversionFactor || 1)))));
         }
 
         const items = await models.Items.findAll({
@@ -1180,7 +1197,7 @@ async function productionBasedMaterialPlanning(req, res) {
         });
 
         const rawMaterialQueueMap = productionRawmaterials?.reduce((acc, curr) => {
-            acc[curr.itemId] = (acc[curr.itemId] || 0) + Math.max((curr.quantity - ((curr.consumedQuantity || 0) + (curr.issuedQuantity || 0))), 0);
+            acc[curr.itemId] = (acc[curr.itemId] || 0) + Math.max(((curr.quantity * (curr?.conversionFactor || 1)) - (((curr.consumedQuantity * (curr?.conversionFactor || 1)) || 0) + ((curr.issuedQuantity * (curr?.conversionFactor || 1)) || 0))), 0);
             return acc;
         }, {});
 
