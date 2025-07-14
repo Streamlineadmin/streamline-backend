@@ -147,6 +147,44 @@ function deleteBuyerSupplier(req, res) {
         });
 }
 
+async function bulkDeleteBuyerSupplier(req, res) {
+  const buyerSupplierIds = req.body;
+
+  if (!Array.isArray(buyerSupplierIds) || buyerSupplierIds.length === 0) {
+    return res.status(400).json({
+      message:
+        "Invalid or empty 'buyerSuppliers' array in the request payload.",
+    });
+  }
+
+  try {
+    await models.BuyerSupplierAddress.destroy({
+      where: { buyerSupplierId: buyerSupplierIds },
+    });
+
+    const deletedCount = await models.BuyerSupplier.destroy({
+      where: { id: buyerSupplierIds },
+    });
+
+    if (deletedCount > 0) {
+      return res.status(200).json({
+        message: `Successfully deleted ${deletedCount} Buyer/Supplier(s).`,
+      });
+    } else {
+      return res.status(404).json({
+        message: "No Buyer/Supplier records found with the provided IDs.",
+      });
+    }
+  } catch (error) {
+    console.error("Error in bulk delete:", error);
+    return res.status(500).json({
+      message: "Something went wrong during bulk deletion.",
+      error: error.message,
+    });
+  }
+}
+
+
 async function getBuyerSupplier(req, res) {
     try {
         const result = await models.BuyerSupplier.findAll({
@@ -309,6 +347,7 @@ module.exports = {
     addBuyerSupplier: addBuyerSupplier,
     getBuyerSupplier: getBuyerSupplier,
     deleteBuyerSupplier: deleteBuyerSupplier,
+    bulkDeleteBuyerSupplier: bulkDeleteBuyerSupplier,
     editBuyerSupplier: editBuyerSupplier,
     bulkUploadBuyerSuppliers: bulkUploadBuyerSuppliers
 }
