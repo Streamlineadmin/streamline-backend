@@ -2132,6 +2132,45 @@ async function shortCloseTransaction(req, res) {
   }
 }
 
+async function getSalesDocumentItems(req, res) {
+  const { documentNumber, documentType, companyId } = req.body;
+  try {
+    const documents = await models.Documents.findAll({
+      where: {
+        companyId: Number(companyId),
+        documentType,
+        orderConfirmationNumber: documentNumber
+      },
+      raw: true
+    });
+
+    const documentIds = documents?.map(data => data.documentNumber);
+
+    const documentItems = await models.DocumentItems.findAll({
+      where: {
+        companyId: Number(companyId),
+        documentNumber: {
+          [Op.in]: documentIds
+        }
+      },
+      raw: true
+    });
+    const itemsmap = documentItems?.reduce((acc, curr) => {
+      acc[curr.itemId] = (acc[curr.itemId] || 0) + curr.quantity;
+      return acc;
+    }, {});
+
+    return res.status(200).json({
+      itemsData: itemsmap,
+      message: 'Data Fetched Successfully.'
+    });
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Something went wrong.' });
+  }
+}
+
 module.exports = {
   getDocuments,
   getDocumentById,
@@ -2140,5 +2179,6 @@ module.exports = {
   deleteDocument,
   getPreviewDocuments,
   getDocumentItems,
-  shortCloseTransaction
+  shortCloseTransaction,
+  getSalesDocumentItems
 };
