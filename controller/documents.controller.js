@@ -1364,9 +1364,8 @@ async function createDocument(req, res) {
     res.status(500).json({ message: 'Something went wrong', error });
   }
 }
-
 async function getDocuments(req, res) {
-  const { companyId, currentPage, pageSize, documentType = '', search = '', dealStatus, docTypeFilter } = req.body;
+  const { companyId, currentPage, pageSize, documentType = '', search = '', dealStatus, docTypeFilter, dateRange } = req.body;
 
   const offset = ((currentPage || 1) - 1) * (pageSize || 10);
   let documentstype = [];
@@ -1384,10 +1383,26 @@ async function getDocuments(req, res) {
       break;
   }
 
+  let dateFilter = {};
+  if (dateRange && Array.isArray(dateRange) && dateRange.length === 2) {
+    const [startDate, endDate] = dateRange;
+    dateFilter = {
+      createdAt: {
+        [Op.between]: [
+          new Date(startDate + 'T00:00:00.000Z'),
+          new Date(endDate + 'T23:59:59.999Z')
+        ]
+      }
+    };
+  }
+
   let documents = [];
   if (!currentPage || !pageSize) {
     documents = await models.Documents.findAll({
-      where: { companyId },
+      where: { 
+        companyId,
+        ...dateFilter
+      },
       include: [
         {
           model: models.LogisticDetails,
@@ -1406,6 +1421,7 @@ async function getDocuments(req, res) {
     documents = await models.Documents.findAndCountAll({
       where: {
         companyId,
+        ...dateFilter,
         ...(documentstype.length > 0 && {
           documentType: {
             [Op.in]: documentstype
