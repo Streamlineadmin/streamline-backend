@@ -285,7 +285,7 @@ async function bulkUploadBuyerSuppliers(req, res) {
                 companyEmail: companyEmail.trim(),
                 companyType: companyType == 'Both' ? 3 : companyType == 'Buyer' ? 1 : 2,
                 GSTNumber: gstNumber?.trim() || "",
-                GSTType: gstType?.trim() || "",
+                GSTType: gstType?.trim() ? gstType == 'Regular' ? 1 : 2 : '',
                 status: 1,
                 customerType: "company",
             });
