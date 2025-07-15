@@ -636,6 +636,8 @@ async function bulkEditItems(req, res) {
 async function stockReconcilation(req, res) {
     const file = req.file;
     const items = await convertXlsxToJson(file.filename, 'reconcileStock');
+    let isRejected = false;
+    if (req.body?.storeId?.toString()?.includes('-reject')) isRejected = true;
 
     if (!Array.isArray(items) || items.length === 0) {
         return res.status(400).json({ message: "Empty data found." });
@@ -670,17 +672,11 @@ async function stockReconcilation(req, res) {
                 errorArray.push({ ...item, Error: err });
                 continue;
             }
-            await models.Items.update({ currentStock: (existingItem.currentStock || 0) + item['Final Stock'] }, {
-                where: {
-                    id: existingItem.id
-                }
-            }
-            )
             if (Number(item['Final Stock'] || 0) < Number(item['Current Stock'] || 0)) {
                 console.log('inside loop');
                 let remainingQuantity = (Number(item['Current Stock']) - Number(item['Final Stock']));
                 const existingStock = await models.StoreItems.findAll({
-                    where: { storeId: Number(req.body.storeId), itemId: existingItem.id, isRejected: false },
+                    where: { storeId: Number(req.body.storeId?.toString()?.replaceAll('-reject','')), itemId: existingItem.id, isRejected },
                     order: [['createdAt', 'ASC']],
                 });
                 for (const stock of existingStock) {
@@ -697,26 +693,28 @@ async function stockReconcilation(req, res) {
 
             }
             const storeItemData = {
-                storeId: Number(req.body.storeId),
+                storeId: Number(req.body.storeId?.toString()?.replaceAll('-reject','')),
                 itemId: existingItem.id,
                 quantity: Number(item['Final Stock'] || 0) - Number(item['Current Stock']),
                 addedBy: Number(req.body.companyId),
                 status: 1,
                 addedBy: Number(req.body.userId),
                 price: price,
+                isRejected
             };
 
             const stockTransfer = {
                 transferNumber: generateTransferNumber(),
-                fromStoreId: (Number(item['Final Stock'] || 0) < Number(item['Current Stock'] || 0)) ? Number(req.body.storeId) : null,
+                fromStoreId: (Number(item['Final Stock'] || 0) < Number(item['Current Stock'] || 0)) ? Number(req.body.storeId?.toString()?.replaceAll('-reject','')) : null,
                 itemId: existingItem.id,
                 quantity: Number(item['Final Stock'] || 0) - Number(item['Current Stock']),
-                toStoreId: (Number(item['Final Stock'] || 0) > Number(item['Current Stock'] || 0)) ? Number(req.body.storeId) : null,
+                toStoreId: (Number(item['Final Stock'] || 0) > Number(item['Current Stock'] || 0)) ? Number(req.body.storeId?.toString()?.replaceAll('-reject','')) : null,
                 transferDate: new Date().toISOString(),
                 transferredBy: Number(req.body.companyId),
                 comment: '',
                 companyId: Number(req.body.companyId),
                 price: price,
+                isRejected
             }
 
             if (Number(item['Final Stock'] || 0) > Number(item['Current Stock'] || 0)) {
