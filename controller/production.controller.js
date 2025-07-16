@@ -332,6 +332,158 @@ async function getProductionById(req, res) {
     }
 }
 
+async function bulkGetProductionsByIds(req, res) {
+  try {
+    const { productionIds } = req.body;
+    
+    // Validate input
+    if (!Array.isArray(productionIds) || productionIds.length === 0) {
+      return res.status(400).json({ 
+        message: 'productionIds must be a non-empty array' 
+      });
+    }
+
+    // Convert to numbers and filter valid IDs
+    const validProductionIds = productionIds
+      .map(id => Number(id))
+      .filter(id => !isNaN(id) && id > 0);
+
+    if (validProductionIds.length === 0) {
+      return res.status(400).json({ 
+        message: 'No valid production IDs provided' 
+      });
+    }
+
+    // Fetch all productions
+    const productions = await models.Production.findAll({
+      where: {
+        id: validProductionIds
+      },
+      raw: true
+    });
+
+    if (productions.length === 0) {
+      return res.status(404).json({ 
+        message: 'No productions found for the provided IDs' 
+      });
+    }
+
+    // Extract document numbers and production IDs for bulk queries
+    const documentNumbers = productions
+      .map(p => p.documentNumber)
+      .filter(Boolean);
+    const foundProductionIds = productions.map(p => p.id);
+    const bomIds = productions
+      .map(p => p.bomId)
+      .filter(Boolean);
+
+    // Fetch all related data in parallel
+    const [
+      salesOrders,
+      productionItems,
+      boms,
+      allScrapLogs,
+      allRawMaterials,
+      allFinishedGoods,
+      allProcesses,
+      allAdditionalCharges
+    ] = await Promise.all([
+      models.Documents.findAll({ 
+        where: { documentNumber: documentNumbers },
+        raw: true 
+      }),
+      models.ProductionItems.findAll({ 
+        where: { productionId: foundProductionIds },
+        raw: true 
+      }),
+      models.BOMDetails.findAll({ 
+        where: { id: bomIds },
+        raw: true 
+      }),
+      models.ProductionScrapMaterials.findAll({ 
+        where: { productionId: foundProductionIds },
+        raw: true 
+      }),
+      models.ProductionRawMaterials.findAll({ 
+        where: { productionId: foundProductionIds },
+        raw: true 
+      }),
+      models.ProductionFinishedGoods.findAll({ 
+        where: { productionId: foundProductionIds },
+        raw: true 
+      }),
+      models.ProductionSalesProcess.findAll({ 
+        where: { productionId: foundProductionIds },
+        raw: true 
+      }),
+      models.ProductionAdditionalCharges.findAll({ 
+        where: { productionId: foundProductionIds },
+        raw: true 
+      })
+    ]);
+
+    // Group related data by production ID
+    const groupByProductionId = (items) => {
+      return items.reduce((acc, item) => {
+        if (!acc[item.productionId]) {
+          acc[item.productionId] = [];
+        }
+        acc[item.productionId].push(item);
+        return acc;
+      }, {});
+    };
+
+    // Group related data by document number
+    const salesOrdersByDocNumber = salesOrders.reduce((acc, order) => {
+      acc[order.documentNumber] = order;
+      return acc;
+    }, {});
+
+    // Group related data by BOM ID
+    const bomsByBomId = boms.reduce((acc, bom) => {
+      acc[bom.id] = bom;
+      return acc;
+    }, {});
+
+    // Group all related data
+    const productionItemsByProductionId = productionItems.reduce((acc, item) => {
+      acc[item.productionId] = item;
+      return acc;
+    }, {});
+
+    const scrapLogsByProductionId = groupByProductionId(allScrapLogs);
+    const rawMaterialsByProductionId = groupByProductionId(allRawMaterials);
+    const finishedGoodsByProductionId = groupByProductionId(allFinishedGoods);
+    const processesByProductionId = groupByProductionId(allProcesses);
+    const additionalChargesByProductionId = groupByProductionId(allAdditionalCharges);
+
+    // Build the response data
+    const productionsData = productions.map(production => {
+      return {
+        salesOrder: salesOrdersByDocNumber[production.documentNumber] || null,
+        production,
+        productionItem: productionItemsByProductionId[production.id] || null,
+        bom: bomsByBomId[production.bomId] || null,
+        scrapLogs: scrapLogsByProductionId[production.id] || [],
+        rawMaterials: rawMaterialsByProductionId[production.id] || [],
+        finishedGoods: finishedGoodsByProductionId[production.id] || [],
+        process: processesByProductionId[production.id] || [],
+        additionalCharges: additionalChargesByProductionId[production.id] || []
+      };
+    });
+
+    res.status(200).json({
+      message: 'Bulk Production Data Fetched.',
+      productionsData
+    });
+
+  } catch (error) {
+    res.status(500).json({ message: 'Something went wrong' });
+    console.log(error);
+  }
+}
+
+
 async function issueRawMaterial(req, res) {
     try {
         const { rawMaterialData, companyId } = req.body;
@@ -1359,6 +1511,7 @@ module.exports = {
     startProduction: startProduction,
     getProductions: getProductions,
     getProductionById: getProductionById,
+    bulkGetProductionsByIds: bulkGetProductionsByIds,
     issueRawMaterial: issueRawMaterial,
     updateProcess: updateProcess,
     updateCost: updateCost,
