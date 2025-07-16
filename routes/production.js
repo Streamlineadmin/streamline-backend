@@ -5,6 +5,7 @@ const router = express.Router();
 router.post('/startProduction', productionController.startProduction);
 router.post('/getProductions', productionController.getProductions);
 router.post('/getProductionById', productionController.getProductionById);
+router.post('/bulkGetProductionsByIds', productionController.bulkGetProductionsByIds);
 router.post('/issueRawMaterial', productionController.issueRawMaterial);
 router.post('/updateProcess', productionController.updateProcess);
 router.post('/updateCost', productionController.updateCost);
