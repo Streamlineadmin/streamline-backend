@@ -1,4 +1,5 @@
 const models = require("../models");
+const { Op } = require('sequelize');
 
 async function getCategories(req, res) {
     const { companyId } = req.body;
@@ -166,25 +167,65 @@ async function editCategory(req, res) {
 async function deleteCategory(req, res) {
     const id = req.body.id;
 
-    models.Categories.destroy({ where: { id: id } })
-        .then(result => {
-            if (result) {
-                res.status(200).json({
-                    message: "Category deleted successfully"
-                });
-            } else {
-                res.status(200).json({
-                    message: "Category not found"
-                });
-            }
-        })
-        .catch(error => {
-            res.status(500).json({
-                message: "Something went wrong, please try again later!",
-                error: error
+    if (!id) {
+        return res.status(400).json({ message: 'Category ID is required' });
+    }
+
+    try {
+        // Step 1: Get the main category
+        const category = await models.Categories.findOne({ where: { id } });
+        if (!category) {
+            return res.status(404).json({ message: 'Category not found' });
+        }
+
+        // Step 2: Get all direct children
+        const subCategories = await models.Categories.findAll({ where: { parentId: id } });
+        const subCategoryIds = subCategories.map(cat => cat.id);
+
+        // Step 3: Get all grandchildren (microcategories)
+        let microCategoryIds = [];
+        if (subCategoryIds.length > 0) {
+            const microCategories = await models.Categories.findAll({
+                where: { parentId: { [Op.in]: subCategoryIds } }
             });
+            microCategoryIds = microCategories.map(cat => cat.id);
+        }
+
+        // Step 4: Combine all IDs to delete
+        const allCategoryIds = [id, ...subCategoryIds, ...microCategoryIds];
+
+        // Step 5: Nullify category fields in Items
+        await models.Items.update(
+            {
+                category: models.sequelize.literal(`CASE WHEN category IN (${allCategoryIds.join(',')}) THEN NULL ELSE category END`),
+                subCategory: models.sequelize.literal(`CASE WHEN subCategory IN (${allCategoryIds.join(',')}) THEN NULL ELSE subCategory END`),
+                microCategory: models.sequelize.literal(`CASE WHEN microCategory IN (${allCategoryIds.join(',')}) THEN NULL ELSE microCategory END`),
+            },
+            {
+                where: {
+                    [Op.or]: [
+                        { category: { [Op.in]: allCategoryIds } },
+                        { subCategory: { [Op.in]: allCategoryIds } },
+                        { microCategory: { [Op.in]: allCategoryIds } },
+                    ]
+                }
+            }
+        );
+
+        // Step 6: Delete all categories at once
+        await models.Categories.destroy({ where: { id: { [Op.in]: allCategoryIds } } });
+
+        return res.status(200).json({ message: 'Category and all linked subcategories/microcategories deleted successfully.' });
+
+    } catch (error) {
+        console.error('Error deleting category:', error);
+        return res.status(500).json({
+            message: 'Something went wrong while deleting category',
+            error
         });
+    }
 }
+
 
 module.exports = {
     getCategories: getCategories,
