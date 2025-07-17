@@ -519,6 +519,7 @@ async function getItemStockTransferHistory(req, res) {
         'documentType',
         'productionId',
         'productionNavigationId',
+        'isRejected'
       ],
       order: [['createdAt', 'ASC']],
       raw: true,
@@ -632,6 +633,7 @@ async function getItemStockTransferHistory(req, res) {
         documentType: transfer.documentType || '',
         productionId: transfer?.productionId || '',
         productionNavigationId: transfer?.productionNavigationId || '',
+        isRejected: transfer?.isRejected || false
       };
     });
 

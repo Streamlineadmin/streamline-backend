@@ -481,7 +481,7 @@ async function createDocument(req, res) {
 
         // comapare documentsItem map and delivery challam items map 
         for (const elem of Object.keys(documentsItemMap)) {
-          if (documentsItemMap[elem] > deliveryChallanItemsMap[elem]) {
+          if (documentsItemMap[elem] > deliveryChallanItemsMap[elem]||!deliveryChallanItemsMap[elem]) {
             statusCode = documentType === documentTypes.invoice ? 12 : 10;
             break;
           }
