@@ -52,7 +52,7 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: false,
       },
       plannedTime: {
-        type: DataTypes.TIME,
+        type: DataTypes.STRING,
         allowNull: true,
       },
       cost: {

@@ -21,7 +21,7 @@ module.exports = (sequelize, DataTypes) => {
                 defaultValue: 1,
             },
             plannedTime: {
-                type: DataTypes.TIME,
+                type: DataTypes.STRING,
                 allowNull: true,
             },
             cost: {
@@ -36,10 +36,10 @@ module.exports = (sequelize, DataTypes) => {
                 type: DataTypes.FLOAT,
             },
             totalPlannedTime: {
-                type: DataTypes.TIME,
+                type: DataTypes.STRING,
             },
             currentPlannedTime: {
-                type: DataTypes.TIME,
+                type: DataTypes.STRING,
             },
             productionId: { type: DataTypes.INTEGER },
         },
