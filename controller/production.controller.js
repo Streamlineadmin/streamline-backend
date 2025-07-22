@@ -99,7 +99,7 @@ async function startProduction(req, res) {
                 }
             });
 
-            const bulkAdditionalCharges = additionalCharges.map((data) => {
+            const bulkAdditionalCharges = additionalCharges?.filter(data => data.chargesName).map((data) => {
                 const price = (data.amount) / finishedGoods[0]?.quantity;
                 return {
                     productionId: production.id,
@@ -109,7 +109,7 @@ async function startProduction(req, res) {
                 }
             });
 
-            const bulkScrapMaterial = scrapLogs.map((data) => {
+            const bulkScrapMaterial = scrapLogs?.filter(data => data?.itemName).map((data) => {
                 const quantity = (data.quantity) / finishedGoods[0]?.quantity;
                 let conversionFactor = 1;
                 if (data.uom != itemsMap[data.itemId]?.metricsUnit) {
@@ -158,16 +158,19 @@ async function startProduction(req, res) {
 
             const bulkProcess = process.map((data) => {
 
-                const [hours, minutes, seconds] = !data?.plannedTime ? [0, 0, 0] : data?.plannedTime?.split(":")?.map(Number);
-                const totalMinutes = hours * 60 + minutes;
+                const [days, hours, minutes, seconds] = !data?.plannedTime ? [0, 0, 0, 0] : data?.plannedTime?.split(":")?.map(Number);
+                const totalMinutes = (((days * 24) + hours) * 60) + minutes;
                 const miniute = (productions[index]?.quantity) * (totalMinutes / finishedGoods[0]?.quantity);
                 const totalSeconds = miniute * 60;
 
-                const hour = Math.floor(totalSeconds / 3600);
-                const minute = Math.floor((totalSeconds % 3600) / 60);
-                const second = totalSeconds % 60;
+                const day = Math.floor(totalSeconds / (24 * 3600));
+                const remainingAfterDays = totalSeconds % (24 * 3600);
 
-                const timeString = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:${String(second).padStart(2, '0')}`;
+                const hour = Math.floor(remainingAfterDays / 3600);
+                const minute = Math.floor((remainingAfterDays % 3600) / 60);
+                const second = remainingAfterDays % 60;
+
+                const timeString = `${String(day).padStart(2, '0')}:${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:${String(second).padStart(2, '0')}`;
 
                 return {
                     productionId: production.id,
@@ -333,198 +336,199 @@ async function getProductionById(req, res) {
 }
 
 async function bulkGetProductionsByIds(req, res) {
-  try {
-    const { productionIds } = req.body;
-    
-    // Validate input
-    if (!Array.isArray(productionIds) || productionIds.length === 0) {
-      return res.status(400).json({ 
-        message: 'productionIds must be a non-empty array' 
-      });
-    }
+    try {
+        const { productionIds } = req.body;
 
-    // Convert to numbers and filter valid IDs
-    const validProductionIds = productionIds
-      .map(id => Number(id))
-      .filter(id => !isNaN(id) && id > 0);
-
-    if (validProductionIds.length === 0) {
-      return res.status(400).json({ 
-        message: 'No valid production IDs provided' 
-      });
-    }
-
-    // Fetch all productions
-    const productions = await models.Production.findAll({
-      where: {
-        id: validProductionIds
-      },
-      raw: true
-    });
-
-    if (productions.length === 0) {
-      return res.status(404).json({ 
-        message: 'No productions found for the provided IDs' 
-      });
-    }
-
-    // Extract document numbers and production IDs for bulk queries
-    const documentNumbers = productions
-      .map(p => p.documentNumber)
-      .filter(Boolean);
-    const foundProductionIds = productions.map(p => p.id);
-    const bomIds = productions
-      .map(p => p.bomId)
-      .filter(Boolean);
-
-    // Fetch all related data in parallel
-    const [
-      salesOrders,
-      productionItems,
-      boms,
-      allScrapLogs,
-      allRawMaterials,
-      allFinishedGoods,
-      allProcesses,
-      allAdditionalCharges
-    ] = await Promise.all([
-      models.Documents.findAll({ 
-        where: { documentNumber: documentNumbers },
-        raw: true 
-      }),
-      models.ProductionItems.findAll({ 
-        where: { productionId: foundProductionIds },
-        raw: true 
-      }),
-      models.BOMDetails.findAll({ 
-        where: { id: bomIds },
-        raw: true 
-      }),
-      models.ProductionScrapMaterials.findAll({ 
-        where: { productionId: foundProductionIds },
-        raw: true 
-      }),
-      models.ProductionRawMaterials.findAll({ 
-        where: { productionId: foundProductionIds },
-        raw: true 
-      }),
-      models.ProductionFinishedGoods.findAll({ 
-        where: { productionId: foundProductionIds },
-        raw: true 
-      }),
-      models.ProductionSalesProcess.findAll({ 
-        where: { productionId: foundProductionIds },
-        raw: true 
-      }),
-      models.ProductionAdditionalCharges.findAll({ 
-        where: { productionId: foundProductionIds },
-        raw: true 
-      })
-    ]);
-
-    // Group related data by production ID
-    const groupByProductionId = (items) => {
-      return items.reduce((acc, item) => {
-        if (!acc[item.productionId]) {
-          acc[item.productionId] = [];
+        // Validate input
+        if (!Array.isArray(productionIds) || productionIds.length === 0) {
+            return res.status(400).json({
+                message: 'productionIds must be a non-empty array'
+            });
         }
-        acc[item.productionId].push(item);
-        return acc;
-      }, {});
-    };
 
-    // Group related data by document number
-    const salesOrdersByDocNumber = salesOrders.reduce((acc, order) => {
-      acc[order.documentNumber] = order;
-      return acc;
-    }, {});
+        // Convert to numbers and filter valid IDs
+        const validProductionIds = productionIds
+            .map(id => Number(id))
+            .filter(id => !isNaN(id) && id > 0);
 
-    // Group related data by BOM ID
-    const bomsByBomId = boms.reduce((acc, bom) => {
-      acc[bom.id] = bom;
-      return acc;
-    }, {});
+        if (validProductionIds.length === 0) {
+            return res.status(400).json({
+                message: 'No valid production IDs provided'
+            });
+        }
 
-    // Group all related data
-    const productionItemsByProductionId = productionItems.reduce((acc, item) => {
-      acc[item.productionId] = item;
-      return acc;
-    }, {});
+        // Fetch all productions
+        const productions = await models.Production.findAll({
+            where: {
+                id: validProductionIds
+            },
+            raw: true
+        });
 
-    const scrapLogsByProductionId = groupByProductionId(allScrapLogs);
-    const rawMaterialsByProductionId = groupByProductionId(allRawMaterials);
-    const finishedGoodsByProductionId = groupByProductionId(allFinishedGoods);
-    const processesByProductionId = groupByProductionId(allProcesses);
-    const additionalChargesByProductionId = groupByProductionId(allAdditionalCharges);
+        if (productions.length === 0) {
+            return res.status(404).json({
+                message: 'No productions found for the provided IDs'
+            });
+        }
 
-    // Build the response data
-    const productionsData = productions.map(production => {
-      return {
-        salesOrder: salesOrdersByDocNumber[production.documentNumber] || null,
-        production,
-        productionItem: productionItemsByProductionId[production.id] || null,
-        bom: bomsByBomId[production.bomId] || null,
-        scrapLogs: scrapLogsByProductionId[production.id] || [],
-        rawMaterials: rawMaterialsByProductionId[production.id] || [],
-        finishedGoods: finishedGoodsByProductionId[production.id] || [],
-        process: processesByProductionId[production.id] || [],
-        additionalCharges: additionalChargesByProductionId[production.id] || []
-      };
-    });
+        // Extract document numbers and production IDs for bulk queries
+        const documentNumbers = productions
+            .map(p => p.documentNumber)
+            .filter(Boolean);
+        const foundProductionIds = productions.map(p => p.id);
+        const bomIds = productions
+            .map(p => p.bomId)
+            .filter(Boolean);
 
-    res.status(200).json({
-      message: 'Bulk Production Data Fetched.',
-      productionsData
-    });
+        // Fetch all related data in parallel
+        const [
+            salesOrders,
+            productionItems,
+            boms,
+            allScrapLogs,
+            allRawMaterials,
+            allFinishedGoods,
+            allProcesses,
+            allAdditionalCharges
+        ] = await Promise.all([
+            models.Documents.findAll({
+                where: { documentNumber: documentNumbers },
+                raw: true
+            }),
+            models.ProductionItems.findAll({
+                where: { productionId: foundProductionIds },
+                raw: true
+            }),
+            models.BOMDetails.findAll({
+                where: { id: bomIds },
+                raw: true
+            }),
+            models.ProductionScrapMaterials.findAll({
+                where: { productionId: foundProductionIds },
+                raw: true
+            }),
+            models.ProductionRawMaterials.findAll({
+                where: { productionId: foundProductionIds },
+                raw: true
+            }),
+            models.ProductionFinishedGoods.findAll({
+                where: { productionId: foundProductionIds },
+                raw: true
+            }),
+            models.ProductionSalesProcess.findAll({
+                where: { productionId: foundProductionIds },
+                raw: true
+            }),
+            models.ProductionAdditionalCharges.findAll({
+                where: { productionId: foundProductionIds },
+                raw: true
+            })
+        ]);
 
-  } catch (error) {
-    res.status(500).json({ message: 'Something went wrong' });
-    console.log(error);
-  }
+        // Group related data by production ID
+        const groupByProductionId = (items) => {
+            return items.reduce((acc, item) => {
+                if (!acc[item.productionId]) {
+                    acc[item.productionId] = [];
+                }
+                acc[item.productionId].push(item);
+                return acc;
+            }, {});
+        };
+
+        // Group related data by document number
+        const salesOrdersByDocNumber = salesOrders.reduce((acc, order) => {
+            acc[order.documentNumber] = order;
+            return acc;
+        }, {});
+
+        // Group related data by BOM ID
+        const bomsByBomId = boms.reduce((acc, bom) => {
+            acc[bom.id] = bom;
+            return acc;
+        }, {});
+
+        // Group all related data
+        const productionItemsByProductionId = productionItems.reduce((acc, item) => {
+            acc[item.productionId] = item;
+            return acc;
+        }, {});
+
+        const scrapLogsByProductionId = groupByProductionId(allScrapLogs);
+        const rawMaterialsByProductionId = groupByProductionId(allRawMaterials);
+        const finishedGoodsByProductionId = groupByProductionId(allFinishedGoods);
+        const processesByProductionId = groupByProductionId(allProcesses);
+        const additionalChargesByProductionId = groupByProductionId(allAdditionalCharges);
+
+        // Build the response data
+        const productionsData = productions.map(production => {
+            return {
+                salesOrder: salesOrdersByDocNumber[production.documentNumber] || null,
+                production,
+                productionItem: productionItemsByProductionId[production.id] || null,
+                bom: bomsByBomId[production.bomId] || null,
+                scrapLogs: scrapLogsByProductionId[production.id] || [],
+                rawMaterials: rawMaterialsByProductionId[production.id] || [],
+                finishedGoods: finishedGoodsByProductionId[production.id] || [],
+                process: processesByProductionId[production.id] || [],
+                additionalCharges: additionalChargesByProductionId[production.id] || []
+            };
+        });
+
+        res.status(200).json({
+            message: 'Bulk Production Data Fetched.',
+            productionsData
+        });
+
+    } catch (error) {
+        res.status(500).json({ message: 'Something went wrong' });
+        console.log(error);
+    }
 }
-
 
 async function issueRawMaterial(req, res) {
     try {
         const { rawMaterialData, companyId } = req.body;
+        if (!rawMaterialData || rawMaterialData.length === 0) {
+            return res.status(400).json({ message: 'No raw material data provided.' });
+        }
         const production = await models.Production.findOne({
-            where: {
-                id: rawMaterialData[0]?.productionId
-            }
+            where: { id: rawMaterialData[0]?.productionId }
         });
+        if (!production) {
+            return res.status(404).json({ message: 'Production not found.' });
+        }
+        const [stores, items] = await Promise.all([
+            models.Store.findAll({ where: { companyId: Number(companyId) } }),
+            models.Items.findAll({ where: { companyId } })
+        ]);
+        const storeMap = new Map(stores.map(store => [store.name, store]));
+        const itemMap = new Map(items.map(item => [item.itemId, item]));
+        const stockTransferPayloads = [];
         for (const element of rawMaterialData) {
-            const store = await models.Store.findOne({
-                where: {
-                    companyId: Number(companyId),
-                    name: element.store?.replaceAll("-fromrejectstore", "")
-                }
-            });
-            if (!store) break;
             if (!element?.issuedToday) continue;
-            const item = await models.Items.findOne({
-                where: {
-                    companyId,
-                    itemId: element.itemId
-                }
-            })
+            const storeName = element.store?.replaceAll("-fromrejectstore", "");
+            const store = storeMap.get(storeName);
+            const item = itemMap.get(element.itemId);
+            if (!store || !item) continue;
+            const isRejected = element?.isReject || false;
             const existingStock = await models.StoreItems.findAll({
-                where: { storeId: store.id, itemId: item.id, isRejected: element?.isReject || false },
-                order: [['createdAt', 'ASC']],
+                where: {
+                    storeId: store.id,
+                    itemId: item.id,
+                    isRejected
+                },
+                order: [['createdAt', 'ASC']]
             });
-            let price = 0, remainingQuantity = element.issuedToday * (element?.conversionFactor || 1);
+            let price = 0;
+            let remainingQuantity = element.issuedToday * (element?.conversionFactor || 1);
             for (const stock of existingStock) {
                 if (remainingQuantity <= 0) break;
                 if (stock.quantity <= 0) continue;
                 const deductQty = Math.min(stock.quantity, remainingQuantity);
                 remainingQuantity -= deductQty;
-
-                // Reduce quantity from source store
-                await models.StoreItems.update(
-                    { quantity: (stock.quantity - deductQty) },
-                    { where: { id: stock.id } }
-                );
-
-                await models.StockTransfer.create({
+                await stock.update({ quantity: stock.quantity - deductQty });
+                stockTransferPayloads.push({
                     transferNumber: generateTransferNumber(),
                     fromStoreId: store.id,
                     itemId: item.id,
@@ -536,25 +540,24 @@ async function issueRawMaterial(req, res) {
                     price: stock.price,
                     productionId: production.productionId,
                     productionNavigationId: production.id,
-                    isRejected: element?.isReject || false
+                    isRejected
                 });
-                price += (stock.price * deductQty);
-            }
-            const productionRawMaterial = await models.ProductionRawMaterials.findOne({
-                where: {
-                    id: element.id
-                }
-            });
-            await models.ProductionRawMaterials.update({
-                issuedQuantity: (productionRawMaterial.issuedQuantity || 0) + element.issuedToday,
-                currentAverage: (((productionRawMaterial.currentAverage || 0) * ((productionRawMaterial.issuedQuantity * (element?.conversionFactor || 1)) || 0)) + price) / (((productionRawMaterial.issuedQuantity * (element?.conversionFactor || 1)) || 0) + (element.issuedToday * (element?.conversionFactor || 1)))
-            }, {
-                where: {
-                    id: element.id
-                }
-            });
-        }
 
+                price += stock.price * deductQty;
+            }
+            await models.ProductionRawMaterials.increment(
+                {
+                    issuedQuantity: element.issuedToday,
+                    currentAverage: price
+                },
+                {
+                    where: { id: element.id }
+                }
+            );
+        }
+        if (stockTransferPayloads.length > 0) {
+            await models.StockTransfer.bulkCreate(stockTransferPayloads);
+        }
         return res.status(200).json({ message: 'Material Issued.' });
     } catch (error) {
         console.error("Issue Error:", error);
@@ -565,29 +568,41 @@ async function issueRawMaterial(req, res) {
     }
 }
 
+
 async function updateProcess(req, res) {
     try {
         const { processData } = req.body;
         for (const element of processData) {
-            if (element.currentTime && element.cost) {
+            if (element.currentTime && element.amount) {
                 const process = await models.ProductionSalesProcess.findOne({ where: { id: element.id } });
-                const [hours, miniutes] = element.currentTime.split(":").map(Number);
-                const totalMinutes = (hours * 60) + miniutes;
-                totalCost = ((totalMinutes / 60) * element.cost);
+                const [days, hours, miniutes] = element.currentTime.split(":").map(Number);
+                const totalMinutes = ((((days || 0) * 24) + hours) * 60) + miniutes;
+                let totalCost = ((totalMinutes / 60) * element.amount);
+                console.log('totalCost', totalCost);
                 let currentAverageTime = '';
                 if (!process.currentPlannedTime) {
                     currentAverageTime = element.currentTime;
                 }
                 else {
-                    const [h1, m1, s1] = process.currentPlannedTime.split(":").map(Number);
-                    const [h2, m2, s2] = element.currentTime.split(":").map(Number);
+                    const parseTime = (timeStr) => {
+                        if (!timeStr) return [0, 0, 0, 0];
+                        const parts = timeStr.split(":").map(Number);
+                        if (parts.length === 4) return parts;
+                        if (parts.length === 3) return [0, ...parts];
+                        return [0, 0, 0, 0];
+                    };
+                    const [d1, h1, m1, s1] = parseTime(process.currentPlannedTime);
+                    const [d2, h2, m2, s2] = parseTime(element.currentTime);
                     let seconds = s1 + s2;
                     let minutes = m1 + m2 + Math.floor(seconds / 60);
                     let hours = h1 + h2 + Math.floor(minutes / 60);
+                    let days = d1 + d2 + Math.floor(hours / 24);
                     seconds = seconds % 60;
                     minutes = minutes % 60;
-                    const format = (num) => String(num).padStart(2, '0');
-                    currentAverageTime = `${format(hours)}:${format(minutes)}:${format(seconds)}`
+                    hours = hours % 24;
+                    const format = (num) => String(num).padStart(2, "0");
+                    currentAverageTime = `${format(days)}:${format(hours)}:${format(minutes)}:${format(seconds)}`;
+                    console.log(currentAverageTime);
                 }
                 await models.ProductionSalesProcess.update({ currentaverageCost: (process.currentaverageCost || 0) + totalCost, currentPlannedTime: currentAverageTime }, {
                     where: {
@@ -725,7 +740,7 @@ async function saveFinishedGoods(req, res) {
         });
 
         rawMaterials.forEach((data) => {
-            total += (data.issuedQuantity || 0) * (data.currentAverage || 0);
+            total += (data.currentAverage || 0);
         });
 
         additionalCharges.forEach((data) => {
@@ -830,21 +845,23 @@ async function saveFinishedGoods(req, res) {
         }
 
         for (const element of process) {
-            const [h1, m1, s1] = (element.currentPlannedTime || '00:00:00').split(":").map(Number);
-            const [h2, m2, s2] = (element.totalPlannedTime || '00:00:00').split(":").map(Number);
+            const [d1, h1, m1, s1] = (element?.currentPlannedTime || '00:00:00').split(":").map(Number);
+            const [d2, h2, m2, s2] = (element?.totalPlannedTime || '00:00:00').split(":").map(Number);
 
             let seconds = s1 + s2;
             let minutes = m1 + m2 + Math.floor(seconds / 60);
             let hours = h1 + h2 + Math.floor(minutes / 60);
+            let days = d1 + d2 + Math.floor(hours / 24);
 
             seconds = seconds % 60;
             minutes = minutes % 60;
+            hours = hours % 24;
 
             const format = (num) => String(num).padStart(2, '0');
-            const totalPlannedTime = `${format(hours)}:${format(minutes)}:${format(seconds)}`;
+            const totalPlannedTime = `${format(days)}:${format(hours)}:${format(minutes)}:${format(seconds)}`;
 
             await models.ProductionSalesProcess.update({
-                currentPlannedTime: '00:00:00',
+                currentPlannedTime: '00:00:00:00',
                 totalPlannedTime,
                 currentaverageCost: 0,
                 averageCost: (element.averageCost || 0) + element.currentaverageCost
@@ -855,11 +872,7 @@ async function saveFinishedGoods(req, res) {
         }
 
         for (const element of rawMaterials) {
-            const totalQty = (element.issuedQuantity || 0) + (element.consumedQuantity || 0);
-            const avgPrice = totalQty > 0
-                ? (((element.averagePrice || 0) * (element.consumedQuantity || 0)) + ((element.currentAverage || 0) * element.issuedQuantity)) / totalQty
-                : 0;
-
+            const avgPrice = (element.averagePrice || 0) + (element.currentAverage || 0);
             await models.ProductionRawMaterials.update({
                 currentAverage: 0,
                 consumedQuantity: (element.consumedQuantity || 0) + element.issuedQuantity,
@@ -1507,6 +1520,47 @@ async function updateTable(req, res) {
     }
 }
 
+async function removeRows(req, res) {
+    try {
+        const { id, type } = req.body;
+        if (type == 'rawMaterial') {
+            await models.ProductionRawMaterials.destroy({
+                where: {
+                    id
+                }
+            });
+        } else if (type == 'process') {
+            await models.ProductionSalesProcess.destroy({
+                where: {
+                    id
+                }
+            });
+        } else if (type == 'leftOver') {
+            await models.ProductionScrapMaterials.destroy({
+                where: {
+                    id
+                }
+            });
+        }
+        else if (type == 'additionalCharges') {
+            await models.ProductionAdditionalCharges.destroy({
+                where: {
+                    id
+                }
+            });
+        }
+        res.status(200).json({
+            message: 'Row removed Successfully'
+        });
+    } catch (error) {
+        console.error("Update Table Error:", error);
+        res.status(500).json({
+            message: "Failed to update production data.",
+            error: error.message
+        });
+    }
+}
+
 module.exports = {
     startProduction: startProduction,
     getProductions: getProductions,
@@ -1523,5 +1577,6 @@ module.exports = {
     bomBasedMaterialPlanning: bomBasedMaterialPlanning,
     getProductionsByCompanyId: getProductionsByCompanyId,
     productionBasedMaterialPlanning: productionBasedMaterialPlanning,
-    updateTable: updateTable
+    updateTable: updateTable,
+    removeRows: removeRows
 }
