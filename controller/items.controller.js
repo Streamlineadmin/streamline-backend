@@ -353,7 +353,7 @@ async function getItems(req, res) {
                 .filter(([_, data]) => data.quantity > 0 || data.rejectedQuantity > 0)
                 .map(([storeId, data]) => ({
                     storeId: parseInt(storeId),
-                    ...(data?.quantity?{quantity: data.quantity}:{}),
+                    ...(data?.quantity ? { quantity: data.quantity } : {}),
                     rejectedQuantity: data.rejectedQuantity
                 }));
 
@@ -406,6 +406,8 @@ async function addBulkItem(req, res) {
                 ]
             }
         });
+
+        const itemsMap = {};
 
         const existingItemMap = new Map(existingItems.map(item => [item.itemId, true]));
 
@@ -476,6 +478,12 @@ async function addBulkItem(req, res) {
             if (!uom) {
                 err += "Invalid uom. "
             }
+
+            if (itemsMap?.[itemId]) {
+                err += 'Same ItemId found in sheet.';
+            }
+
+            itemsMap[itemId] = 1;
 
             if (err) {
                 errorArray.push({ ...item, Error: err });
