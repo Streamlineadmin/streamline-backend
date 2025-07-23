@@ -545,10 +545,10 @@ async function issueRawMaterial(req, res) {
 
                 price += stock.price * deductQty;
             }
-            await models.ProductionRawMaterials.increment(
+            await models.ProductionRawMaterials.update(
                 {
-                    issuedQuantity: element.issuedToday,
-                    currentAverage: price
+                    issuedQuantity: (element.issuedQuantity || 0) + element.issuedToday,
+                    currentAverage: (element.currentAverage || 0) + price
                 },
                 {
                     where: { id: element.id }
