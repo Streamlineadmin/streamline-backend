@@ -845,8 +845,8 @@ async function saveFinishedGoods(req, res) {
         }
 
         for (const element of process) {
-            const [d1, h1, m1, s1] = (element?.currentPlannedTime || '00:00:00').split(":").map(Number);
-            const [d2, h2, m2, s2] = (element?.totalPlannedTime || '00:00:00').split(":").map(Number);
+            const [d1, h1, m1, s1] = (element?.currentPlannedTime || '00:00:00:00').split(":").map(Number);
+            const [d2, h2, m2, s2] = (element?.totalPlannedTime || '00:00:00:00').split(":").map(Number);
 
             let seconds = s1 + s2;
             let minutes = m1 + m2 + Math.floor(seconds / 60);

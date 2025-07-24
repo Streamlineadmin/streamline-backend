@@ -394,15 +394,16 @@ async function addBulkItem(req, res) {
         let errorArray = [];
         let err = '';
 
-        const itemIds = data.map(item => item['* Item ID']);
-        const itemNames = data.map(item => item['* Item Name']);
+        const itemIds = data.map(item => item['* Item ID']?.trim());
+        const itemNames = data.map(item => item['* Item Name']?.trim());
+
+        console.log(itemNames,itemIds);
 
         const existingItems = await models.Items.findAll({
             where: {
                 companyId,
                 [Op.or]: [
                     { itemId: { [Op.in]: itemIds } },
-                    { itemName: { [Op.in]: itemNames } }
                 ]
             }
         });
@@ -480,17 +481,20 @@ async function addBulkItem(req, res) {
             }
 
             if (itemsMap?.[itemId]) {
-                err += 'Same ItemId found in sheet.';
+                err += 'Same ItemId found in sheet. ';
             }
 
             itemsMap[itemId] = 1;
+
+            if (itemId?.toString()?.length>11) {
+                err+='Item ID must be lesser than or equal to 11 characters.'
+            }
 
             if (err) {
                 errorArray.push({ ...item, Error: err });
                 err = '';
                 continue;
             }
-
             itemsData.push({
                 itemId,
                 itemName,
