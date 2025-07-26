@@ -28,6 +28,10 @@ module.exports = (sequelize, DataTypes) => {
     options: {
       type: DataTypes.JSON,
       defaultValue: []
+    },
+    visibleOn: {
+      type: DataTypes.JSON,
+      defaultValue: []
     }
   }, {
     sequelize,

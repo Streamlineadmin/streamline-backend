@@ -6,5 +6,6 @@ const customfieldController = require("../controller/customfields.controller");
 router.post("/addCustomFields", customfieldController.addCustomfields);
 router.post("/getCustomFields", customfieldController.getCustomfields);
 router.post("/deleteCustomFields", customfieldController.deleteCustomfields);
+router.post("/editPermissions", customfieldController.editPermissions);
 
 module.exports = router;

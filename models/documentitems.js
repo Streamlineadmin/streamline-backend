@@ -43,7 +43,11 @@ module.exports = (sequelize, DataTypes) => {
     conversionFactor: DataTypes.FLOAT,
     ServiceID: DataTypes.STRING,
     ServiceName: DataTypes.STRING,
-    additionalDetails: DataTypes.STRING
+    additionalDetails: DataTypes.STRING,
+    customFields: {
+      type: DataTypes.JSON,
+      defaultValue: []
+    }
   }, {
     sequelize,
     modelName: 'DocumentItems',

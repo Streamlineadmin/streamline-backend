@@ -2,6 +2,7 @@ const { Op, where } = require('sequelize');
 const models = require('../models');
 const { documentTypes, purchaseDocuments, salesDocuments, serviceDocuments } = require('../helpers/document-type');
 const { generateTransferNumber } = require('../helpers/transfer-number');
+const customfields = require('../models/customfields');
 
 async function createDocument(req, res) {
   try {
@@ -790,7 +791,8 @@ async function createDocument(req, res) {
             conversionFactor: item?.conversionFactor,
             ServiceID: item?.ServiceID,
             ServiceName: item?.ServiceName,
-            additionalDetails: item?.additionalDetails
+            additionalDetails: item?.additionalDetails,
+            customFields: item?.customFields
           })
         })
       ),
