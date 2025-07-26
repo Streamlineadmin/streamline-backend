@@ -259,7 +259,7 @@ async function getStoresByItem(req, res) {
   try {
     // Step 2: Find all storeIds that have the given itemId in StoreItems
     const storeItems = await models.StoreItems.findAll({
-      where: { itemId, price: { [models.Sequelize.Op.gt]: 0 } },
+      where: { itemId },
       attributes: ['storeId', 'quantity', 'isRejected'],
     });
 

@@ -83,8 +83,35 @@ async function deleteCustomfields(req, res) {
   }
 }
 
+async function editPermissions(req, res) {
+  try {
+    const { id, permissions } = req.body;
+    if (!id || !Array.isArray(permissions)) {
+      return res.status(400).json({ message: "Invalid input. 'id' and 'permissions' array are required." });
+    }
+
+    const customField = await models.CustomFields.findByPk(id);
+
+    if (!customField) {
+      return res.status(404).json({ message: 'Custom Field not found.' });
+    }
+
+    await customField.update({ visibleOn: permissions });
+
+    return res.status(200).json({
+      message: "Permissions updated successfully."
+    });
+
+  } catch (error) {
+    console.error("Error in editing permissions:", error);
+    return res.status(500).json({ message: "Server error" });
+  }
+}
+
+
 module.exports = {
   addCustomfields: addCustomfields,
   getCustomfields: getCustomfields,
-  deleteCustomfields: deleteCustomfields
+  deleteCustomfields: deleteCustomfields,
+  editPermissions
 };
