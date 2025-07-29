@@ -148,79 +148,79 @@ function deleteBuyerSupplier(req, res) {
 }
 
 async function bulkDeleteBuyerSupplier(req, res) {
-  const buyerSupplierIds = req.body;
+    const buyerSupplierIds = req.body;
 
-  if (!Array.isArray(buyerSupplierIds) || buyerSupplierIds.length === 0) {
-    return res.status(400).json({
-      message:
-        "Invalid or empty 'buyerSuppliers' array in the request payload.",
-    });
-  }
-
-  try {
-    await models.BuyerSupplierAddress.destroy({
-      where: { buyerSupplierId: buyerSupplierIds },
-    });
-
-    const deletedCount = await models.BuyerSupplier.destroy({
-      where: { id: buyerSupplierIds },
-    });
-
-    if (deletedCount > 0) {
-      return res.status(200).json({
-        message: `Successfully deleted ${deletedCount} Buyer/Supplier(s).`,
-      });
-    } else {
-      return res.status(404).json({
-        message: "No Buyer/Supplier records found with the provided IDs.",
-      });
+    if (!Array.isArray(buyerSupplierIds) || buyerSupplierIds.length === 0) {
+        return res.status(400).json({
+            message:
+                "Invalid or empty 'buyerSuppliers' array in the request payload.",
+        });
     }
-  } catch (error) {
-    console.error("Error in bulk delete:", error);
-    return res.status(500).json({
-      message: "Something went wrong during bulk deletion.",
-      error: error.message,
-    });
-  }
+
+    try {
+        await models.BuyerSupplierAddress.destroy({
+            where: { buyerSupplierId: buyerSupplierIds },
+        });
+
+        const deletedCount = await models.BuyerSupplier.destroy({
+            where: { id: buyerSupplierIds },
+        });
+
+        if (deletedCount > 0) {
+            return res.status(200).json({
+                message: `Successfully deleted ${deletedCount} Buyer/Supplier(s).`,
+            });
+        } else {
+            return res.status(404).json({
+                message: "No Buyer/Supplier records found with the provided IDs.",
+            });
+        }
+    } catch (error) {
+        console.error("Error in bulk delete:", error);
+        return res.status(500).json({
+            message: "Something went wrong during bulk deletion.",
+            error: error.message,
+        });
+    }
 }
 
 async function getBuyerSupplier(req, res) {
-  try {
-    const companyId = req.body.companyId;
-    const buyerSuppliers = await models.BuyerSupplier.findAll({
-      where: { companyId }
-    });
+    try {
+        const companyId = req.body.companyId;
+        const buyerSuppliers = await models.BuyerSupplier.findAll({
+            where: { companyId }
+        });
 
-    if (!buyerSuppliers || buyerSuppliers.length === 0) {
-      return res.status(200).json([]);
+        if (!buyerSuppliers || buyerSuppliers.length === 0) {
+            return res.status(200).json([]);
+        }
+
+        const buyerSupplierIds = buyerSuppliers.map(bs => bs.id);
+        const addresses = await models.BuyerSupplierAddress.findAll({
+            where: {
+                buyerSupplierId: buyerSupplierIds
+            }
+        });
+
+        const addressMap = {};
+        addresses.forEach(addr => {
+            const id = addr.buyerSupplierId;
+            if (!addressMap[id]) addressMap[id] = [];
+            addressMap[id].push(addr);
+        });
+
+        const result = buyerSuppliers.map(bs => ({
+            ...bs.toJSON(),
+            addresses: addressMap[bs.id] || []
+        }));
+
+        res.status(200).json(result);
+    } catch (error) {
+        console.error("Error fetching BuyerSupplier data:", error);
+        res.status(500).json({
+            message: "Something went wrong, please try again later!"
+        });
     }
-
-    const buyerSupplierIds = buyerSuppliers.map(bs => bs.id);
-    const addresses = await models.BuyerSupplierAddress.findAll({
-      where: {
-        buyerSupplierId: buyerSupplierIds
-      }
-    });
-
-    const addressMap = {};
-    addresses.forEach(addr => {
-      const id = addr.buyerSupplierId;
-      if (!addressMap[id]) addressMap[id] = [];
-      addressMap[id].push(addr);
-    });
-
-    const result = buyerSuppliers.map(bs => ({
-      ...bs.toJSON(),
-      addresses: addressMap[bs.id] || []
-    }));
-
-    res.status(200).json(result);
-  } catch (error) {
-    console.error("Error fetching BuyerSupplier data:", error);
-    res.status(500).json({
-      message: "Something went wrong, please try again later!"
-    });
-  }
 }
 
 async function bulkUploadBuyerSuppliers(req, res) {
@@ -231,6 +231,20 @@ async function bulkUploadBuyerSuppliers(req, res) {
         if (!file || !companyId) {
             return res.status(400).json({ message: "Missing required data." });
         }
+
+        const existingBuyerSupplier = await models.BuyerSupplier.findAll({
+            where: {
+                companyId: Number(companyId)
+            },
+            raw:true
+        });
+
+        const existingBuyerSupplierMap = existingBuyerSupplier?.reduce((acc, curr) => {
+            acc[curr?.companyName] = 1;
+            return acc;
+        }, {});
+
+        const sheetDataBuyerSupplierMap = {};
 
         const sheetData = await convertXlsxToJson(file.filename, "bulkUploadCompany");
 
@@ -257,12 +271,6 @@ async function bulkUploadBuyerSuppliers(req, res) {
                 }
             }
 
-            if (missingFields.length > 0) {
-                row["Error"] = `Missing required fields: ${missingFields.join(", ")}`;
-                errorData.push(row);
-                continue;
-            }
-
             const {
                 "Person Name": personName,
                 "Person Email": personEmail,
@@ -278,6 +286,26 @@ async function bulkUploadBuyerSuppliers(req, res) {
                 "* City": city,
                 "* State": state,
             } = row;
+
+            if (existingBuyerSupplierMap[companyName]) {
+                row["Error"] = 'Company Name Already Exist.'
+                errorData.push(row);
+                continue;
+            }
+
+            if (sheetDataBuyerSupplierMap?.[companyName]) {
+                row["Error"] = 'Company Name Already Exist in Sheet.'
+                errorData.push(row);
+                continue;
+            }
+
+            sheetDataBuyerSupplierMap[companyName] = 1;
+
+            if (missingFields.length > 0) {
+                row["Error"] = `Missing required fields: ${missingFields.join(", ")}`;
+                errorData.push(row);
+                continue;
+            }
 
             buyerSuppliersPayload.push({
                 name: personName?.trim() || "",
