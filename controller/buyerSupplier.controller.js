@@ -184,40 +184,43 @@ async function bulkDeleteBuyerSupplier(req, res) {
   }
 }
 
-
 async function getBuyerSupplier(req, res) {
-    try {
-        const result = await models.BuyerSupplier.findAll({
-            where: { companyId: req.body.companyId }
-        });
+  try {
+    const companyId = req.body.companyId;
+    const buyerSuppliers = await models.BuyerSupplier.findAll({
+      where: { companyId }
+    });
 
-        // If no results, return an empty array
-        if (!result || result.length === 0) {
-            return res.status(200).json([]);
-        }
-
-        // Map over result and fetch BuyerSupplierAddress for each BuyerSupplier record
-        const buyerSupplierWithAddresses = await Promise.all(
-            result.map(async (buyerSupplier) => {
-                const addresses = await models.BuyerSupplierAddress.findAll({
-                    where: { buyerSupplierId: buyerSupplier.id }
-                });
-
-                return {
-                    ...buyerSupplier.toJSON(),
-                    addresses: addresses || []
-                };
-            })
-        );
-
-        // Send the result with addresses
-        res.status(200).json(buyerSupplierWithAddresses);
-    } catch (error) {
-        console.error("Error fetching BuyerSupplier data:", error);
-        res.status(500).json({
-            message: "Something went wrong, please try again later!"
-        });
+    if (!buyerSuppliers || buyerSuppliers.length === 0) {
+      return res.status(200).json([]);
     }
+
+    const buyerSupplierIds = buyerSuppliers.map(bs => bs.id);
+    const addresses = await models.BuyerSupplierAddress.findAll({
+      where: {
+        buyerSupplierId: buyerSupplierIds
+      }
+    });
+
+    const addressMap = {};
+    addresses.forEach(addr => {
+      const id = addr.buyerSupplierId;
+      if (!addressMap[id]) addressMap[id] = [];
+      addressMap[id].push(addr);
+    });
+
+    const result = buyerSuppliers.map(bs => ({
+      ...bs.toJSON(),
+      addresses: addressMap[bs.id] || []
+    }));
+
+    res.status(200).json(result);
+  } catch (error) {
+    console.error("Error fetching BuyerSupplier data:", error);
+    res.status(500).json({
+      message: "Something went wrong, please try again later!"
+    });
+  }
 }
 
 async function bulkUploadBuyerSuppliers(req, res) {
