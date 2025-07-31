@@ -21,6 +21,7 @@ module.exports = (sequelize, DataTypes) => {
     create: DataTypes.INTEGER,
     edit: DataTypes.INTEGER,
     delete: DataTypes.INTEGER,
+    view: DataTypes.INTEGER,
     ip_address: DataTypes.STRING,
     status: DataTypes.INTEGER
   }, {

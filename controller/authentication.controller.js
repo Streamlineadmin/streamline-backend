@@ -134,6 +134,8 @@ function login(req, res) {
                             where: { companyId: user.companyId }
                         });
 
+                        let rolesAccess = [];
+
                         for (const rolePermission of rolePermissionsData) {
                             let feature = await models.PermissionsFeatures.findAll({
                                 where: { id: rolePermission.permission }
@@ -141,8 +143,14 @@ function login(req, res) {
                             let subfeature = await models.PermissionsSubFeatures.findAll({
                                 where: { id: rolePermission.subpermission }
                             });
-                            rolePermission.dataValues.feature = feature[0] ? feature[0].feature : null;
-                            rolePermission.dataValues.subfeature = subfeature[0] ? subfeature[0].subfeature : null;
+                            rolesAccess.push({
+                                feature: feature[0] ? feature[0].feature : null,
+                                subfeature: subfeature[0] ? subfeature[0].subfeature : null,
+                                create: rolePermission.create,
+                                edit: rolePermission.edit,
+                                view: Number(rolePermission.view),
+                                delete: rolePermission.delete
+                            })
                         }
 
                         // Generate JWT token
@@ -162,7 +170,7 @@ function login(req, res) {
                             pan: user.pan,
                             gstNumber: user.gstNumber,
                             cin: user.cin,
-                            permissions: rolePermissionsData // Add permissions to the token
+                            permissions: rolesAccess // Add permissions to the token
                         }, 'secret', { expiresIn: '1h' }); // Add token expiration
 
                         res.status(200).json({
@@ -183,7 +191,7 @@ function login(req, res) {
                                 pan: user.pan,
                                 gstNumber: user.gstNumber,
                                 cin: user.cin,
-                                permissions: rolePermissionsData
+                                permissions: rolesAccess
                             }
                         });
                     } catch (error) {
