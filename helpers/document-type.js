@@ -6,7 +6,7 @@ documentTypes = {
     salesEnquiry: 'Sales Enquiry',
     qualityReport: 'Quality Report',
     orderConfirmation: 'Order Confirmation',
-    proformaInvoice: "Performa Invoice",
+    proformaInvoice: "Proforma Invoice",
     debitNote: "Debit Note",
     creditNote: "Credit Note",
     salesReturn: "Sales Return",
