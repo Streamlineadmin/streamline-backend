@@ -143,6 +143,8 @@ function login(req, res) {
                             let subfeature = await models.PermissionsSubFeatures.findAll({
                                 where: { id: rolePermission.subpermission }
                             });
+                            rolePermission.dataValues.feature = feature[0] ? feature[0].feature : null;
+                            rolePermission.dataValues.subfeature = subfeature[0] ? subfeature[0].subfeature : null;
                             rolesAccess.push({
                                 feature: feature[0] ? feature[0].feature : null,
                                 subfeature: subfeature[0] ? subfeature[0].subfeature : null,
@@ -175,24 +177,7 @@ function login(req, res) {
 
                         res.status(200).json({
                             message: "Login successful.",
-                            token: token,
-                            payload: {
-                                username: user.username,
-                                email: user.email,
-                                userId: user.id,
-                                companyId: user.companyId,
-                                companyName: user.companyName,
-                                businessType: user.businessType,
-                                profileURL: user.profileURL,
-                                website: user.website,
-                                name: user.name,
-                                contactPersonNumber: user.contactNo,
-                                role: user.role,
-                                pan: user.pan,
-                                gstNumber: user.gstNumber,
-                                cin: user.cin,
-                                permissions: rolesAccess
-                            }
+                            token: token
                         });
                     } catch (error) {
                         console.error("Error fetching permissions:", error);
