@@ -14,6 +14,8 @@ documentTypes = {
     purchaseOrder: 'Purchase Order',
     purchaseRequest: 'Purchase Request',
     purchaseInvoice: 'Purchase Invoice',
+    purchaseDebitNote: "Purchase Debit Note",
+    purchaseCreditNote: "Purchase Credit Note",
     purchaseReturn: 'Purchase Return',
     serviceChallan: 'Service Challan',
     serviceGrn: 'Service Grn',

@@ -91,7 +91,7 @@ async function getReports(req, res) {
             }
         }
         let uniqueItems = Array.from(uniqueItemsMap.values());
-        let salesItemsMap = {}, deliveryChallanItemsMap = {};
+        let salesItemsMap = {}, deliveryChallanItemsMap = {}, prToPoMap = {};
         const pendingItemsMap = {};
         if (documentType === documentTypes.invoice || documentType === documentTypes.deliveryChallan || documentType === documentTypes.proformaInvoice) {
             const salesOrder = await models.Documents.findAll({
@@ -119,7 +119,9 @@ async function getReports(req, res) {
             }, {});
         }
 
-        if (documentType === documentTypes.creditNote || documentType === documentTypes.debitNote) {
+        if (documentType === documentTypes.creditNote || documentType === documentTypes.debitNote ||
+            documentType === documentTypes.purchaseCreditNote || documentType === documentTypes.purchaseDebitNote
+        ) {
             const invoices = await models.Documents.findAll({
                 where: {
                     companyId: Number(companyId),
@@ -200,6 +202,74 @@ async function getReports(req, res) {
             }, {});
         }
 
+        if (documentType === documentTypes.purchaseRequest) {
+            const indentConditions = documentNumbers.flatMap((docNum) => [
+                {
+                    indent_number: {
+                        [Op.like]: `%,${docNum},%`,
+                    },
+                },
+                {
+                    indent_number: {
+                        [Op.like]: `${docNum},%`,
+                    },
+                },
+                {
+                    indent_number: {
+                        [Op.like]: `%,${docNum}`,
+                    },
+                },
+                {
+                    indent_number: docNum,
+                },
+            ]);
+
+            const purchaseOrders = await models.Documents.findAll({
+                where: {
+                    companyId: Number(companyId),
+                    [Op.and]: [
+                        {
+                            [Op.or]: indentConditions,
+                        },
+                        {
+                            status: {
+                                [Op.ne]: 2,
+                            },
+                        },
+                    ],
+                },
+                attributes: ['documentNumber', 'indent_number'],
+                raw: true
+            });
+
+            for (const element of purchaseOrders) {
+                for (const child of element.indent_number?.split(',')) {
+                    if (!child) continue;
+                    if (prToPoMap[child]) {
+                        prToPoMap[child].push(element.documentNumber);
+                    } else {
+                        prToPoMap[child] = [element.documentNumber];
+                    }
+                }
+            }
+
+            const purchaseOrderDocuments = await models.DocumentItems.findAll({
+                where: {
+                    companyId: Number(companyId),
+                    documentNumber: {
+                        [Op.in]: purchaseOrders.map(doc => doc.documentNumber)
+                    }
+                },
+                raw: true
+            });
+            salesItemsMap = purchaseOrderDocuments.reduce((acc, curr) => {
+                if (!acc[curr.documentNumber]) acc[curr.documentNumber] = {};
+                acc[curr.documentNumber][curr.itemId] = 1;
+                return acc;
+            }, {});
+
+        }
+
         const formattedResult = (documents?.rows || documents)?.map(document => {
             let itemToSend = uniqueItems.filter(item => item.documentNumber === document.documentNumber);
             if (documentType === documentTypes.invoice) itemToSend = itemToSend?.map(item => {
@@ -211,7 +281,9 @@ async function getReports(req, res) {
                 pendingItemsMap[document?.orderConfirmationNumber][item.itemId] = (pendingItemsMap[document?.orderConfirmationNumber][item.itemId] || 0) + item.quantity;
                 return ({ ...item, salesItemsCount, pendingQuantity: Math.max(salesItemsCount - existingQuantity, 0) });
             })
-            if (documentType === documentTypes.creditNote || documentType === documentTypes.debitNote) itemToSend = itemToSend?.map(item => {
+            if (documentType === documentTypes.creditNote || documentType === documentTypes.debitNote ||
+                documentType === documentTypes.purchaseCreditNote || documentType === documentTypes.purchaseDebitNote
+            ) itemToSend = itemToSend?.map(item => {
                 const invoiceItemsCount = salesItemsMap?.[document?.invoiceNumber]?.[item.itemId]?.quantity;
                 const invoicePrice = salesItemsMap?.[document?.invoiceNumber]?.[item.itemId]?.price;
                 return ({ ...item, invoiceItemsCount, invoicePrice });
@@ -225,7 +297,18 @@ async function getReports(req, res) {
                 const invoiceItemsCount = salesItemsMap?.[document?.invoiceNumber]?.[item.itemId];
                 const challanItemsCount = deliveryChallanItemsMap?.[document?.challan_number]?.[item.itemId];
                 return ({ ...item, invoiceItemsCount, challanItemsCount });
-            })
+            });
+            if (documentType === documentTypes.purchaseRequest) itemToSend = itemToSend?.map(item => {
+                const arr = [];
+                for (const element of prToPoMap?.[document.documentNumber] || []) {
+                    if (element) {
+                        if (salesItemsMap?.[element]?.[item.itemId]) {
+                            arr.push(element);
+                        }
+                    }
+                }
+                return ({ ...item, poList: arr });
+            });
             return ({
                 ...document.toJSON(),
                 items: itemToSend,
