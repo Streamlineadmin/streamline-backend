@@ -99,7 +99,7 @@ async function getReports(req, res) {
                     companyId: Number(companyId),
                     documentNumber: {
                         [Op.in]: documents?.rows?.filter(doc => doc?.orderConfirmationNumber)?.map(doc => doc.orderConfirmationNumber)
-                    }
+                    },
                 },
                 raw: true
             });
@@ -200,6 +200,109 @@ async function getReports(req, res) {
                 acc[curr.documentNumber][curr.itemId] = curr.quantity;
                 return acc;
             }, {});
+        }
+        const purchaseOrderToGrnMap = {}, purchaseOrderToInvoiceMap = {}, qualityToGrnMap = {}, qualityReportAcceptQuantityMap = {}, purchaseInvoiceQuantityMap = {};
+        if (documentType === documentTypes.purchaseOrder) {
+            const grns = await models.Documents.findAll({
+                where: {
+                    companyId: Number(companyId),
+                    purchaseOrderNumber: {
+                        [Op.in]: documentNumbers
+                    },
+                    documentType: 'Goods Received Note'
+                },
+                raw: true
+            });
+
+            const qualityReports = await models.Documents.findAll({
+                where: {
+                    companyId: Number(companyId),
+                    grn_number: {
+                        [Op.in]: grns.map(doc => doc.documentNumber)
+                    },
+                    documentType: 'Quality Report'
+                },
+                raw: true
+            });
+
+            const purchaseInvoice = await models.Documents.findAll({
+                where: {
+                    companyId: Number(companyId),
+                    grn_number: {
+                        [Op.in]: documentNumbers
+                    },
+                    documentType: 'Purchase Invoice'
+                },
+                raw: true
+            });
+
+
+            for (const element of grns) {
+                purchaseOrderToGrnMap[element.documentNumber] = element.purchaseOrderNumber;
+            }
+
+            for (const element of purchaseInvoice) {
+                purchaseOrderToInvoiceMap[element.documentNumber] = element.purchaseOrderNumber;
+            }
+
+            for (const element of qualityReports) {
+                qualityToGrnMap[element.documentNumber] = element.grn_number;
+            }
+
+            const documentItems = await models.DocumentItems.findAll({
+                where: {
+                    companyId: Number(companyId),
+                    documentNumber: {
+                        [Op.in]: grns.map(grn => grn.documentNumber)
+                    }
+                },
+                raw: true
+            });
+
+            const purchaseInvoiceItems = await models.DocumentItems.findAll({
+                where: {
+                    companyId: Number(companyId),
+                    documentNumber: {
+                        [Op.in]: purchaseInvoice.map(invoice => invoice.documentNumber)
+                    }
+                },
+                raw: true
+            });
+
+            const qualityReportItems = await models.DocumentItems.findAll({
+                where: {
+                    companyId: Number(companyId),
+                    documentNumber: {
+                        [Op.in]: qualityReports.map(qr => qr.documentNumber)
+                    }
+                },
+                raw: true
+            });
+
+            for (const element of documentItems) {
+                if (!salesItemsMap[purchaseOrderToGrnMap[element.documentNumber]]) {
+                    salesItemsMap[purchaseOrderToGrnMap[element.documentNumber]] = {};
+                }
+                salesItemsMap[purchaseOrderToGrnMap[element.documentNumber]][element.itemId] = (salesItemsMap[purchaseOrderToGrnMap[element.documentNumber]][element.itemId] || 0) + element.quantity;
+            }
+
+            for (const element of purchaseInvoiceItems) {
+                if (!purchaseInvoiceQuantityMap[purchaseOrderToInvoiceMap[element.documentNumber]]) {
+                    purchaseInvoiceQuantityMap[purchaseOrderToInvoiceMap[element.documentNumber]] = {};
+                }
+                purchaseInvoiceQuantityMap[purchaseOrderToInvoiceMap[element.documentNumber]][element.itemId] = (purchaseInvoiceQuantityMap[purchaseOrderToInvoiceMap[element.documentNumber]][element.itemId] || 0) + element.quantity;
+            }
+
+            for (const element of qualityReportItems) {
+                if (!qualityReportAcceptQuantityMap[purchaseOrderToGrnMap[qualityToGrnMap[element.documentNumber]]]) {
+                    qualityReportAcceptQuantityMap[purchaseOrderToGrnMap[qualityToGrnMap[element.documentNumber]]] = {};
+                }
+                if (!qualityReportAcceptQuantityMap[purchaseOrderToGrnMap[qualityToGrnMap[element.documentNumber]]][element.itemId]) {
+                    qualityReportAcceptQuantityMap[purchaseOrderToGrnMap[qualityToGrnMap[element.documentNumber]]][element.itemId] = {};
+                }
+                qualityReportAcceptQuantityMap[purchaseOrderToGrnMap[qualityToGrnMap[element.documentNumber]]][element.itemId].accepted = (qualityReportAcceptQuantityMap[purchaseOrderToGrnMap[qualityToGrnMap[element.documentNumber]]][element.itemId].accepted || 0) + element.receivedToday;
+                qualityReportAcceptQuantityMap[purchaseOrderToGrnMap[qualityToGrnMap[element.documentNumber]]][element.itemId].rejected = (qualityReportAcceptQuantityMap[purchaseOrderToGrnMap[qualityToGrnMap[element.documentNumber]]][element.itemId].rejected || 0) + element.pendingQuantity;
+            }
         }
 
         if (documentType === documentTypes.purchaseRequest) {
@@ -308,6 +411,13 @@ async function getReports(req, res) {
                     }
                 }
                 return ({ ...item, poList: arr });
+            });
+            if (documentType === documentTypes.purchaseOrder) itemToSend = itemToSend?.map(item => {
+                const grnItemsCount = salesItemsMap?.[document?.documentNumber]?.[item.itemId] || 0;
+                const purchaseInvoiceItemsCount = purchaseInvoiceQuantityMap?.[document?.documentNumber]?.[item.itemId] || 0;
+                const accepted = qualityReportAcceptQuantityMap?.[document?.documentNumber]?.[item.itemId]?.accepted || 0;
+                const rejected = qualityReportAcceptQuantityMap?.[document?.documentNumber]?.[item.itemId]?.rejected || 0;
+                return ({ ...item, grnItemsCount, accepted, rejected, purchaseInvoiceItemsCount });
             });
             return ({
                 ...document.toJSON(),
