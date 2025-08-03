@@ -778,8 +778,13 @@ async function getStoreItemsByStoreId(req, res) {
     // Fetch StoreItems and UOMs
     const [storeItemsRaw, uomData] = await Promise.all([
       models.StoreItems.findAll({
-        where: { storeId, isRejected },
-        raw: true
+        where: {
+          storeId, isRejected, quantity: {
+            [Op.gt]: 0
+          }
+        },
+        raw: true,
+
       }),
       models.UOM.findAll({ raw: true })
     ]);
