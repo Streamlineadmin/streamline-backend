@@ -397,8 +397,6 @@ async function addBulkItem(req, res) {
         const itemIds = data.map(item => item['* Item ID']?.trim());
         const itemNames = data.map(item => item['* Item Name']?.trim());
 
-        console.log(itemNames,itemIds);
-
         const existingItems = await models.Items.findAll({
             where: {
                 companyId,
@@ -428,6 +426,18 @@ async function addBulkItem(req, res) {
             where: { name: { [Op.in]: microCategoryNames }, companyId }
         });
 
+        const stores = await models.Store.findAll({
+            where: {
+                companyId: Number(companyId)
+            },
+            raw: true
+        });
+
+        const storesMap = stores?.reduce((acc, curr) => {
+            acc[curr.name] = curr;
+            return acc;
+        }, {});
+
         const categoryMap = new Map(categories.map(cat => [cat.name, cat]));
         const subCategoryMap = new Map(subCategories.map(sub => [sub.name, sub]));
         const microCategoryMap = new Map(microCategories.map(micro => [micro.name, micro]));
@@ -436,6 +446,8 @@ async function addBulkItem(req, res) {
         const uomMap = new Map(uoms.map(uom => [uom.name, uom.id]));
 
         const itemsData = [];
+        const storeItems = [];
+        const stockTransfer = [];
 
         for (const item of data) {
             const { '* Item ID': itemId, '* Item Name': itemName, '* Item Type': itemType, '* Metrics Unit': metricsUnit } = item;
@@ -486,8 +498,45 @@ async function addBulkItem(req, res) {
 
             itemsMap[itemId] = 1;
 
-            if (itemId?.toString()?.length>11) {
-                err+='Item ID must be lesser than or equal to 11 characters.'
+            if (itemId?.toString()?.length > 11) {
+                err += 'Item ID must be lesser than or equal to 11 characters.'
+            }
+
+            let storeName = '', storeType = '';
+            if (item?.Store) {
+                const storeStr = item.Store;
+                const lastSpaceIndex = storeStr.lastIndexOf(" ");
+                storeName = storeStr.slice(0, lastSpaceIndex).trim();
+                storeType = storeStr.slice(lastSpaceIndex + 1).trim();
+            }
+
+            if (storeName && item['Current Stock']) {
+                if (!storesMap[storeName]) {
+                    err += 'Store Not Found.';
+                }
+                else {
+                    storeItems.push({
+                        storeId: storesMap[storeName]?.id,
+                        itemId: itemId?.toString(),
+                        quantity: item['Current Stock'],
+                        status: 1,
+                        addedBy: Number(companyId),
+                        price: item['Price'] || 0,
+                        isRejected: storeType == '(Reject)'
+                    });
+                    stockTransfer.push({
+                        transferNumber: generateTransferNumber(),
+                        fromStoreId: null,
+                        itemId: itemId?.toString(),
+                        quantity: item['Current Stock'],
+                        toStoreId: storesMap[storeName]?.id,
+                        transferDate: new Date().toISOString(),
+                        transferredBy: Number(companyId),
+                        companyId: Number(companyId),
+                        price: item['Price'] || 0,
+                        isRejected: storeType == '(Reject)'
+                    });
+                }
             }
 
             if (err) {
@@ -514,10 +563,23 @@ async function addBulkItem(req, res) {
                 customFields: item?.customFields,
                 status: 1
             });
+
         }
 
         if (itemsData.length) {
-            await models.Items.bulkCreate(itemsData);
+            const newItems = await models.Items.bulkCreate(itemsData, { returning: true });
+            if (storeItems?.length > 0) {
+                const newItemsMap = newItems?.reduce((acc, curr) => {
+                    acc[curr.itemId] = curr.id;
+                    return acc;
+                }, {});
+                for (let i = 0; i < storeItems.length; ++i) {
+                    storeItems[i].itemId = newItemsMap[storeItems[i].itemId];
+                    stockTransfer[i].itemId = newItemsMap[stockTransfer[i].itemId];
+                }
+                await models.StoreItems.bulkCreate(storeItems);
+                await models.StockTransfer.bulkCreate(stockTransfer);
+            }
         }
 
         const msg = !errorArray.length
