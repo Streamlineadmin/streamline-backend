@@ -122,36 +122,76 @@ function login(req, res) {
                 message: "Invalid Credentials!",
             });
         } else {
-            bcryptjs.compare(req.body.password, user.password, function (err, result) {
+            bcryptjs.compare(req.body.password, user.password, async function (error, result) {
+                if (error) {
+                    console.error("Error comparing passwords:", error);
+                    return res.status(500).json({ message: "Something went wrong!" });
+                }
                 if (result) {
-                    const token = jwt.sign({
-                        username: user.username,
-                        email: user.email,
-                        userId: user.id,
-                        companyId: user.companyId,
-                        companyName: user.companyName,
-                        businessType: user.businessType,
-                        profileURL: user.profileURL,
-                        website: user.website,
-                        name: user.name,
-                        contactPersonNumber: user.contactNo,
-                        email: user.email,
-                        role: user.role,
-                        pan: user.pan,
-                        gstNumber: user.gstNumber,
-                        cin: user.cin,
-                    }, 'secret', function (err, token) {
+                    try {
+                        // Fetch RolePermissions and join with Permissionfeatures
+                        const rolePermissionsData = await models.RolePermissions.findAll({
+                            where: { companyId: user.companyId }
+                        });
+
+                        let rolesAccess = [];
+
+                        for (const rolePermission of rolePermissionsData) {
+                            let feature = await models.PermissionsFeatures.findAll({
+                                where: { id: rolePermission.permission }
+                            });
+                            let subfeature = await models.PermissionsSubFeatures.findAll({
+                                where: { id: rolePermission.subpermission }
+                            });
+                            rolePermission.dataValues.feature = feature[0] ? feature[0].feature : null;
+                            rolePermission.dataValues.subfeature = subfeature[0] ? subfeature[0].subfeature : null;
+                            rolesAccess.push({
+                                feature: feature[0] ? feature[0].feature : null,
+                                subfeature: subfeature[0] ? subfeature[0].subfeature : null,
+                                create: rolePermission.create,
+                                edit: rolePermission.edit,
+                                view: Number(rolePermission.view),
+                                delete: rolePermission.delete
+                            })
+                        }
+
+                        // Generate JWT token
+                        const token = jwt.sign({
+                            username: user.username,
+                            email: user.email,
+                            userId: user.id,
+                            companyId: user.companyId,
+                            companyName: user.companyName,
+                            businessType: user.businessType,
+                            profileURL: user.profileURL,
+                            website: user.website,
+                            name: user.name,
+                            contactPersonNumber: user.contactNo,
+                            email: user.email,
+                            role: user.role,
+                            pan: user.pan,
+                            gstNumber: user.gstNumber,
+                            cin: user.cin,
+                            permissions: rolesAccess // Add permissions to the token
+                        }, 'secret', { expiresIn: '1h' }); // Add token expiration
+
                         res.status(200).json({
                             message: "Login successful.",
-                            token: token,
+                            token: token
                         });
-                    });
+                    } catch (error) {
+                        console.error("Error fetching permissions:", error);
+                        res.status(500).json({
+                            message: "Something went wrong while fetching permissions!",
+                            error: error.message,
+                        });
+                    }
                 } else {
                     res.status(401).json({
-                        message: "Invalid credentials !"
-                    })
+                        message: "Invalid credentials!"
+                    });
                 }
-            })
+            });
         }
     }).catch(error => {
         res.status(500).json({
