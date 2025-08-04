@@ -373,6 +373,33 @@ async function getReports(req, res) {
 
         }
 
+        if (documentType === documentTypes.purchaseInvoice) {
+           const purchaseOrders = await models.Documents.findAll({
+                where: {
+                    companyId: Number(companyId),
+                    documentType:'Purchase Order',
+                    documentNumber: {
+                        [Op.in]: documents?.rows?.filter(doc => doc?.purchaseOrderNumber)?.map(doc => doc.purchaseOrderNumber)
+                    }
+                },
+                raw: true
+            });
+            const purchaseOrdersItems = await models.DocumentItems.findAll({
+                where: {
+                    companyId: Number(companyId),
+                    documentNumber: {
+                        [Op.in]: purchaseOrders?.map(doc => doc.documentNumber)
+                    }
+                },
+                raw: true
+            });
+            salesItemsMap = purchaseOrdersItems?.reduce((acc, curr) => {
+                if (!acc[curr.documentNumber]) acc[curr.documentNumber] = {};
+                acc[curr.documentNumber][curr.itemId] = curr.quantity;
+                return acc;
+            }, {});
+        }
+
         const formattedResult = (documents?.rows || documents)?.map(document => {
             let itemToSend = uniqueItems.filter(item => item.documentNumber === document.documentNumber);
             if (documentType === documentTypes.invoice) itemToSend = itemToSend?.map(item => {
@@ -419,6 +446,15 @@ async function getReports(req, res) {
                 const rejected = qualityReportAcceptQuantityMap?.[document?.documentNumber]?.[item.itemId]?.rejected || 0;
                 return ({ ...item, grnItemsCount, accepted, rejected, purchaseInvoiceItemsCount });
             });
+            if (documentType === documentTypes.purchaseInvoice) itemToSend = itemToSend?.map(item => {
+                const purchaseOrderItemsCount = salesItemsMap?.[document?.purchaseOrderNumber]?.[item.itemId];
+                const existingQuantity = pendingItemsMap?.[document?.purchaseOrderNumber]?.[item.itemId] || 0 + item?.quantity;
+                if (!pendingItemsMap?.[document?.purchaseOrderNumber]) {
+                    pendingItemsMap[document?.purchaseOrderNumber] = {};
+                }
+                pendingItemsMap[document?.purchaseOrderNumber][item.itemId] = (pendingItemsMap[document?.purchaseOrderNumber][item.itemId] || 0) + item.quantity;
+                return ({ ...item, purchaseOrderItemsCount, pendingQuantity: Math.max(purchaseOrderItemsCount - existingQuantity, 0) });
+            })
             return ({
                 ...document.toJSON(),
                 items: itemToSend,
