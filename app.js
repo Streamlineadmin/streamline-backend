@@ -45,6 +45,7 @@ const prouctionRoutes = require("./routes/production");
 const logPaymentsRoutes = require("./routes/logPayment");
 const logTDSRoutes = require("./routes/logTDS");
 const itemSeriesRoutes = require("./routes/itemSeries");
+const reportRoutes = require("./routes/reports");
 const app = express();
 
 // Apply body-parser middleware to handle JSON request bodies
@@ -109,5 +110,6 @@ app.use("/production", prouctionRoutes);
 app.use("/logPayments", logPaymentsRoutes);
 app.use("/logTDS", logTDSRoutes);
 app.use("/itemSeries", itemSeriesRoutes);
+app.use("/reports", reportRoutes);
 
 module.exports = app;

@@ -42,6 +42,7 @@ module.exports = (sequelize, DataTypes) => {
                 type: DataTypes.STRING,
             },
             productionId: { type: DataTypes.INTEGER },
+            perHourCost: DataTypes.FLOAT,
         },
         {
             sequelize,

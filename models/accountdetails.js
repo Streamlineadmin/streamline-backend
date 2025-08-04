@@ -16,7 +16,7 @@ module.exports = (sequelize, DataTypes) => {
   AccountDetails.init({
     bankName: DataTypes.STRING,
     accountHolderName: DataTypes.STRING,
-    accountNumber: DataTypes.INTEGER,
+    accountNumber: DataTypes.STRING,
     branch: DataTypes.STRING,
     swiftCode: DataTypes.STRING,
     IFSCCode: DataTypes.STRING,

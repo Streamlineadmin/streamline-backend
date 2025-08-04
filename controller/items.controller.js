@@ -442,7 +442,7 @@ async function addBulkItem(req, res) {
         const microCategoryMap = new Map(microCategories.map(micro => [micro.name, micro]));
 
         const uoms = await models.UOM.findAll({});
-        const uomMap = new Map(uoms.map(uom => [uom.name, uom.id]));
+        const uomMap = new Map(uoms.map(uom => [uom.code, uom.id]));
 
         const itemsData = [];
         const storeItems = [];
@@ -470,7 +470,7 @@ async function addBulkItem(req, res) {
             let category = categoryMap.get(item.Category) || null;
             let subCategory = subCategoryMap.get(item['Sub Category']) || null;
             let microCategory = microCategoryMap.get(item['Micro Category']) || null;
-            let uom = uomMap.get(metricsUnit?.split(" ").slice(0, -1).join(" ")) || null;
+            let uom = uomMap.get(metricsUnit?.toString()?.trim()) || null;
 
             if (item.Category && !category) {
                 err += "Category Not Found. ";

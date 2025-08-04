@@ -179,6 +179,7 @@ async function startProduction(req, res) {
                     description: data.description,
                     processName: data.processName,
                     status: 1,
+                    perHourCost: (data?.cost / totalMinutes) * 60
                 }
             });
 
