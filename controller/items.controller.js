@@ -546,7 +546,7 @@ async function addBulkItem(req, res) {
             itemsData.push({
                 itemId,
                 itemName,
-                itemType,
+                itemType: itemType === 'Buy' ? 1 : itemType === 'Sell' ? 2 : 3,
                 metricsUnit: uom,
                 category: category?.id || null,
                 subCategory: subCategory?.id || null,
@@ -739,7 +739,7 @@ async function stockReconcilation(req, res) {
 
         const storeItems = await models.StoreItems.findAll({
             where: {
-                storeId: Number(req.body.storeId),
+                storeId: Number(req.body.storeId?.toString()?.replaceAll("-reject", "")),
                 isRejected,
                 quantity: {
                     [Op.gt]: 0
@@ -755,7 +755,8 @@ async function stockReconcilation(req, res) {
 
         for (const item of items) {
             const { 'Item ID': itemId, 'Price/Unit': price } = item;
-            if (!item['Final Stock']) continue;
+            if (item['Final Stock'] === '') continue;
+            if (item['Final Stock'] == currentStockMap[itemId?.toString()]) continue;
             let err = '';
             const existingItem = await models.Items.findOne({
                 where: {
@@ -834,7 +835,7 @@ async function stockReconcilation(req, res) {
 
     } catch (error) {
         console.log(error);
-        return res.status(500).json({ message: "Something went wrong, please try again later!", error, items });
+        return res.status(500).json({ message: "Something went wrong, please try again later!", error });
     }
 }
 
