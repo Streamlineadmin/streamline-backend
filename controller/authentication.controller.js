@@ -131,7 +131,8 @@ function login(req, res) {
                     try {
                         // Fetch RolePermissions and join with Permissionfeatures
                         const rolePermissionsData = await models.RolePermissions.findAll({
-                            where: { companyId: user.companyId }
+                            where: { companyId: user.companyId, role: user.role },
+
                         });
 
                         let rolesAccess = [];
