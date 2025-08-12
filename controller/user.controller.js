@@ -1,7 +1,7 @@
 const models = require('../models');
 const bcryptjs = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const { Op } = require('sequelize');
+const { Op, where } = require('sequelize');
 
 const bcrypt = require('bcrypt');
 const crypto = require('crypto');
@@ -23,10 +23,11 @@ async function addUser(req, res) {
 
     try {
         // Execute all checks in parallel
-        const [emailResult, usernameResult, contactNoResult] = await Promise.all([
+        const [emailResult, usernameResult, contactNoResult, companyUser] = await Promise.all([
             models.Users.findOne({ where: { email } }),
             models.Users.findOne({ where: { username } }),
-            models.Users.findOne({ where: { contactNo } })
+            models.Users.findOne({ where: { contactNo } }),
+            models.Users.findOne({where: { companyId: req.body.companyId} }) // Check if the user is a super admin
         ]);
 
         if (emailResult) {
@@ -37,6 +38,9 @@ async function addUser(req, res) {
         }
         if (contactNoResult) {
             return res.status(409).json({ message: "This contact number belongs to someone else!" });
+        }
+        if (companyUser) {
+            return res.status(409).json({ message: "This user already exist in this company!" });
         }
 
         // Generate a random 8-character password

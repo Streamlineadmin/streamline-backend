@@ -433,7 +433,7 @@ async function addBulkItem(req, res) {
         });
 
         const storesMap = stores?.reduce((acc, curr) => {
-            acc[curr.name] = curr;
+            acc[curr.name?.trim()] = curr;
             return acc;
         }, {});
 
