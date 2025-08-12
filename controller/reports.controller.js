@@ -66,6 +66,7 @@ async function getReports(req, res) {
                 }
             }
             for (const item of items) {
+                item.documentNumber = item.id;
                 item.stockInfo = quantityMaps[item.id] || {};
                 item.customFields = isValidJSON(item.customFields) || {};
                 if (item.category) item.category = categoryMap[item.category] || '';
@@ -163,6 +164,7 @@ async function getReports(req, res) {
                 item.subCategory = categoryMap[item.subCategory];
                 item.microCategory = categoryMap[item.microCategory];
                 data.push({
+                    documentNumber: element.id,
                     ...element,
                     fromStore: storesMap[element.fromStoreId],
                     toStore: storesMap[element.toStoreId],
@@ -261,6 +263,7 @@ async function getReports(req, res) {
                 item.subCategory = categoryMap[item.subCategory];
                 item.microCategory = categoryMap[item.microCategory];
                 data.push({
+                    documentNumber: element.id,
                     ...element,
                     toStore: storesMap[element.toStoreId],
                     ...item,
