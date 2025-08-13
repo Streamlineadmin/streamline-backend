@@ -1,3 +1,4 @@
+const { isValidJSON } = require('../helpers/add-level');
 const { documentTypes } = require('../helpers/document-type');
 const models = require('../models');
 const { Op } = require('sequelize');
@@ -5,6 +6,276 @@ const { Op } = require('sequelize');
 async function getReports(req, res) {
     try {
         const { companyId, documentType = '', search = '' } = req.body;
+        if (documentType === 'Store wise item stock') {
+            const stores = await models.Store.findAll({
+                where: {
+                    companyId: Number(companyId)
+                }
+            });
+            const storesMap = stores.reduce((acc, curr) => {
+                acc[curr.id] = curr.name;
+                return acc;
+            }, {});
+            const items = await models.Items.findAll({
+                where: {
+                    companyId: Number(companyId)
+                },
+                raw: true
+            });
+            const itemsMap = items.reduce((acc, curr) => {
+                acc[curr.id] = curr.itemId;
+                return acc;
+            }, {});
+            const categorys = await models.Categories.findAll({
+                where: {
+                    companyId: Number(companyId)
+                }
+            });
+            const categoryMap = categorys?.reduce((acc, curr) => {
+                acc[curr.id] = curr.name;
+                return acc;
+            }, {});
+            const StoreItems = await models.StoreItems.findAll({
+                where: {
+                    storeId: {
+                        [Op.in]: stores.map(store => store.id)
+                    },
+                    quantity: {
+                        [Op.gt]: 0
+                    }
+                },
+                raw: true
+            });
+            const quantityMaps = {};
+            for (const element of StoreItems) {
+                if (!quantityMaps?.[element.itemId]) {
+                    quantityMaps[element.itemId] = {};
+                    if (!element.isRejected) {
+                        quantityMaps[element.itemId].fifoPrice = element.price;
+                    }
+                }
+                if (!quantityMaps[element.itemId][storesMap[element.storeId]])
+                    quantityMaps[element.itemId][storesMap[element.storeId]] = {};
+                if (element?.isRejected) {
+                    quantityMaps[element.itemId][storesMap[element.storeId]].rejectedQuantity = (quantityMaps[element.itemId][storesMap[element.storeId]].rejectedQuantity || 0) + element.quantity;
+                    quantityMaps[element.itemId][storesMap[element.storeId]].rejectedQuantityValue = (quantityMaps[element.itemId][storesMap[element.storeId]].rejectedQuantityValue || 0) + (element.quantity * (element.price || 0));
+                }
+                else {
+                    quantityMaps[element.itemId][storesMap[element.storeId]].inStockQuantity = (quantityMaps[element.itemId][storesMap[element.storeId]].inStockQuantity || 0) + element.quantity;
+                    quantityMaps[element.itemId][storesMap[element.storeId]].inStockValue = (quantityMaps[element.itemId][storesMap[element.storeId]].inStockValue || 0) + (element.quantity * (element.price || 0));
+                }
+            }
+            for (const item of items) {
+                item.documentNumber = item.id;
+                item.stockInfo = quantityMaps[item.id] || {};
+                item.customFields = isValidJSON(item.customFields) || {};
+                if (item.category) item.category = categoryMap[item.category] || '';
+                if (item.subCategory) item.subCategory = categoryMap[item.subCategory] || '';
+                if (item.microCategory) item.microCategory = categoryMap[item.microCategory] || '';
+            }
+            return res.status(200).json({ data: items, total: items.length });
+
+        }
+        if (documentType === 'Store to store transfer report') {
+            const { fromStore, toStore, isReject, itemType, dateRange } = req.body;
+            const stores = await models.Store.findAll({
+                where: {
+                    companyId: Number(companyId)
+                }
+            });
+            const storesMap = stores.reduce((acc, curr) => {
+                acc[curr.id] = curr.name;
+                return acc;
+            }, {});
+            const items = await models.Items.findAll({
+                where: {
+                    companyId: Number(companyId),
+                    ...(itemType !== '3' && { itemType })
+                },
+                raw: true
+            });
+            const itemsIds = items.map(item => item.id);
+            const itemsMap = items.reduce((acc, curr) => {
+                acc[curr.id] = curr;
+                return acc;
+            }, {});
+            const categorys = await models.Categories.findAll({
+                where: {
+                    companyId: Number(companyId)
+                }
+            });
+            const categoryMap = categorys?.reduce((acc, curr) => {
+                acc[curr.id] = curr.name;
+                return acc;
+            }, {});
+            const uoms = await models.UOM.findAll({
+                where: {
+                    [Op.or]: [
+                        { companyId: req.body.companyId, status: 1 },
+                        { companyId: null, status: 0 }
+                    ]
+                }
+            });
+            const uomMap = uoms.reduce((acc, curr) => {
+                acc[curr.id] = curr.code;
+                return acc;
+            }, {});
+            const users = await models.Users.findAll({
+                where: {
+                    companyId: Number(companyId)
+                }
+            });
+            const usersMap = users.reduce((acc, curr) => {
+                acc[curr.id] = curr.username;
+                return acc;
+            }, {});
+            const whereCondition = {
+                companyId: Number(companyId),
+                itemId: {
+                    [Op.in]: itemsIds
+                },
+                fromStoreId: {
+                    ...(fromStore?.length > 0 ? { [Op.in]: fromStore } : {}),
+                    [Op.not]: null
+                },
+                toStoreId: {
+                    ...(toStore?.length > 0 ? { [Op.in]: toStore } : {}),
+                    [Op.not]: null
+                },
+                isRejected: isReject,
+                ...(Array.isArray(dateRange) && dateRange.length === 2 && dateRange[0] && dateRange[1] && {
+                    createdAt: {
+                        [Op.between]: [
+                            new Date(dateRange[0]),
+                            new Date(dateRange[1])
+                        ]
+                    }
+                })
+            };
+
+            const transferHistory = await models.StockTransfer.findAll({
+                where: whereCondition,
+                raw: true
+            });
+            const data = [];
+            for (const element of transferHistory) {
+                const item = itemsMap[element.itemId];
+                item.category = categoryMap[item.category];
+                item.subCategory = categoryMap[item.subCategory];
+                item.microCategory = categoryMap[item.microCategory];
+                data.push({
+                    documentNumber: element.id,
+                    ...element,
+                    fromStore: storesMap[element.fromStoreId],
+                    toStore: storesMap[element.toStoreId],
+                    ...item,
+                    customFields: isValidJSON(item.customFields) || {},
+                    price: element.price,
+                    metricsUnit: uomMap[item.metricsUnit],
+                    user: usersMap[element.transferredBy]
+                });
+
+            }
+
+            return res.status(200).json({ data: data, total: data.length });
+        }
+        if (documentType === 'Stock change report') {
+            const { toStore, isReject, itemType, dateRange } = req.body;
+            const stores = await models.Store.findAll({
+                where: {
+                    companyId: Number(companyId)
+                }
+            });
+            const storesMap = stores.reduce((acc, curr) => {
+                acc[curr.id] = curr.name;
+                return acc;
+            }, {});
+            const items = await models.Items.findAll({
+                where: {
+                    companyId: Number(companyId),
+                    ...(itemType !== '3' && { itemType })
+                },
+                raw: true
+            });
+            const itemsIds = items.map(item => item.id);
+            const itemsMap = items.reduce((acc, curr) => {
+                acc[curr.id] = curr;
+                return acc;
+            }, {});
+            const categorys = await models.Categories.findAll({
+                where: {
+                    companyId: Number(companyId)
+                }
+            });
+            const categoryMap = categorys?.reduce((acc, curr) => {
+                acc[curr.id] = curr.name;
+                return acc;
+            }, {});
+            const uoms = await models.UOM.findAll({
+                where: {
+                    [Op.or]: [
+                        { companyId: req.body.companyId, status: 1 },
+                        { companyId: null, status: 0 }
+                    ]
+                }
+            });
+            const uomMap = uoms.reduce((acc, curr) => {
+                acc[curr.id] = curr.code;
+                return acc;
+            }, {});
+            const users = await models.Users.findAll({
+                where: {
+                    companyId: Number(companyId)
+                }
+            });
+            const usersMap = users.reduce((acc, curr) => {
+                acc[curr.id] = curr.username;
+                return acc;
+            }, {});
+            const whereCondition = {
+                companyId: Number(companyId),
+                itemId: {
+                    [Op.in]: itemsIds
+                },
+                fromStoreId: null,
+                toStoreId: {
+                    [Op.in]: toStore
+                },
+                isRejected: isReject,
+                ...(Array.isArray(dateRange) && dateRange.length === 2 && dateRange[0] && dateRange[1] && {
+                    createdAt: {
+                        [Op.between]: [
+                            new Date(dateRange[0]),
+                            new Date(dateRange[1])
+                        ]
+                    }
+                })
+            };
+
+            const transferHistory = await models.StockTransfer.findAll({
+                where: whereCondition,
+                raw: true
+            });
+            const data = [];
+            for (const element of transferHistory) {
+                const item = itemsMap[element.itemId];
+                item.category = categoryMap[item.category];
+                item.subCategory = categoryMap[item.subCategory];
+                item.microCategory = categoryMap[item.microCategory];
+                data.push({
+                    documentNumber: element.id,
+                    ...element,
+                    toStore: storesMap[element.toStoreId],
+                    ...item,
+                    customFields: isValidJSON(item.customFields) || {},
+                    price: element.price,
+                    metricsUnit: uomMap[item.metricsUnit],
+                    user: usersMap[element.transferredBy]
+                });
+
+            }
+            return res.status(200).json({ data: data, total: data.length });
+        }
         const documents = await models.Documents.findAndCountAll({
             where: {
                 companyId,
@@ -91,7 +362,7 @@ async function getReports(req, res) {
             }
         }
         let uniqueItems = Array.from(uniqueItemsMap.values());
-        let salesItemsMap = {}, deliveryChallanItemsMap = {}, prToPoMap = {};
+        let salesItemsMap = {}, deliveryChallanItemsMap = {}, prToPoMap = {}, creditNoteMap = {}, debitNoteMap = {}, creditNoteNumber = {}, debitNoteNumber = {};
         const pendingItemsMap = {};
         if (documentType === documentTypes.invoice || documentType === documentTypes.deliveryChallan || documentType === documentTypes.proformaInvoice) {
             const salesOrder = await models.Documents.findAll({
@@ -374,10 +645,10 @@ async function getReports(req, res) {
         }
 
         if (documentType === documentTypes.purchaseInvoice) {
-           const purchaseOrders = await models.Documents.findAll({
+            const purchaseOrders = await models.Documents.findAll({
                 where: {
                     companyId: Number(companyId),
-                    documentType:'Purchase Order',
+                    documentType: 'Purchase Order',
                     documentNumber: {
                         [Op.in]: documents?.rows?.filter(doc => doc?.purchaseOrderNumber)?.map(doc => doc.purchaseOrderNumber)
                     }
@@ -393,6 +664,63 @@ async function getReports(req, res) {
                 },
                 raw: true
             });
+            const purchaseCreditNotes = await models.Documents.findAll({
+                where: {
+                    companyId: Number(companyId),
+                    documentType: 'Purchase Credit Note',
+                    invoiceNumber: {
+                        [Op.in]: documentNumbers
+                    }
+                },
+                raw: true
+            });
+            const purchaseToInvoiceMap = purchaseCreditNotes.reduce((acc, curr) => {
+                acc[curr.documentNumber] = curr.invoiceNumber;
+                if (creditNoteNumber[curr.invoiceNumber]) creditNoteNumber[curr.invoiceNumber].push(curr.documentNumber);
+                else creditNoteNumber[curr.invoiceNumber] = [curr.documentNumber];
+                return acc;
+            }, {});
+            const purchaseCreditNoteItems = await models.DocumentItems.findAll({
+                where: {
+                    companyId: Number(companyId),
+                    documentNumber: {
+                        [Op.in]: purchaseCreditNotes.map(doc => doc.documentNumber)
+                    }
+                },
+                raw: true
+            });
+            for (const element of purchaseCreditNoteItems) {
+                creditNoteMap[purchaseToInvoiceMap[element.documentNumber]] = (creditNoteMap[purchaseToInvoiceMap[element.documentNumber]] || 0) + Number(element.totalAfterTax);
+            }
+
+            const purchaseDebitNotes = await models.Documents.findAll({
+                where: {
+                    companyId: Number(companyId),
+                    documentType: 'Purchase Debit Note',
+                    invoiceNumber: {
+                        [Op.in]: documentNumbers
+                    }
+                },
+                raw: true
+            });
+            const debitToInvoiceMap = purchaseDebitNotes.reduce((acc, curr) => {
+                acc[curr.documentNumber] = curr.invoiceNumber;
+                if (debitNoteNumber[curr.invoiceNumber]) debitNoteNumber[curr.invoiceNumber].push(curr.documentNumber);
+                else debitNoteNumber[curr.invoiceNumber] = [curr.documentNumber];
+                return acc;
+            }, {});
+            const purchaseDebitNoteItems = await models.DocumentItems.findAll({
+                where: {
+                    companyId: Number(companyId),
+                    documentNumber: {
+                        [Op.in]: purchaseDebitNotes.map(doc => doc.documentNumber)
+                    }
+                },
+                raw: true
+            });
+            for (const element of purchaseDebitNoteItems) {
+                debitNoteMap[debitToInvoiceMap[element.documentNumber]] = (debitNoteMap[debitToInvoiceMap[element.documentNumber]] || 0) + Number(element.totalAfterTax);
+            }
             salesItemsMap = purchaseOrdersItems?.reduce((acc, curr) => {
                 if (!acc[curr.documentNumber]) acc[curr.documentNumber] = {};
                 acc[curr.documentNumber][curr.itemId] = curr.quantity;
@@ -456,7 +784,13 @@ async function getReports(req, res) {
                 return ({ ...item, purchaseOrderItemsCount, pendingQuantity: Math.max(purchaseOrderItemsCount - existingQuantity, 0) });
             })
             return ({
-                ...document.toJSON(),
+                ...{
+                    ...document.toJSON(),
+                    creditNoteTotal: creditNoteMap?.[document.documentNumber] || 0,
+                    debitNoteTotal: debitNoteMap?.[document.documentNumber] || 0,
+                    creditNoteNumber: creditNoteNumber?.[document.documentNumber],
+                    debitNoteNumber: debitNoteNumber?.[document.documentNumber]
+                },
                 items: itemToSend,
                 additionalCharges: additionalCharges.filter(charge => charge.documentNumber === document.documentNumber),
                 bankDetails: bankDetails.find(bank => bank.documentNumber === document.documentNumber) || {},

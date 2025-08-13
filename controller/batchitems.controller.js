@@ -10,8 +10,8 @@ async function getBatchItems(req, res) {
                 companyId: Number(companyId),
                 status: 1
             },
-            limit: Number(pageSize),
-            offset: Number(offset),
+            // limit: Number(pageSize),
+            // offset: Number(offset),
             order: [['createdAt', 'DESC']],
             raw: true
         });

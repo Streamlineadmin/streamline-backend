@@ -35,5 +35,14 @@ function buildRawMaterialTreeWithLevel(flatMaterials) {
   return rootNodes;
 }
 
+const isValidJSON = (data) => {
+  try {
+    const jsonObj = JSON.parse(data);
+    return jsonObj;
+  } catch (error) {
+    return false;
+  }
+}
 
-module.exports = { buildRawMaterialTreeWithLevel }
+
+module.exports = { buildRawMaterialTreeWithLevel, isValidJSON }
