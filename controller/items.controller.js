@@ -749,14 +749,13 @@ async function stockReconcilation(req, res) {
         });
 
         const currentStockMap = storeItems.reduce((acc, curr) => {
-            acc[existingItemsMap[curr.itemId].itemId] = (acc[existingItemsMap[curr.itemId].itemId] || 0) + curr.quantity;
+            acc[existingItemsMap[curr.itemId]?.itemId] = (acc[existingItemsMap[curr.itemId]?.itemId] || 0) + curr.quantity;
             return acc;
         }, {});
 
         for (const item of items) {
             const { 'Item ID': itemId, 'Price/Unit': price } = item;
             if (item['Final Stock'] === '') continue;
-            if (item['Final Stock'] == currentStockMap[itemId?.toString()]) continue;
             let err = '';
             const existingItem = await models.Items.findOne({
                 where: {
@@ -778,6 +777,74 @@ async function stockReconcilation(req, res) {
             }
             if (err) {
                 errorArray.push({ ...item, Error: err });
+                continue;
+            }
+            if (item['Final Stock'] == currentStockMap[itemId?.toString()]) {
+                const storeItems = await models.StoreItems.findAll({
+                    where: {
+                        itemId: existingItem.id,
+                        quantity: {
+                            [Op.gt]: 0
+                        },
+                        storeId: Number(req.body.storeId?.toString()?.replaceAll('-reject', '')),
+                        isRejected
+                    }
+                });
+
+                const transferNumber = generateTransferNumber()
+
+                const transfers = [];
+                transfers.push({
+                    transferNumber,
+                    fromStoreId: null,
+                    itemId: existingItem.id,
+                    quantity: item['Final Stock'],
+                    toStoreId: Number(req.body.storeId?.toString()?.replaceAll('-reject', '')),
+                    transferDate: new Date().toISOString(),
+                    transferredBy: Number(req.body.companyId),
+                    comment: '',
+                    companyId: Number(req.body.companyId),
+                    price: price,
+                    isRejected
+                });
+                for (const element of storeItems) {
+                    transfers.push({
+                        transferNumber,
+                        fromStoreId: Number(req.body.storeId?.toString()?.replaceAll('-reject', '')),
+                        itemId: existingItem.id,
+                        quantity: element.quantity * -1,
+                        toStoreId: null,
+                        transferDate: new Date().toISOString(),
+                        transferredBy: Number(req.body.companyId),
+                        comment: '',
+                        companyId: Number(req.body.companyId),
+                        price: element.price,
+                        isRejected: element?.isRejected || false
+                    })
+                }
+
+
+                await models.StoreItems.update({ quantity: 0 }, {
+                    where: {
+                        itemId: existingItem.id,
+                        quantity: {
+                            [Op.gt]: 0
+                        },
+                        storeId: Number(req.body.storeId?.toString()?.replaceAll('-reject', '')),
+                        isRejected
+                    }
+                });
+                await models.StoreItems.create({
+                    storeId: Number(req.body.storeId?.toString()?.replaceAll('-reject', '')),
+                    itemId: existingItem.id,
+                    quantity: Number(item['Final Stock'] || 0),
+                    addedBy: Number(req.body.companyId),
+                    status: 1,
+                    addedBy: Number(req.body.userId),
+                    price: price,
+                    isRejected
+                })
+                await models.StockTransfer.bulkCreate(transfers);
                 continue;
             }
             if (Number(item['Final Stock'] || 0) < Number(currentStockMap[itemId?.toString()] || 0)) {
