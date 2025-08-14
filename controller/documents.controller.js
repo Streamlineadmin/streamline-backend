@@ -482,7 +482,7 @@ async function createDocument(req, res) {
 
         // comapare documentsItem map and delivery challam items map 
         for (const elem of Object.keys(documentsItemMap)) {
-          if (documentsItemMap[elem] > deliveryChallanItemsMap[elem]||!deliveryChallanItemsMap[elem]) {
+          if (documentsItemMap[elem] > deliveryChallanItemsMap[elem] || !deliveryChallanItemsMap[elem]) {
             statusCode = documentType === documentTypes.invoice ? 12 : 10;
             break;
           }
@@ -1367,187 +1367,193 @@ async function createDocument(req, res) {
   }
 }
 async function getDocuments(req, res) {
-  const { companyId, currentPage, pageSize, documentType = '', search = '', dealStatus, docTypeFilter, dateRange } = req.body;
+  try {
 
-  const offset = ((currentPage || 1) - 1) * (pageSize || 10);
-  let documentstype = [];
-  switch (documentType) {
-    case "sales":
-      documentstype = salesDocuments;
-      break;
-    case "purchase":
-      documentstype = purchaseDocuments;
-      break;
-    case "documentServices":
-      documentstype = serviceDocuments;
-      break;
-    default:
-      break;
-  }
+    const { companyId, currentPage, pageSize, documentType = '', search = '', dealStatus, docTypeFilter, dateRange } = req.body;
 
-  let dateFilter = {};
-  if (dateRange && Array.isArray(dateRange) && dateRange.length === 2) {
-    const [startDate, endDate] = dateRange;
-    dateFilter = {
-      createdAt: {
-        [Op.between]: [
-          new Date(startDate + 'T00:00:00.000Z'),
-          new Date(endDate + 'T23:59:59.999Z')
-        ]
-      }
-    };
-  }
+    const offset = ((currentPage || 1) - 1) * (pageSize || 10);
+    let documentstype = [];
+    switch (documentType) {
+      case "sales":
+        documentstype = salesDocuments;
+        break;
+      case "purchase":
+        documentstype = purchaseDocuments;
+        break;
+      case "documentServices":
+        documentstype = serviceDocuments;
+        break;
+      default:
+        break;
+    }
 
-  let documents = [];
-  if (!currentPage || !pageSize) {
-    documents = await models.Documents.findAll({
-      where: { 
-        companyId,
-        ...dateFilter
-      },
-      include: [
-        {
-          model: models.LogisticDetails,
-          as: 'logisticDetails'
+    let dateFilter = {};
+    if (dateRange && Array.isArray(dateRange) && dateRange.length === 2) {
+      const [startDate, endDate] = dateRange;
+      dateFilter = {
+        createdAt: {
+          [Op.between]: [
+            new Date(startDate + 'T00:00:00.000Z'),
+            new Date(endDate + 'T23:59:59.999Z')
+          ]
+        }
+      };
+    }
+
+    let documents = [];
+    if (!currentPage || !pageSize) {
+      documents = await models.Documents.findAll({
+        where: {
+          companyId,
+          ...dateFilter
         },
-        {
-          model: models.Users,
-          as: 'creator',
-          attributes: ['id', 'name', 'gstNumber']
-        },
-      ],
-      distinct: true
-    });
-  } else {
-
-    documents = await models.Documents.findAndCountAll({
-      where: {
-        companyId,
-        ...dateFilter,
-        ...(documentstype.length > 0 && {
-          documentType: {
-            [Op.in]: documentstype
-          }
-        }),
-        ...(Array.isArray(dealStatus) && dealStatus.length > 0
-          ? {
-            status: {
-              [Op.in]: dealStatus,
-            },
-          }
-          : {
-            status: {
-              [Op.not]: 2,
-            },
-          }),
-        ...(docTypeFilter?.length > 0 && {
-          documentType: {
-            [Op.in]: docTypeFilter,
+        include: [
+          {
+            model: models.LogisticDetails,
+            as: 'logisticDetails'
           },
-        }),
-        ...(search && {
-          [Op.or]: [
-            {
-              documentNumber: {
-                [Op.like]: `%${search.trim()}%`,
-              },
-            },
-            {
-              documentType: {
-                [Op.like]: `%${search.trim()}%`,
-              },
-            },
-            {
-              buyerName: {
-                [Op.like]: `%${search.trim()}%`,
+          {
+            model: models.Users,
+            as: 'creator',
+            attributes: ['id', 'name', 'gstNumber']
+          },
+        ],
+        distinct: true
+      });
+    } else {
+
+      documents = await models.Documents.findAndCountAll({
+        where: {
+          companyId,
+          ...dateFilter,
+          ...(documentstype.length > 0 && {
+            documentType: {
+              [Op.in]: documentstype
+            }
+          }),
+          ...(Array.isArray(dealStatus) && dealStatus.length > 0
+            ? {
+              status: {
+                [Op.in]: dealStatus,
               },
             }
-          ],
-        }),
-      },
-      include: [
-        {
-          model: models.LogisticDetails,
-          as: 'logisticDetails',
+            : {
+              status: {
+                [Op.not]: 2,
+              },
+            }),
+          ...(docTypeFilter?.length > 0 && {
+            documentType: {
+              [Op.in]: docTypeFilter,
+            },
+          }),
+          ...(search && {
+            [Op.or]: [
+              {
+                documentNumber: {
+                  [Op.like]: `%${search.trim()}%`,
+                },
+              },
+              {
+                documentType: {
+                  [Op.like]: `%${search.trim()}%`,
+                },
+              },
+              {
+                buyerName: {
+                  [Op.like]: `%${search.trim()}%`,
+                },
+              }
+            ],
+          }),
         },
-        {
-          model: models.Users,
-          as: 'creator',
-          attributes: ['id', 'name'],
-        },
-      ],
-      order: [['createdAt', 'DESC']],
-      distinct: true,
-      limit: pageSize,
-      offset,
-    });
-  }
+        include: [
+          {
+            model: models.LogisticDetails,
+            as: 'logisticDetails',
+          },
+          {
+            model: models.Users,
+            as: 'creator',
+            attributes: ['id', 'name'],
+          },
+        ],
+        order: [['createdAt', 'DESC']],
+        distinct: true,
+        limit: pageSize,
+        offset,
+      });
+    }
 
-  if (!documents || (documents?.rows?.length === 0 || documents?.length === 0)) {
-    return res.status(200).json({
-      total: 0,
+    if (!documents || (documents?.rows?.length === 0 || documents?.length === 0)) {
+      return res.status(200).json({
+        total: 0,
+        currentPage,
+        pageSize,
+        data: [],
+      });
+    }
+
+    const documentNumbers = (documents?.rows || documents)?.map(doc => doc.documentNumber);
+    const documentIds = (documents?.rows || documents).map(doc => doc.id);
+
+    const [
+      items,
+      additionalCharges,
+      bankDetails,
+      termsConditions,
+      attachments,
+      documentComments
+    ] = await Promise.all([
+      models.DocumentItems.findAll({
+        where: { documentNumber: documentNumbers, companyId },
+        include: [
+          {
+            model: models.Items,
+            as: 'itemDetails',
+            attributes: ['itemId', 'category', 'subCategory', 'microCategory']
+          }
+        ]
+      }),
+      models.DocumentAdditionalCharges.findAll({ where: { documentNumber: documentNumbers, companyId } }),
+      models.DocumentBankDetails.findAll({ where: { documentNumber: documentNumbers, companyId } }),
+      models.CompanyTermsCondition.findAll({ where: { documentNumber: documentNumbers, companyId } }),
+      models.DocumentAttachments.findAll({ where: { documentNumber: documentNumbers, companyId } }),
+      models.DocumentComments.findAll({ where: { documentId: documentIds } }),
+    ]);
+
+    const uniqueItemsMap = new Map();
+    for (const item of items) {
+      const key = `${item.documentNumber}_${item.itemId}`;
+      if (!uniqueItemsMap.has(key)) {
+        uniqueItemsMap.set(key, item);
+      }
+    }
+    const uniqueItems = Array.from(uniqueItemsMap.values());
+
+    const formattedResult = (documents?.rows || documents)?.map(document => ({
+      ...document.toJSON(),
+      items: uniqueItems.filter(item => item.documentNumber === document.documentNumber),
+      additionalCharges: additionalCharges.filter(charge => charge.documentNumber === document.documentNumber),
+      bankDetails: bankDetails.find(bank => bank.documentNumber === document.documentNumber) || {},
+      termsCondition: termsConditions.find(tc => tc.documentNumber === document.documentNumber) || {},
+      attachments: attachments.filter(att => att.documentNumber === document.documentNumber),
+      documentComments: documentComments.filter(comment => comment.documentId === document.id),
+    }));
+
+    if (!currentPage || !pageSize) {
+      return res.status(200).json(formattedResult)
+    }
+    res.status(200).json({
+      total: documents.count,
       currentPage,
       pageSize,
-      data: [],
+      data: formattedResult,
     });
+
+  } catch (error) {
+    return res.status(500).json({ message: "Something went wrong, please try again later!" });
   }
-
-  const documentNumbers = (documents?.rows || documents)?.map(doc => doc.documentNumber);
-  const documentIds = (documents?.rows || documents).map(doc => doc.id);
-
-  const [
-    items,
-    additionalCharges,
-    bankDetails,
-    termsConditions,
-    attachments,
-    documentComments
-  ] = await Promise.all([
-    models.DocumentItems.findAll({
-      where: { documentNumber: documentNumbers, companyId },
-      include: [
-        {
-          model: models.Items,
-          as: 'itemDetails',
-          attributes: ['itemId', 'category', 'subCategory', 'microCategory']
-        }
-      ]
-    }),
-    models.DocumentAdditionalCharges.findAll({ where: { documentNumber: documentNumbers, companyId } }),
-    models.DocumentBankDetails.findAll({ where: { documentNumber: documentNumbers, companyId } }),
-    models.CompanyTermsCondition.findAll({ where: { documentNumber: documentNumbers, companyId } }),
-    models.DocumentAttachments.findAll({ where: { documentNumber: documentNumbers, companyId } }),
-    models.DocumentComments.findAll({ where: { documentId: documentIds } }),
-  ]);
-
-  const uniqueItemsMap = new Map();
-  for (const item of items) {
-    const key = `${item.documentNumber}_${item.itemId}`;
-    if (!uniqueItemsMap.has(key)) {
-      uniqueItemsMap.set(key, item);
-    }
-  }
-  const uniqueItems = Array.from(uniqueItemsMap.values());
-
-  const formattedResult = (documents?.rows || documents)?.map(document => ({
-    ...document.toJSON(),
-    items: uniqueItems.filter(item => item.documentNumber === document.documentNumber),
-    additionalCharges: additionalCharges.filter(charge => charge.documentNumber === document.documentNumber),
-    bankDetails: bankDetails.find(bank => bank.documentNumber === document.documentNumber) || {},
-    termsCondition: termsConditions.find(tc => tc.documentNumber === document.documentNumber) || {},
-    attachments: attachments.filter(att => att.documentNumber === document.documentNumber),
-    documentComments: documentComments.filter(comment => comment.documentId === document.id),
-  }));
-
-  if (!currentPage || !pageSize) {
-    return res.status(200).json(formattedResult)
-  }
-  res.status(200).json({
-    total: documents.count,
-    currentPage,
-    pageSize,
-    data: formattedResult,
-  });
 }
 
 async function getDocumentById(req, res) {
