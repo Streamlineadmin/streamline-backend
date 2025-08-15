@@ -108,98 +108,98 @@ async function signUp(req, res) {
     }
 }
 
-function login(req, res) {
-    models.Users.findOne({ 
-        where: { 
-            [Op.or]: [
-                { email: req.body.email },
-                { username: req.body.email }
-            ]
-        } 
-    }).then(user => {
-        if (user === null) {
-            res.status(401).json({
-                message: "Invalid Credentials!",
+async function login(req, res) {
+    try {
+        // Find the user by email or username
+        const user = await models.Users.findOne({
+            where: {
+                [Op.or]: [
+                    { email: req.body.email },
+                    { username: req.body.email }
+                ]
+            },
+            raw: true
+        });
+
+        if (!user) {
+            return res.status(401).json({ message: "Invalid Credentials!" });
+        }
+
+        // Compare passwords
+        const isPasswordValid = await bcryptjs.compare(req.body.password, user.password);
+        if (!isPasswordValid) {
+            return res.status(401).json({ message: "Invalid credentials!" });
+        }
+
+        // Fetch RolePermissions
+        const rolePermissionsData = await models.RolePermissions.findAll({
+            where: { companyId: user.companyId, role: user.role },
+        });
+
+        const rolesAccess = [];
+        for (const rolePermission of rolePermissionsData) {
+            const feature = await models.PermissionsFeatures.findOne({
+                where: { id: rolePermission.permission }
             });
-        } else {
-            bcryptjs.compare(req.body.password, user.password, async function (error, result) {
-                if (error) {
-                    console.error("Error comparing passwords:", error);
-                    return res.status(500).json({ message: "Something went wrong!" });
-                }
-                if (result) {
-                    try {
-                        // Fetch RolePermissions and join with Permissionfeatures
-                        const rolePermissionsData = await models.RolePermissions.findAll({
-                            where: { companyId: user.companyId, role: user.role },
+            const subfeature = await models.PermissionsSubFeatures.findOne({
+                where: { id: rolePermission.subpermission }
+            });
 
-                        });
-
-                        let rolesAccess = [];
-
-                        for (const rolePermission of rolePermissionsData) {
-                            let feature = await models.PermissionsFeatures.findAll({
-                                where: { id: rolePermission.permission }
-                            });
-                            let subfeature = await models.PermissionsSubFeatures.findAll({
-                                where: { id: rolePermission.subpermission }
-                            });
-                            rolePermission.dataValues.feature = feature[0] ? feature[0].feature : null;
-                            rolePermission.dataValues.subfeature = subfeature[0] ? subfeature[0].subfeature : null;
-                            rolesAccess.push({
-                                feature: feature[0] ? feature[0].feature : null,
-                                subfeature: subfeature[0] ? subfeature[0].subfeature : null,
-                                create: rolePermission.create,
-                                edit: rolePermission.edit,
-                                view: Number(rolePermission.view),
-                                delete: rolePermission.delete
-                            })
-                        }
-
-                        // Generate JWT token
-                        const token = jwt.sign({
-                            username: user.username,
-                            email: user.email,
-                            userId: user.id,
-                            companyId: user.companyId,
-                            companyName: user.companyName,
-                            businessType: user.businessType,
-                            profileURL: user.profileURL,
-                            website: user.website,
-                            name: user.name,
-                            contactPersonNumber: user.contactNo,
-                            email: user.email,
-                            role: user.role,
-                            pan: user.pan,
-                            gstNumber: user.gstNumber,
-                            cin: user.cin,
-                            permissions: rolesAccess // Add permissions to the token
-                        }, 'secret', { expiresIn: '1h' }); // Add token expiration
-
-                        res.status(200).json({
-                            message: "Login successful.",
-                            token: token
-                        });
-                    } catch (error) {
-                        console.error("Error fetching permissions:", error);
-                        res.status(500).json({
-                            message: "Something went wrong while fetching permissions!",
-                            error: error.message,
-                        });
-                    }
-                } else {
-                    res.status(401).json({
-                        message: "Invalid credentials!"
-                    });
-                }
+            rolesAccess.push({
+                feature: feature ? feature.feature : null,
+                subfeature: subfeature ? subfeature.subfeature : null,
+                create: rolePermission.create,
+                edit: rolePermission.edit,
+                view: Number(rolePermission.view),
+                delete: rolePermission.delete
             });
         }
-    }).catch(error => {
+
+        if (user.role != 1) {
+            const admin = await models.Users.findOne({
+                where: {
+                    role: 1,
+                    companyId: user.companyId
+                },
+                raw: true
+            });
+            user.logoUrl = admin.profileURL
+        }
+
+        // Generate JWT token
+        const token = jwt.sign({
+            username: user.username,
+            email: user.email,
+            userId: user.id,
+            companyId: user.companyId,
+            companyName: user.companyName,
+            businessType: user.businessType,
+            profileURL: user.profileURL,
+            website: user.website,
+            name: user.name,
+            contactPersonNumber: user.contactNo,
+            role: user.role,
+            pan: user.pan,
+            gstNumber: user.gstNumber,
+            cin: user.cin,
+            permissions: rolesAccess,
+            logoUrl: user.logoUrl || user.profileURL || ''
+        }, 'secret', { expiresIn: '1h' });
+
+        res.status(200).json({
+            message: "Login successful.",
+            token: token
+        });
+
+    } catch (error) {
+        console.error("Error during login:", error);
         res.status(500).json({
             message: "Something went wrong, Please try again later!",
-        })
-    })
+            error: error.message
+        });
+    }
 }
+
 
 async function forgotPassword(req, res) {
     try {

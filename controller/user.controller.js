@@ -24,10 +24,10 @@ async function addUser(req, res) {
     try {
         // Execute all checks in parallel
         const [emailResult, usernameResult, contactNoResult, companyUser] = await Promise.all([
-            models.Users.findOne({ where: { email } }),
-            models.Users.findOne({ where: { username } }),
-            models.Users.findOne({ where: { contactNo } }),
-            models.Users.findOne({where: { companyId: req.body.companyId} }) // Check if the user is a super admin
+            models.Users.findOne({ where: { email, companyId: req.body.companyId } }),
+            models.Users.findOne({ where: { username, companyId: req.body.companyId } }),
+            models.Users.findOne({ where: { contactNo, companyId: req.body.companyId } }),
+            // models.Users.findOne({ where: { companyId: req.body.companyId } }) // Check if the user is a super admin
         ]);
 
         if (emailResult) {
@@ -39,9 +39,9 @@ async function addUser(req, res) {
         if (contactNoResult) {
             return res.status(409).json({ message: "This contact number belongs to someone else!" });
         }
-        if (companyUser) {
-            return res.status(409).json({ message: "This user already exist in this company!" });
-        }
+        // if (companyUser) {
+        //     return res.status(409).json({ message: "This user already exist in this company!" });
+        // }
 
         // Generate a random 8-character password
         const plainPassword = crypto.randomBytes(4).toString('hex');
@@ -127,7 +127,7 @@ function editUser(req, res) {
         name,
         role,
         website } = req.body;
-        
+
     const updatedUserData = {
         companyName,
         contactNo,
@@ -244,9 +244,9 @@ async function updateProfile(req, res) {
         const {
             userId,
             companyName,
-            email, 
+            email,
             website,
-            name, 
+            name,
             businessType,
             contactNo,
             role,
@@ -261,17 +261,17 @@ async function updateProfile(req, res) {
 
         // Update User Table
         const [affectedRows] = await models.Users.update(
-            { 
-                companyName, 
-                email, 
-                website, 
-                name, 
+            {
+                companyName,
+                email,
+                website,
+                name,
                 businessType,
                 contactNo,
                 role,
                 pan,
                 gstNumber,
-                cin, 
+                cin,
             },
             { where: { id: userId } }
         );
@@ -281,13 +281,13 @@ async function updateProfile(req, res) {
         }
 
         // Fetch the updated user details
-        const updatedUser = await models.Users.findOne({ 
-            where: { id: userId }, 
+        const updatedUser = await models.Users.findOne({
+            where: { id: userId },
             attributes: ['id', 'name', 'email', 'companyName', 'companyId', 'contactNo', 'role', 'website', 'businessType', 'pan', 'gstNumber', 'cin']
         });
 
         // Format response
-        res.status(200).json({ 
+        res.status(200).json({
             message: "Profile updated successfully.",
             userId: updatedUser.id,
             name: updatedUser.name,
@@ -348,7 +348,7 @@ async function updateProfileURL(req, res) {
 module.exports = {
     addUser: addUser,
     getUsers: getUsers,
-    editUser: editUser, 
+    editUser: editUser,
     deleteUser: deleteUser,
     updateProfile: updateProfile,
     updateProfileURL: updateProfileURL,
