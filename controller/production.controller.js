@@ -8,7 +8,7 @@ async function startProduction(req, res) {
         const { companyId, productions, mto } = req.body;
         const bulkProduction = productions.map(production => ({
             companyId: Number(companyId),
-            productionId: production.productionId,
+            productionId: generateProductionId(),
             documentNumber: production?.documentNumber,
             bomId: production.bomId,
             productionEndDate: production.productionEndDate,
@@ -19,7 +19,7 @@ async function startProduction(req, res) {
         }));
         const bulkProductions = await models.Production.bulkCreate(bulkProduction);
         const bulkProductionItems = bulkProductions.map((production, index) => ({
-            productionId: generateProductionId(),
+            productionId: production.id,
             documentNumber: productions[index].documentNumber,
             itemId: productions[index].itemId,
             itemName: productions[index].itemName,

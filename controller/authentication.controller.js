@@ -163,7 +163,7 @@ async function login(req, res) {
                 },
                 raw: true
             });
-            user.logoUrl = admin.profileURL
+            user.logoUrl = admin?.profileURL
         }
 
         // Generate JWT token
