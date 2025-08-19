@@ -90,7 +90,7 @@ async function getReports(req, res) {
             const items = await models.Items.findAll({
                 where: {
                     companyId: Number(companyId),
-                    ...(itemType !== '3' && { itemType })
+                    ...(itemType.length && { itemType: { [Op.in]: itemType } })
                 },
                 raw: true
             });
@@ -129,6 +129,16 @@ async function getReports(req, res) {
                 acc[curr.id] = curr.username;
                 return acc;
             }, {});
+
+            let startDate, endDate;
+
+            if (dateRange.length === 2) {
+                startDate = new Date(new Date(dateRange[0]).getTime() - (5.5 * 60 * 60 * 1000));
+
+                const endDateRaw = new Date(dateRange[1]);
+                endDateRaw.setHours(23, 59, 59, 999); // move to end of day
+                endDate = new Date(endDateRaw.getTime() - (5.5 * 60 * 60 * 1000));
+            }
             const whereCondition = {
                 companyId: Number(companyId),
                 itemId: {
@@ -146,8 +156,7 @@ async function getReports(req, res) {
                 ...(Array.isArray(dateRange) && dateRange.length === 2 && dateRange[0] && dateRange[1] && {
                     createdAt: {
                         [Op.between]: [
-                            new Date(dateRange[0]),
-                            new Date(dateRange[1])
+                            startDate, endDate
                         ]
                     }
                 })
@@ -193,7 +202,7 @@ async function getReports(req, res) {
             const items = await models.Items.findAll({
                 where: {
                     companyId: Number(companyId),
-                    ...(itemType !== '3' && { itemType })
+                    ...(itemType.length && { itemType: { [Op.in]: itemType } })
                 },
                 raw: true
             });
@@ -232,6 +241,16 @@ async function getReports(req, res) {
                 acc[curr.id] = curr.username;
                 return acc;
             }, {});
+
+            let startDate, endDate;
+
+            if (dateRange.length === 2) {
+                startDate = new Date(new Date(dateRange[0]).getTime() - (5.5 * 60 * 60 * 1000));
+
+                const endDateRaw = new Date(dateRange[1]);
+                endDateRaw.setHours(23, 59, 59, 999); // move to end of day
+                endDate = new Date(endDateRaw.getTime() - (5.5 * 60 * 60 * 1000));
+            }
             const whereCondition = {
                 companyId: Number(companyId),
                 itemId: {
@@ -245,8 +264,7 @@ async function getReports(req, res) {
                 ...(Array.isArray(dateRange) && dateRange.length === 2 && dateRange[0] && dateRange[1] && {
                     createdAt: {
                         [Op.between]: [
-                            new Date(dateRange[0]),
-                            new Date(dateRange[1])
+                            startDate, endDate
                         ]
                     }
                 })
