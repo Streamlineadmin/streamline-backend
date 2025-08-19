@@ -26,7 +26,7 @@ module.exports = (sequelize, DataTypes) => {
     HSN: DataTypes.STRING,
     UOM: DataTypes.STRING,
     quantity: DataTypes.FLOAT,
-    price: DataTypes.INTEGER,
+    price: DataTypes.FLOAT,
     discountOne: DataTypes.STRING,
     discountTwo: DataTypes.STRING,
     totalDiscount: DataTypes.STRING,
