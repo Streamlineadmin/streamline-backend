@@ -21,7 +21,7 @@ module.exports = (sequelize, DataTypes) => {
     companyWebsite: DataTypes.STRING,
     industry: DataTypes.STRING,
     companySize: DataTypes.STRING,
-    currentERP: DataTypes.STRING,
+    turnover: DataTypes.STRING,
     modules: DataTypes.STRING,
     query: DataTypes.STRING,
     source: DataTypes.STRING,
