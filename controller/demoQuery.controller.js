@@ -17,7 +17,7 @@ async function addDemoQuery(req, res) {
       ip_address,
     } = req.body;
 
-    if (!fullName || !email || !query) {
+    if (!fullName ) {
       return res
         .status(400)
         .json({ message: "Please fill all mandatory fields." });
