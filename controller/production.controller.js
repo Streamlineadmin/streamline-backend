@@ -5,10 +5,10 @@ const models = require('../models');
 
 async function startProduction(req, res) {
     try {
-        const { companyId, productions, mto } = req.body;
+        const { companyId, productions, mto, prefix, nextNumber } = req.body;
         const bulkProduction = productions.map(production => ({
             companyId: Number(companyId),
-            productionId: generateProductionId(),
+            productionId: production?.productionId || generateProductionId(),
             documentNumber: production?.documentNumber,
             bomId: production.bomId,
             productionEndDate: production.productionEndDate,
@@ -168,7 +168,7 @@ async function startProduction(req, res) {
 
                 const hour = Math.floor(remainingAfterDays / 3600);
                 const minute = Math.floor((remainingAfterDays % 3600) / 60);
-                const second = remainingAfterDays % 60;
+                const second = Math.floor(remainingAfterDays % 60) || 0;
 
                 const timeString = `${String(day).padStart(2, '0')}:${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:${String(second).padStart(2, '0')}`;
 
@@ -192,6 +192,19 @@ async function startProduction(req, res) {
             ]);
             index++;
         }
+        if (prefix && nextNumber) {
+            await models.DocumentSeries.update(
+                { nextNumber: nextNumber + productions.length },
+                {
+                    where: {
+                        companyId: Number(companyId),
+                        DocType: 'Production',
+                        prefix
+                    }
+                }
+            );
+        }
+
         res.status(201).json({ message: 'Production Created Successfully.', productions: bulkProductions?.map(item => item.get({ plain: true })) });
     } catch (error) {
         res.status(500).json({ message: 'Something went wrong' });
