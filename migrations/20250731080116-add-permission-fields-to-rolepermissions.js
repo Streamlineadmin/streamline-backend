@@ -9,10 +9,10 @@ module.exports = {
      * Example:
      * await queryInterface.createTable('users', { id: Sequelize.INTEGER });
      */
-    await queryInterface.addColumn('RolePermissions', 'view', {
-      type: Sequelize.STRING,
-      allowNull: true, // or false if required
-    });
+    // await queryInterface.addColumn('RolePermissions', 'view', {
+    //   type: Sequelize.STRING,
+    //   allowNull: true, // or false if required
+    // });
   },
 
   async down (queryInterface, Sequelize) {
@@ -22,6 +22,6 @@ module.exports = {
      * Example:
      * await queryInterface.dropTable('users');
      */
-    await queryInterface.removeColumn('RolePermissions', 'view');
+    // await queryInterface.removeColumn('RolePermissions', 'view');
   }
 };

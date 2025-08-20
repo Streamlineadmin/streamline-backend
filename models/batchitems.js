@@ -21,6 +21,7 @@ module.exports = (sequelize, DataTypes) => {
         expiryDate: DataTypes.STRING,
         store: DataTypes.STRING,
         outQuantity: DataTypes.FLOAT,
+        consumedQuantity: DataTypes.FLOAT,
         isRejected:DataTypes.BOOLEAN,
         status: DataTypes.INTEGER,
         ip_address: DataTypes.STRING,
