@@ -1055,7 +1055,10 @@ async function materialPlanning(req, res) {
 
         const productions = await models.Production.findAll({
             where: {
-                companyId: Number(companyId)
+                companyId: Number(companyId),
+                documentNumber: {
+                    [Op.notIn]: items.map(item => item.documentNumber)
+                }
             },
             raw: true
         });
