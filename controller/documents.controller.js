@@ -1039,28 +1039,6 @@ async function createDocument(req, res) {
           });
           price += (stock.price * deductQty);
         }
-
-        // await models.StockTransfer.create({
-        //   transferNumber: element.transferNumber,
-        //   fromStoreId: storeId.id || null,
-        //   itemId: item.id,
-        //   quantity: (element?.quantity * (element?.conversionFactor || 1)) * -1,
-        //   toStoreId: null,
-        //   transferDate: new Date().toISOString(),
-        //   transferredBy: createdBy,
-        //   comment: '',
-        //   companyId,
-        //   price: element.price / (element.conversionFactor || 1),
-        //   documentNumber: document.documentNumber,
-        //   documentType
-        // });
-
-        await models.Items.update(
-          {
-            currentStock: item.currentStock - (element.quantity * (element?.conversionFactor || (showUnits == 0 ? element.quantity / element.auQuantity : 1))),
-          },
-          { where: { id: item.id, companyId } }
-        );
       }
     }
 
