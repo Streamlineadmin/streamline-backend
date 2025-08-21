@@ -3,8 +3,14 @@ const models = require("../models");
 async function createBOMProductionProcess(req, res) {
   try {
     const { bomId, processes, companyId, userId, status } = req.body;
+    if (!processes.length) {
+      return res.status(201).json({
+      message: "Production processes added to BOM successfully",
+      data: [],
+    });
+    }
 
-    if (!bomId || !processes?.length) {
+    if (!bomId) {
       return res.status(400).json({ message: "Missing required fields" });
     }
 
@@ -50,11 +56,11 @@ async function getBOMProductionProcesses(req, res) {
       ],
     });
 
-    if (!bomProcesses.length) {
-      return res
-        .status(404)
-        .json({ message: "No processes found for this BOM", data: [] });
-    }
+    // if (!bomProcesses.length) {
+    //   return res
+    //     .status(404)
+    //     .json({ message: "No processes found for this BOM", data: [] });
+    // }
 
     res.status(200).json({
       message: "BOM processes retrieved successfully",
