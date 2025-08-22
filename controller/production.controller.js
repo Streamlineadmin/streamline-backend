@@ -738,7 +738,8 @@ async function saveFinishedGoods(req, res) {
             finishedGoods,
             passedQty,
             rejectQty,
-            companyId
+            companyId,
+            batchData
         } = req.body;
 
         const production = await models.Production.findOne({
@@ -899,6 +900,33 @@ async function saveFinishedGoods(req, res) {
         }
 
         await transaction.commit();
+
+        if (batchData && Array.isArray(batchData) && batchData?.length) {
+            const batchItems = [];
+            for (const element of batchData) {
+                for (const batch of element.batchItems) {
+                    batchItems.push({
+                        companyId: Number(companyId),
+                        createdBy: Number(companyId),
+                        documentNumber: production?.productionId,
+                        documentType: 'Production',
+                        item: batch.item,
+                        iterationCount: batch?.iterationCount,
+                        barCodeNumber: batch?.barCodeNumber,
+                        manufacturingDate: batch.manufacturingDate,
+                        expiryDate: batch.expiryDate,
+                        quantity: batch.quantity,
+                        outQuantity: 0,
+                        store: batch?.isRejected ? rejectStores.name : stores.name,
+                        status: 1,
+                        isRejected: batch?.isRejected || false
+                    });
+                }
+            }
+            if (batchItems.length) {
+                await models.BatchItems.bulkCreate(batchItems);
+            }
+        }
         return res.status(200).json({ message: 'Finished Goods Saved.' });
 
     } catch (error) {
