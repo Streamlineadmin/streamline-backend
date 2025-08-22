@@ -19,7 +19,8 @@ module.exports = (sequelize, DataTypes) => {
         mto: DataTypes.INTEGER,
         createdBy: DataTypes.INTEGER,
         ip_address: DataTypes.STRING,
-        status: DataTypes.INTEGER
+        status: DataTypes.INTEGER,
+        parentProductionId: DataTypes.INTEGER
     }, {
         sequelize,
         modelName: 'Production',

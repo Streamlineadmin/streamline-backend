@@ -96,7 +96,7 @@ async function updateBOMRawMaterial(req, res) {
           {
             itemId: item.itemId,
             itemName: item.itemName,
-            uom: item.UOM,
+            uom: item.UOM || item.uom,
             quantity: item.quantity,
             store: item.store,
             costAllocation: item.costAllocation,
@@ -182,6 +182,12 @@ async function linkBOM(req, res) {
       raw: true
     });
 
+    await models.BOMRawMaterial.update({ finishedGoodBomId: finishedGood.bomId }, {
+      where: {
+        id: data.id
+      }
+    });
+
     const payload = rawMaterials.map(item => {
       return {
         bomId: data.bomId,
@@ -256,8 +262,6 @@ async function unlinkBOM(req, res) {
     return res.status(500).json({ message: "Error while unlinking BOM." });
   }
 }
-
-
 
 module.exports = {
   createBOMRawMaterials,
