@@ -96,7 +96,7 @@ async function updateBOMRawMaterial(req, res) {
           {
             itemId: item.itemId,
             itemName: item.itemName,
-            uom: item.UOM,
+            uom: item.UOM || item.uom,
             quantity: item.quantity,
             store: item.store,
             costAllocation: item.costAllocation,
