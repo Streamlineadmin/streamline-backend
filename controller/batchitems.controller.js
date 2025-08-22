@@ -1,5 +1,5 @@
 const models = require('../models');
-const { Op } = require('sequelize');
+const { Op, where } = require('sequelize');
 
 async function createBatchItems(req, res) {
     try {
@@ -85,9 +85,25 @@ async function updateBatchByItems(req, res) {
     try {
         const { batchItems } = req.body;
 
-        await models.BatchItems.bulkCreate(batchItems, {
-            updateOnDuplicate: ["outQuantity", "consumedQuantity"],
-        });
+        for (const element of batchItems) {
+            const rawMaterial = await models.ProductionRawMaterials.find({
+                where: {
+                    id: element.itemId
+                }
+            });
+
+            if (rawMaterial) {
+                await rawMaterial.update({ batchesAssigned: (rawMaterial.batchesAssigned || 0) + element.consumedToday })
+            }
+            const batchItem = await models.BatchItems.find({
+                where: {
+                    id: element.batchId
+                }
+            });
+            if (batchItem) {
+                await batchItem.update({ consumedQuantity: (batchItem.consumedQuantity || 0) + element.consumedToday })
+            }
+        }
 
         res.status(200).json({ message: "Batches Updated Successfully." });
     } catch (error) {
