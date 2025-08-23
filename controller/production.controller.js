@@ -2,6 +2,7 @@ const { Op } = require('sequelize');
 const { documentTypes } = require('../helpers/document-type');
 const { generateProductionId, generateTransferNumber } = require('../helpers/transfer-number');
 const models = require('../models');
+const { buildMultiLevelProductionTree } = require('../helpers/add-level');
 
 async function startProduction(req, res) {
     try {
@@ -468,6 +469,34 @@ async function getProductions(req, res) {
     }
 }
 
+async function getProductionAndDescendants(productionId) {
+    const result = [];
+
+    async function collect(id) {
+        const production = await models.Production.findOne({
+            where: { id },
+            raw: true
+        });
+
+        if (!production) return;
+
+        result.push(production);
+
+        const children = await models.Production.findAll({
+            where: { parentProductionId: id },
+            raw: true
+        });
+
+        for (const child of children) {
+            await collect(child.id);
+        }
+    }
+
+    await collect(productionId);
+    return result;
+}
+
+
 async function getProductionById(req, res) {
     try {
         const { productionId } = req.body;
@@ -488,6 +517,34 @@ async function getProductionById(req, res) {
             models.ProductionAdditionalCharges.findAll({ where: { productionId: production.id } }),
         ]);
 
+        const multilevelProducions = await getProductionAndDescendants(Number(productionId));
+        const multiFinishedGoods = await models.ProductionFinishedGoods.findAll({
+            where: {
+                productionId: {
+                    [Op.in]: multilevelProducions?.map(data => data.id)
+                }
+            },
+            raw: true
+        });
+
+        let isMulti = null;
+
+        if (multilevelProducions.length > 1) {
+            const multiFinishedGoodsMap = multiFinishedGoods.reduce((acc, curr) => {
+                acc[curr.productionId] = curr;
+                return acc;
+            }, {});
+            const multiLevelProducionsWithFinishedGoods = multilevelProducions.map((data, index) => {
+                return {
+                    ...data,
+                    parentProductionId: index == 0 ? null : data.parentProductionId,
+                    finishedGood: multiFinishedGoodsMap[data.id]
+                }
+            });
+            console.log('multiLevelProducionsWithFinishedGoods', multiLevelProducionsWithFinishedGoods)
+            isMulti = buildMultiLevelProductionTree(multiLevelProducionsWithFinishedGoods);
+        }
+
         res.status(200).json({
             message: 'Production Data Fetched.',
             productionData: {
@@ -499,7 +556,8 @@ async function getProductionById(req, res) {
                 rawMaterials,
                 finishedGoods,
                 additionalCharges,
-                process
+                process,
+                isMulti
             }
         });
     } catch (error) {
@@ -1233,7 +1291,7 @@ async function materialPlanning(req, res) {
         const rawMaterialQueueMap = productionRawMaterials?.reduce((acc, curr) => {
             acc[curr.itemId] = (acc[curr.itemId] || 0) + Math.max((curr.quantity - ((curr.consumedQuantity || 0) + (curr.issuedQuantity || 0))), 0);
             return acc;
-        });
+        }, {});
 
         const purchaseOrders = await models.Documents.findAll({
             where: {
