@@ -3,40 +3,44 @@ const { Op, where } = require('sequelize');
 
 async function createBatchItems(req, res) {
     try {
-        const { BatchPayload, companyId, productionId } = req.body;
+        const { items, companyId, productionId } = req.body;
         const batchItems = [];
 
-        for (const element of BatchPayload) {
+        for (const element of items) {
             const scrapMaterial = await models.ProductionScrapMaterials.findOne({
                 where: {
-                    id: element.item
+                    id: element.parentRowId
                 }
             });
             if (scrapMaterial) {
                 await scrapMaterial.update({
-                    batchesAssigned: (scrapMaterial.batchesAssigned || 0) + element?.batchItems?.quantity
+                    batchesAssigned: (scrapMaterial.batchesAssigned || 0) + element?.parentQuantity
                 });
             }
-            batchItems.push({
-                companyId: Number(companyId),
-                createdBy: Number(companyId),
-                documentNumber: productionId,
-                documentType: 'Production',
-                item: element.batchItems.item,
-                iterationCount: element.batchItems?.iterationCount,
-                barCodeNumber: element.batchItems?.barCodeNumber,
-                manufacturingDate: element.batchItems.manufacturingDate,
-                expiryDate: element.batchItems.expiryDate,
-                quantity: element.batchItems.quantity,
-                outQuantity: 0,
-                store: null,
-                status: 1,
-                isRejected: element.batchItems?.isRejected || false
-            });
+
+            for (const batch of element.batchItems) {
+                batchItems.push({
+                    companyId: Number(companyId),
+                    createdBy: Number(companyId),
+                    documentNumber: productionId,
+                    documentType: 'Production',
+                    item: element.itemId,
+                    iterationCount: element.batchItems?.length,
+                    barCodeNumber: batch?.barCodeNumber,
+                    manufacturingDate: batch?.manufacturingDate,
+                    expiryDate: batch?.expiryDate,
+                    quantity: batch?.quantity,
+                    outQuantity: 0,
+                    store: null,
+                    status: 1,
+                    isRejected: batch?.isRejected || false
+                });
+            }
+
         }
 
         await models.BatchItems.bulkCreate(batchItems);
-        
+
         res.status(200).json({ message: 'Batch Items Created Successfully.' });
     } catch (error) {
         console.error("Error creating BatchItems:", error);
