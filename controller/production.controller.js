@@ -76,7 +76,7 @@ async function startProduction(req, res) {
                 }, raw: true
             });
 
-            const parentProductionId = {};
+            const parentProductionId = {}, parentProductionKey = {}, currentChildCount = {};
             const childs = rawMaterials?.reduce((acc, curr) => {
                 if (curr.parentId) {
                     if (acc[curr.parentId]) acc[curr.parentId].push(curr);
@@ -87,9 +87,10 @@ async function startProduction(req, res) {
 
             for (const element of rawMaterials) {
                 if (childs[element.id]) {
+                    currentChildCount[element.parentId] = (currentChildCount[element.parentId] || 0) + 1;
                     const prod = await models.Production.create({
                         companyId: Number(companyId),
-                        productionId: generateProductionId(),
+                        productionId: (parentProductionKey[element.parentId] || production.productionId) + `-C${currentChildCount[element.parentId]}`,
                         documentNumber: production?.documentNumber,
                         bomId: element.finishedGoodBomId,
                         productionEndDate: production.productionEndDate,
@@ -100,12 +101,14 @@ async function startProduction(req, res) {
                         parentProductionId: parentProductionId[element.parentId] || production.id
                     });
 
-                    const [scrapLogs, finishedGoods, productionProcess, additionalCharges] = await Promise.all([
+                    const [scrapLogs, childFinishedGoods, productionProcess, additionalCharges] = await Promise.all([
                         models.BOMScrapMaterial.findAll({ where: { bomId: element.finishedGoodBomId } }),
                         models.BOMFinishedGoods.findAll({ where: { bomId: element.finishedGoodBomId } }),
                         models.BOMProductionProcess.findAll({ where: { bomId: element.finishedGoodBomId } }),
                         models.BOMAdditionalCharges.findAll({ where: { bomId: element.finishedGoodBomId } }),
                     ]);
+
+                    const finishedGoodsQuantity = (element.quantity / finishedGoods[0].quantity) * productions[index].quantity;
                     const productionProcessId = productionProcess.map(data => data.processId);
                     const process = await models.ProductionProcess.findAll({
                         where: {
@@ -116,7 +119,7 @@ async function startProduction(req, res) {
                     });
                     const rawMaterial = childs[element.id];
                     const bulkRawMaterial = rawMaterial?.map((data) => {
-                        const quantity = (data.quantity);
+                        const quantity = (data.quantity) / childFinishedGoods[0]?.quantity;
                         let conversionFactor = 1;
                         // if (data.uom != itemsMap[data.itemId]?.metricsUnit) {
                         //     for (const element of alternateUnits) {
@@ -133,24 +136,24 @@ async function startProduction(req, res) {
                             itemName: data.itemName,
                             store: data.store,
                             uom: data.uom,
-                            quantity: quantity, //element.quantity * quantity,
+                            quantity: finishedGoodsQuantity * quantity,
                             conversionFactor,
                             status: 1
                         }
                     });
 
                     const bulkAdditionalCharges = additionalCharges?.filter(data => data.chargesName).map((data) => {
-                        const price = (data.amount) / finishedGoods[0]?.quantity;
+                        const price = (data.amount) / childFinishedGoods[0]?.quantity;
                         return {
                             productionId: prod.id,
                             chargesName: data.chargesName,
-                            amount: element.quantity * price,
+                            amount: finishedGoodsQuantity * price,
                             status: 1
                         }
                     });
 
                     const bulkScrapMaterial = scrapLogs?.filter(data => data?.itemName).map((data) => {
-                        const quantity = (data.quantity) / element?.quantity;
+                        const quantity = (data.quantity) / childFinishedGoods[0]?.quantity;
                         let conversionFactor = 1;
                         // if (data.uom != itemsMap[data.itemId]?.metricsUnit) {
                         //     for (const element of alternateUnits) {
@@ -165,7 +168,7 @@ async function startProduction(req, res) {
                             itemId: data.itemId,
                             itemName: data.itemName,
                             uom: data.uom,
-                            quantity: element.quantity * quantity,
+                            quantity: finishedGoodsQuantity * quantity,
                             store: data.store,
                             costAllocationPercent: data.costAllocationPercent,
                             conversionFactor,
@@ -173,7 +176,7 @@ async function startProduction(req, res) {
                         }
                     });
 
-                    const bulkFinishedGoods = finishedGoods.map((data) => {
+                    const bulkFinishedGoods = childFinishedGoods.map((data) => {
                         let conversionFactor = 1;
                         // if (data.uom != itemsMap[data.itemId]?.metricsUnit) {
                         //     for (const element of alternateUnits) {
@@ -188,7 +191,7 @@ async function startProduction(req, res) {
                             itemId: data.itemId,
                             itemName: data.itemName,
                             uom: data.uom,
-                            quantity: element.quantity,
+                            quantity: finishedGoodsQuantity,
                             store: data.store,
                             costAllocationPercent: data.costAllocationPercent,
                             conversionFactor,
@@ -200,7 +203,7 @@ async function startProduction(req, res) {
 
                         const [days, hours, minutes, seconds] = !data?.plannedTime ? [0, 0, 0, 0] : data?.plannedTime?.split(":")?.map(Number);
                         const totalMinutes = (((days * 24) + hours) * 60) + minutes;
-                        const miniute = (element.quantity) * (totalMinutes / element.quantity);
+                        const miniute = (finishedGoodsQuantity) * (totalMinutes / childFinishedGoods[0]?.quantity);
                         const totalSeconds = miniute * 60;
 
                         const day = Math.floor(totalSeconds / (24 * 3600));
@@ -232,6 +235,7 @@ async function startProduction(req, res) {
                     ]);
 
                     parentProductionId[element.id] = prod.id;
+                    parentProductionKey[element.id] = prod.productionId;
                 }
             }
 
@@ -240,7 +244,6 @@ async function startProduction(req, res) {
                 let conversionFactor = 1;
                 if (data.uom != itemsMap[data.itemId]?.metricsUnit) {
                     for (const element of alternateUnits) {
-                        console.log(element.itemId, itemsMap[data.itemId]?.id, element.id, data.uom)
                         if (element.itemId == itemsMap[data.itemId]?.id && element.alternateUnits == data.uom) {
                             conversionFactor = element.conversionfactor;
                             break;
@@ -541,7 +544,6 @@ async function getProductionById(req, res) {
                     finishedGood: multiFinishedGoodsMap[data.id]
                 }
             });
-            console.log('multiLevelProducionsWithFinishedGoods', multiLevelProducionsWithFinishedGoods)
             isMulti = buildMultiLevelProductionTree(multiLevelProducionsWithFinishedGoods);
         }
 
@@ -1056,6 +1058,7 @@ async function saveFinishedGoods(req, res) {
         await models.ProductionFinishedGoods.update({
             passedQuantity: (finishedGoods[0]?.passedQuantity || 0) + passedQty,
             rejectQuantity: (finishedGoods[0]?.rejectQuantity || 0) + (rejectQty || 0),
+            cost: (finishedGoods[0]?.total || 0) + total,
             quantityToTest: 0
         }, {
             where: {
