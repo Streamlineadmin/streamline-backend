@@ -76,170 +76,7 @@ async function startProduction(req, res) {
                 }, raw: true
             });
 
-            const parentProductionId = {}, parentProductionKey = {}, currentChildCount = {};
-            const childs = rawMaterials?.reduce((acc, curr) => {
-                if (curr.parentId) {
-                    if (acc[curr.parentId]) acc[curr.parentId].push(curr);
-                    else acc[curr.parentId] = [curr];
-                }
-                return acc;
-            }, {});
-
-            for (const element of rawMaterials) {
-                if (childs[element.id]) {
-                    currentChildCount[element.parentId] = (currentChildCount[element.parentId] || 0) + 1;
-                    const prod = await models.Production.create({
-                        companyId: Number(companyId),
-                        productionId: (parentProductionKey[element.parentId] || production.productionId) + `-C${currentChildCount[element.parentId]}`,
-                        documentNumber: production?.documentNumber,
-                        bomId: element.finishedGoodBomId,
-                        productionEndDate: production.productionEndDate,
-                        assignedTo: production.assignedTo,
-                        createdBy: Number(companyId),
-                        status: 1,
-                        mto: mto ?? 0,
-                        parentProductionId: parentProductionId[element.parentId] || production.id
-                    });
-
-                    const [scrapLogs, childFinishedGoods, productionProcess, additionalCharges] = await Promise.all([
-                        models.BOMScrapMaterial.findAll({ where: { bomId: element.finishedGoodBomId } }),
-                        models.BOMFinishedGoods.findAll({ where: { bomId: element.finishedGoodBomId } }),
-                        models.BOMProductionProcess.findAll({ where: { bomId: element.finishedGoodBomId } }),
-                        models.BOMAdditionalCharges.findAll({ where: { bomId: element.finishedGoodBomId } }),
-                    ]);
-
-                    const finishedGoodsQuantity = (element.quantity / finishedGoods[0].quantity) * productions[index].quantity;
-                    const productionProcessId = productionProcess.map(data => data.processId);
-                    const process = await models.ProductionProcess.findAll({
-                        where: {
-                            id: {
-                                [Op.in]: productionProcessId
-                            }
-                        }
-                    });
-                    const rawMaterial = childs[element.id];
-                    const bulkRawMaterial = rawMaterial?.map((data) => {
-                        const quantity = (data.quantity) / childFinishedGoods[0]?.quantity;
-                        let conversionFactor = 1;
-                        // if (data.uom != itemsMap[data.itemId]?.metricsUnit) {
-                        //     for (const element of alternateUnits) {
-                        //         console.log(element.itemId, itemsMap[data.itemId]?.id, element.id, data.uom)
-                        //         if (element.itemId == itemsMap[data.itemId]?.id && element.alternateUnits == data.uom) {
-                        //             conversionFactor = element.conversionfactor;
-                        //             break;
-                        //         }
-                        //     }
-                        // }
-                        return {
-                            productionId: prod.id,
-                            itemId: data.itemId,
-                            itemName: data.itemName,
-                            store: data.store,
-                            uom: data.uom,
-                            quantity: finishedGoodsQuantity * quantity,
-                            conversionFactor,
-                            status: 1
-                        }
-                    });
-
-                    const bulkAdditionalCharges = additionalCharges?.filter(data => data.chargesName).map((data) => {
-                        const price = (data.amount) / childFinishedGoods[0]?.quantity;
-                        return {
-                            productionId: prod.id,
-                            chargesName: data.chargesName,
-                            amount: finishedGoodsQuantity * price,
-                            status: 1
-                        }
-                    });
-
-                    const bulkScrapMaterial = scrapLogs?.filter(data => data?.itemName).map((data) => {
-                        const quantity = (data.quantity) / childFinishedGoods[0]?.quantity;
-                        let conversionFactor = 1;
-                        // if (data.uom != itemsMap[data.itemId]?.metricsUnit) {
-                        //     for (const element of alternateUnits) {
-                        //         if (element.itemId == itemsMap[data.itemId]?.id && element.alternateUnits == data.uom) {
-                        //             conversionFactor = element.conversionfactor;
-                        //             break;
-                        //         }
-                        //     }
-                        // }
-                        return {
-                            productionId: prod.id,
-                            itemId: data.itemId,
-                            itemName: data.itemName,
-                            uom: data.uom,
-                            quantity: finishedGoodsQuantity * quantity,
-                            store: data.store,
-                            costAllocationPercent: data.costAllocationPercent,
-                            conversionFactor,
-                            status: 1
-                        }
-                    });
-
-                    const bulkFinishedGoods = childFinishedGoods.map((data) => {
-                        let conversionFactor = 1;
-                        // if (data.uom != itemsMap[data.itemId]?.metricsUnit) {
-                        //     for (const element of alternateUnits) {
-                        //         if (element.itemId == itemsMap[data.itemId]?.id && element.alternateUnits == data.uom) {
-                        //             conversionFactor = element.conversionfactor;
-                        //             break;
-                        //         }
-                        //     }
-                        // }
-                        return {
-                            productionId: prod.id,
-                            itemId: data.itemId,
-                            itemName: data.itemName,
-                            uom: data.uom,
-                            quantity: finishedGoodsQuantity,
-                            store: data.store,
-                            costAllocationPercent: data.costAllocationPercent,
-                            conversionFactor,
-                            status: 1
-                        }
-                    });
-
-                    const bulkProcess = process.map((data) => {
-
-                        const [days, hours, minutes, seconds] = !data?.plannedTime ? [0, 0, 0, 0] : data?.plannedTime?.split(":")?.map(Number);
-                        const totalMinutes = (((days * 24) + hours) * 60) + minutes;
-                        const miniute = (finishedGoodsQuantity) * (totalMinutes / childFinishedGoods[0]?.quantity);
-                        const totalSeconds = miniute * 60;
-
-                        const day = Math.floor(totalSeconds / (24 * 3600));
-                        const remainingAfterDays = totalSeconds % (24 * 3600);
-
-                        const hour = Math.floor(remainingAfterDays / 3600);
-                        const minute = Math.floor((remainingAfterDays % 3600) / 60);
-                        const second = Math.floor(remainingAfterDays % 60) || 0;
-
-                        const timeString = `${String(day).padStart(2, '0')}:${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:${String(second).padStart(2, '0')}`;
-
-                        return {
-                            productionId: prod.id,
-                            cost: (miniute / data.cost) * 60,
-                            plannedTime: timeString,
-                            description: data.description,
-                            processName: data.processName,
-                            status: 1,
-                            perHourCost: (data?.cost / totalMinutes) * 60
-                        }
-                    });
-
-                    await Promise.all([
-                        models.ProductionSalesProcess.bulkCreate(bulkProcess),
-                        models.ProductionRawMaterials.bulkCreate(bulkRawMaterial),
-                        models.ProductionScrapMaterials.bulkCreate(bulkScrapMaterial),
-                        models.ProductionFinishedGoods.bulkCreate(bulkFinishedGoods),
-                        models.ProductionAdditionalCharges.bulkCreate(bulkAdditionalCharges),
-                    ]);
-
-                    parentProductionId[element.id] = prod.id;
-                    parentProductionKey[element.id] = prod.productionId;
-                }
-            }
-
-            const bulkRawMaterial = rawMaterials?.filter(data => !data.parentId).map((data) => {
+            const bulkRawMaterial = rawMaterials.map((data) => {
                 const quantity = (data.quantity) / finishedGoods[0]?.quantity;
                 let conversionFactor = 1;
                 if (data.uom != itemsMap[data.itemId]?.metricsUnit) {
@@ -956,7 +793,8 @@ async function saveFinishedGoods(req, res) {
             finishedGoods,
             passedQty,
             rejectQty,
-            companyId
+            companyId,
+            batchData
         } = req.body;
 
         const production = await models.Production.findOne({
@@ -1118,6 +956,33 @@ async function saveFinishedGoods(req, res) {
         }
 
         await transaction.commit();
+
+        if (batchData && Array.isArray(batchData) && batchData?.length) {
+            const batchItems = [];
+            for (const element of batchData) {
+                for (const batch of element.batchItems) {
+                    batchItems.push({
+                        companyId: Number(companyId),
+                        createdBy: Number(companyId),
+                        documentNumber: production?.productionId,
+                        documentType: 'Production',
+                        item: batch.item,
+                        iterationCount: batch?.iterationCount,
+                        barCodeNumber: batch?.barCodeNumber,
+                        manufacturingDate: batch.manufacturingDate,
+                        expiryDate: batch.expiryDate,
+                        quantity: batch.quantity,
+                        outQuantity: 0,
+                        store: batch?.isRejected ? rejectStores.name : stores.name,
+                        status: 1,
+                        isRejected: batch?.isRejected || false
+                    });
+                }
+            }
+            if (batchItems.length) {
+                await models.BatchItems.bulkCreate(batchItems);
+            }
+        }
         return res.status(200).json({ message: 'Finished Goods Saved.' });
 
     } catch (error) {
