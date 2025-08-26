@@ -36,7 +36,6 @@ async function createBatchItems(req, res) {
                     isRejected: batch?.isRejected || false
                 });
             }
-
         }
 
         await models.BatchItems.bulkCreate(batchItems);
@@ -89,67 +88,6 @@ async function getBatchItems(req, res) {
     }
 }
 
-// async function getBatchByItems(req, res) {
-//     try {
-//         const { companyId, itemIds } = req.body;
-//         const batchItems = await models.BatchItems.findAll({
-//             where: {
-//                 item: {
-//                     [Op.in]: itemIds
-//                 }
-//             },
-//             raw: true
-//         });
-
-//         const itemsMap = {};
-//         for (const element of batchItems) {
-//             if (element.quantity > (element.outQuantity || 0 + (element.consumedQuantity || 0))) {
-//                 if (itemsMap[element.item]) itemsMap[element.item].push(element);
-//                 else itemsMap[element.item] = [element];
-//             }
-//         }
-
-//         return res.status(200).json({ data: itemsMap });
-//     } catch (error) {
-//         console.error("Error fetching BatchItems:", error);
-//         return res.status(500).json({ message: "Something went wrong, please try again later!" });
-//     }
-// }
-
-// async function updateBatchByItems(req, res) {
-//     try {
-//         const { batchItems } = req.body;
-
-//         for (const element of batchItems) {
-//             const rawMaterial = await models.ProductionRawMaterials.find({
-//                 where: {
-//                     id: element.itemId
-//                 }
-//             });
-
-//             if (rawMaterial) {
-//                 await rawMaterial.update({ batchesAssigned: (rawMaterial.batchesAssigned || 0) + element.consumedToday })
-//             }
-//             const batchItem = await models.BatchItems.find({
-//                 where: {
-//                     id: element.batchId
-//                 }
-//             });
-//             if (batchItem) {
-//                 await batchItem.update({ consumedQuantity: (batchItem.consumedQuantity || 0) + element.consumedToday })
-//             }
-//         }
-
-//         res.status(200).json({ message: "Batches Updated Successfully." });
-//     } catch (error) {
-//         console.error("Error updating BatchItems:", error);
-//         return res.status(500).json({ message: "Something went wrong, please try again later!" });
-//     }
-// }
-
-
-// controllers/batchItems.js
-
 async function getBatchByItems(req, res) {
     try {
         const { companyId, itemIds } = req.body;
@@ -160,7 +98,6 @@ async function getBatchByItems(req, res) {
 
         const itemsMap = {};
         for (const element of batchItems) {
-            // ✅ fix: (outQuantity || 0) + (consumedQuantity || 0)
             if (element.quantity > ((element.outQuantity || 0) + (element.consumedQuantity || 0))) {
                 if (itemsMap[element.item]) itemsMap[element.item].push(element);
                 else itemsMap[element.item] = [element];
@@ -176,21 +113,28 @@ async function getBatchByItems(req, res) {
 
 async function updateBatchByItems(req, res) {
     try {
-        const { batchItems } = req.body;
+        const { batchItems, documentNumber, companyId } = req.body;
+        if (documentNumber) {
+            await models.Documents.update({ isBatchAssigned: true }, {
+                where: {
+                    documentNumber,
+                    companyId: Number(companyId)
+                }
+            })
+        }
 
         for (const element of batchItems) {
-            // ❌ models.ProductionRawMaterials.find -> throws
-            // ✅ use findOne (or findByPk)
-            const rawMaterial = await models.ProductionRawMaterials.findOne({
-                where: { id: element.itemId }
-            });
-
-            if (rawMaterial) {
-                await rawMaterial.update({
-                    batchesAssigned: (rawMaterial.batchesAssigned || 0) + element.consumedToday
+            if (!documentNumber) {
+                const rawMaterial = await models.ProductionRawMaterials.findOne({
+                    where: { id: element.itemId }
                 });
-            }
 
+                if (rawMaterial) {
+                    await rawMaterial.update({
+                        batchesAssigned: (rawMaterial.batchesAssigned || 0) + element.consumedToday
+                    });
+                }
+            }
             const batchItem = await models.BatchItems.findOne({
                 where: { id: element.batchId }
             });
@@ -208,7 +152,6 @@ async function updateBatchByItems(req, res) {
         return res.status(500).json({ message: "Something went wrong, please try again later!" });
     }
 }
-
 
 module.exports = {
     getBatchItems,
