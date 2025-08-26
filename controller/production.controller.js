@@ -2,6 +2,7 @@ const { Op } = require('sequelize');
 const { documentTypes } = require('../helpers/document-type');
 const { generateProductionId, generateTransferNumber } = require('../helpers/transfer-number');
 const models = require('../models');
+const { buildMultiLevelProductionTree } = require('../helpers/add-level');
 
 async function startProduction(req, res) {
     try {
@@ -75,7 +76,7 @@ async function startProduction(req, res) {
                 }, raw: true
             });
 
-            const parentProductionId = {};
+            const parentProductionId = {}, parentProductionKey = {}, currentChildCount = {};
             const childs = rawMaterials?.reduce((acc, curr) => {
                 if (curr.parentId) {
                     if (acc[curr.parentId]) acc[curr.parentId].push(curr);
@@ -86,9 +87,10 @@ async function startProduction(req, res) {
 
             for (const element of rawMaterials) {
                 if (childs[element.id]) {
+                    currentChildCount[element.parentId] = (currentChildCount[element.parentId] || 0) + 1;
                     const prod = await models.Production.create({
                         companyId: Number(companyId),
-                        productionId: generateProductionId(),
+                        productionId: (parentProductionKey[element.parentId] || production.productionId) + `-C${currentChildCount[element.parentId]}`,
                         documentNumber: production?.documentNumber,
                         bomId: element.finishedGoodBomId,
                         productionEndDate: production.productionEndDate,
@@ -99,12 +101,14 @@ async function startProduction(req, res) {
                         parentProductionId: parentProductionId[element.parentId] || production.id
                     });
 
-                    const [scrapLogs, finishedGoods, productionProcess, additionalCharges] = await Promise.all([
+                    const [scrapLogs, childFinishedGoods, productionProcess, additionalCharges] = await Promise.all([
                         models.BOMScrapMaterial.findAll({ where: { bomId: element.finishedGoodBomId } }),
                         models.BOMFinishedGoods.findAll({ where: { bomId: element.finishedGoodBomId } }),
                         models.BOMProductionProcess.findAll({ where: { bomId: element.finishedGoodBomId } }),
                         models.BOMAdditionalCharges.findAll({ where: { bomId: element.finishedGoodBomId } }),
                     ]);
+
+                    const finishedGoodsQuantity = (element.quantity / finishedGoods[0].quantity) * productions[index].quantity;
                     const productionProcessId = productionProcess.map(data => data.processId);
                     const process = await models.ProductionProcess.findAll({
                         where: {
@@ -115,7 +119,7 @@ async function startProduction(req, res) {
                     });
                     const rawMaterial = childs[element.id];
                     const bulkRawMaterial = rawMaterial?.map((data) => {
-                        const quantity = (data.quantity);
+                        const quantity = (data.quantity) / childFinishedGoods[0]?.quantity;
                         let conversionFactor = 1;
                         // if (data.uom != itemsMap[data.itemId]?.metricsUnit) {
                         //     for (const element of alternateUnits) {
@@ -132,24 +136,24 @@ async function startProduction(req, res) {
                             itemName: data.itemName,
                             store: data.store,
                             uom: data.uom,
-                            quantity: quantity, //element.quantity * quantity,
+                            quantity: finishedGoodsQuantity * quantity,
                             conversionFactor,
                             status: 1
                         }
                     });
 
                     const bulkAdditionalCharges = additionalCharges?.filter(data => data.chargesName).map((data) => {
-                        const price = (data.amount) / finishedGoods[0]?.quantity;
+                        const price = (data.amount) / childFinishedGoods[0]?.quantity;
                         return {
                             productionId: prod.id,
                             chargesName: data.chargesName,
-                            amount: element.quantity * price,
+                            amount: finishedGoodsQuantity * price,
                             status: 1
                         }
                     });
 
                     const bulkScrapMaterial = scrapLogs?.filter(data => data?.itemName).map((data) => {
-                        const quantity = (data.quantity) / element?.quantity;
+                        const quantity = (data.quantity) / childFinishedGoods[0]?.quantity;
                         let conversionFactor = 1;
                         // if (data.uom != itemsMap[data.itemId]?.metricsUnit) {
                         //     for (const element of alternateUnits) {
@@ -164,7 +168,7 @@ async function startProduction(req, res) {
                             itemId: data.itemId,
                             itemName: data.itemName,
                             uom: data.uom,
-                            quantity: element.quantity * quantity,
+                            quantity: finishedGoodsQuantity * quantity,
                             store: data.store,
                             costAllocationPercent: data.costAllocationPercent,
                             conversionFactor,
@@ -172,7 +176,7 @@ async function startProduction(req, res) {
                         }
                     });
 
-                    const bulkFinishedGoods = finishedGoods.map((data) => {
+                    const bulkFinishedGoods = childFinishedGoods.map((data) => {
                         let conversionFactor = 1;
                         // if (data.uom != itemsMap[data.itemId]?.metricsUnit) {
                         //     for (const element of alternateUnits) {
@@ -187,7 +191,7 @@ async function startProduction(req, res) {
                             itemId: data.itemId,
                             itemName: data.itemName,
                             uom: data.uom,
-                            quantity: element.quantity,
+                            quantity: finishedGoodsQuantity,
                             store: data.store,
                             costAllocationPercent: data.costAllocationPercent,
                             conversionFactor,
@@ -199,7 +203,7 @@ async function startProduction(req, res) {
 
                         const [days, hours, minutes, seconds] = !data?.plannedTime ? [0, 0, 0, 0] : data?.plannedTime?.split(":")?.map(Number);
                         const totalMinutes = (((days * 24) + hours) * 60) + minutes;
-                        const miniute = (element.quantity) * (totalMinutes / element.quantity);
+                        const miniute = (finishedGoodsQuantity) * (totalMinutes / childFinishedGoods[0]?.quantity);
                         const totalSeconds = miniute * 60;
 
                         const day = Math.floor(totalSeconds / (24 * 3600));
@@ -231,6 +235,7 @@ async function startProduction(req, res) {
                     ]);
 
                     parentProductionId[element.id] = prod.id;
+                    parentProductionKey[element.id] = prod.productionId;
                 }
             }
 
@@ -239,7 +244,6 @@ async function startProduction(req, res) {
                 let conversionFactor = 1;
                 if (data.uom != itemsMap[data.itemId]?.metricsUnit) {
                     for (const element of alternateUnits) {
-                        console.log(element.itemId, itemsMap[data.itemId]?.id, element.id, data.uom)
                         if (element.itemId == itemsMap[data.itemId]?.id && element.alternateUnits == data.uom) {
                             conversionFactor = element.conversionfactor;
                             break;
@@ -468,6 +472,33 @@ async function getProductions(req, res) {
     }
 }
 
+async function getProductionAndDescendants(productionId) {
+    const result = [];
+
+    async function collect(id) {
+        const production = await models.Production.findOne({
+            where: { id },
+            raw: true
+        });
+
+        if (!production) return;
+
+        result.push(production);
+
+        const children = await models.Production.findAll({
+            where: { parentProductionId: id },
+            raw: true
+        });
+
+        for (const child of children) {
+            await collect(child.id);
+        }
+    }
+
+    await collect(productionId);
+    return result;
+}
+
 async function getProductionById(req, res) {
     try {
         const { productionId } = req.body;
@@ -488,6 +519,33 @@ async function getProductionById(req, res) {
             models.ProductionAdditionalCharges.findAll({ where: { productionId: production.id } }),
         ]);
 
+        const multilevelProducions = await getProductionAndDescendants(Number(productionId));
+        const multiFinishedGoods = await models.ProductionFinishedGoods.findAll({
+            where: {
+                productionId: {
+                    [Op.in]: multilevelProducions?.map(data => data.id)
+                }
+            },
+            raw: true
+        });
+
+        let isMulti = null;
+
+        if (multilevelProducions.length > 1) {
+            const multiFinishedGoodsMap = multiFinishedGoods.reduce((acc, curr) => {
+                acc[curr.productionId] = curr;
+                return acc;
+            }, {});
+            const multiLevelProducionsWithFinishedGoods = multilevelProducions.map((data, index) => {
+                return {
+                    ...data,
+                    parentProductionId: index == 0 ? null : data.parentProductionId,
+                    finishedGood: multiFinishedGoodsMap[data.id]
+                }
+            });
+            isMulti = buildMultiLevelProductionTree(multiLevelProducionsWithFinishedGoods);
+        }
+
         res.status(200).json({
             message: 'Production Data Fetched.',
             productionData: {
@@ -499,7 +557,8 @@ async function getProductionById(req, res) {
                 rawMaterials,
                 finishedGoods,
                 additionalCharges,
-                process
+                process,
+                isMulti
             }
         });
     } catch (error) {
@@ -896,7 +955,8 @@ async function saveFinishedGoods(req, res) {
             finishedGoods,
             passedQty,
             rejectQty,
-            companyId
+            companyId,
+            batchData
         } = req.body;
 
         const production = await models.Production.findOne({
@@ -998,6 +1058,7 @@ async function saveFinishedGoods(req, res) {
         await models.ProductionFinishedGoods.update({
             passedQuantity: (finishedGoods[0]?.passedQuantity || 0) + passedQty,
             rejectQuantity: (finishedGoods[0]?.rejectQuantity || 0) + (rejectQty || 0),
+            cost: (finishedGoods[0]?.total || 0) + total,
             quantityToTest: 0
         }, {
             where: {
@@ -1057,6 +1118,33 @@ async function saveFinishedGoods(req, res) {
         }
 
         await transaction.commit();
+
+        if (batchData && Array.isArray(batchData) && batchData?.length) {
+            const batchItems = [];
+            for (const element of batchData) {
+                for (const batch of element.batchItems) {
+                    batchItems.push({
+                        companyId: Number(companyId),
+                        createdBy: Number(companyId),
+                        documentNumber: production?.productionId,
+                        documentType: 'Production',
+                        item: batch.item,
+                        iterationCount: batch?.iterationCount,
+                        barCodeNumber: batch?.barCodeNumber,
+                        manufacturingDate: batch.manufacturingDate,
+                        expiryDate: batch.expiryDate,
+                        quantity: batch.quantity,
+                        outQuantity: 0,
+                        store: batch?.isRejected ? rejectStores.name : stores.name,
+                        status: 1,
+                        isRejected: batch?.isRejected || false
+                    });
+                }
+            }
+            if (batchItems.length) {
+                await models.BatchItems.bulkCreate(batchItems);
+            }
+        }
         return res.status(200).json({ message: 'Finished Goods Saved.' });
 
     } catch (error) {
@@ -1233,7 +1321,7 @@ async function materialPlanning(req, res) {
         const rawMaterialQueueMap = productionRawMaterials?.reduce((acc, curr) => {
             acc[curr.itemId] = (acc[curr.itemId] || 0) + Math.max((curr.quantity - ((curr.consumedQuantity || 0) + (curr.issuedQuantity || 0))), 0);
             return acc;
-        });
+        }, {});
 
         const purchaseOrders = await models.Documents.findAll({
             where: {

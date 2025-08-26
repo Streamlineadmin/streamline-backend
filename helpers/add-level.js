@@ -35,6 +35,41 @@ function buildRawMaterialTreeWithLevel(flatMaterials) {
   return rootNodes;
 }
 
+function buildMultiLevelProductionTree(items) {
+  const map = {};
+  const roots = [];
+
+  // Map each item by id and init level
+  items.forEach(item => {
+    map[item.id] = { ...item, children: [], level: 0 };
+  });
+
+  // Build tree & assign level
+  items.forEach(item => {
+    if (item.parentProductionId && map[item.parentProductionId]) {
+      const parent = map[item.parentProductionId];
+      map[item.id].level = parent.level + 1;
+      parent.children.push(map[item.id]);
+    } else {
+      roots.push(map[item.id]);
+    }
+  });
+
+  // Cleanup empty children arrays
+  function clean(node) {
+    if (node.children.length === 0) {
+      node.children = null;
+    } else {
+      node.children.forEach(clean);
+    }
+  }
+  roots.forEach(clean);
+
+  return roots;
+}
+
+
+
 const isValidJSON = (data) => {
   try {
     const jsonObj = JSON.parse(data);
@@ -45,4 +80,4 @@ const isValidJSON = (data) => {
 }
 
 
-module.exports = { buildRawMaterialTreeWithLevel, isValidJSON }
+module.exports = { buildRawMaterialTreeWithLevel, isValidJSON, buildMultiLevelProductionTree }

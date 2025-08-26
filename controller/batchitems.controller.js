@@ -1,11 +1,45 @@
 const models = require('../models');
-const { Op } = require('sequelize');
+const { Op, where } = require('sequelize');
 
 async function createBatchItems(req, res) {
     try {
-        const { batchItems } = req.body;
+        const { items, companyId, productionId } = req.body;
+        const batchItems = [];
+
+        for (const element of items) {
+            const scrapMaterial = await models.ProductionScrapMaterials.findOne({
+                where: {
+                    id: element.parentRowId
+                }
+            });
+            if (scrapMaterial) {
+                await scrapMaterial.update({
+                    batchesAssigned: (scrapMaterial.batchesAssigned || 0) + element?.parentQuantity
+                });
+            }
+
+            for (const batch of element.batchItems) {
+                batchItems.push({
+                    companyId: Number(companyId),
+                    createdBy: Number(companyId),
+                    documentNumber: productionId,
+                    documentType: 'Production',
+                    item: element.itemId,
+                    iterationCount: element.batchItems?.length,
+                    barCodeNumber: batch?.barCodeNumber,
+                    manufacturingDate: batch?.manufacturingDate,
+                    expiryDate: batch?.expiryDate,
+                    quantity: batch?.quantity,
+                    outQuantity: 0,
+                    store: null,
+                    status: 1,
+                    isRejected: batch?.isRejected || false
+                });
+            }
+        }
 
         await models.BatchItems.bulkCreate(batchItems);
+
         res.status(200).json({ message: 'Batch Items Created Successfully.' });
     } catch (error) {
         console.error("Error creating BatchItems:", error);
@@ -58,17 +92,13 @@ async function getBatchByItems(req, res) {
     try {
         const { companyId, itemIds } = req.body;
         const batchItems = await models.BatchItems.findAll({
-            where: {
-                item: {
-                    [Op.in]: itemIds
-                }
-            },
+            where: { item: { [Op.in]: itemIds } },
             raw: true
         });
 
         const itemsMap = {};
         for (const element of batchItems) {
-            if (element.quantity > (element.outQuantity || 0 + (element.consumedQuantity || 0))) {
+            if (element.quantity > ((element.outQuantity || 0) + (element.consumedQuantity || 0))) {
                 if (itemsMap[element.item]) itemsMap[element.item].push(element);
                 else itemsMap[element.item] = [element];
             }
@@ -83,11 +113,38 @@ async function getBatchByItems(req, res) {
 
 async function updateBatchByItems(req, res) {
     try {
-        const { batchItems } = req.body;
+        const { batchItems, documentNumber, companyId } = req.body;
+        if (documentNumber) {
+            await models.Documents.update({ isBatchAssigned: true }, {
+                where: {
+                    documentNumber,
+                    companyId: Number(companyId)
+                }
+            })
+        }
 
-        await models.BatchItems.bulkCreate(batchItems, {
-            updateOnDuplicate: ["outQuantity", "consumedQuantity"],
-        });
+        for (const element of batchItems) {
+            if (!documentNumber) {
+                const rawMaterial = await models.ProductionRawMaterials.findOne({
+                    where: { id: element.itemId }
+                });
+
+                if (rawMaterial) {
+                    await rawMaterial.update({
+                        batchesAssigned: (rawMaterial.batchesAssigned || 0) + element.consumedToday
+                    });
+                }
+            }
+            const batchItem = await models.BatchItems.findOne({
+                where: { id: element.batchId }
+            });
+
+            if (batchItem) {
+                await batchItem.update({
+                    consumedQuantity: (batchItem.consumedQuantity || 0) + element.consumedToday
+                });
+            }
+        }
 
         res.status(200).json({ message: "Batches Updated Successfully." });
     } catch (error) {
