@@ -140,9 +140,15 @@ async function updateBatchByItems(req, res) {
             });
 
             if (batchItem) {
-                await batchItem.update({
-                    consumedQuantity: (batchItem.consumedQuantity || 0) + element.consumedToday
-                });
+                if (documentNumber) {
+                    await batchItem.update({
+                        outQuantity: (batchItem.outQuantity || 0) + element.consumedToday
+                    });
+                } else {
+                    await batchItem.update({
+                        consumedQuantity: (batchItem.consumedQuantity || 0) + element.consumedToday
+                    });
+                }
             }
         }
 
