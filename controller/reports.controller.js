@@ -1,4 +1,4 @@
-const { isValidJSON } = require('../helpers/add-level');
+const { isValidJSON, istToUtc, getAllDatesInRange, formatToIstDate } = require('../helpers/add-level');
 const { documentTypes } = require('../helpers/document-type');
 const models = require('../models');
 const { Op } = require('sequelize');
@@ -6,6 +6,88 @@ const { Op } = require('sequelize');
 async function getReports(req, res) {
     try {
         const { companyId, documentType = '', search = '' } = req.body;
+        if (documentType === "production reports") {
+            const nowIst = new Date(new Date().getTime() + 5.5 * 60 * 60 * 1000);
+            const oneMonthAgoIst = new Date(nowIst);
+            oneMonthAgoIst.setMonth(nowIst.getMonth() - 1);
+
+            const startUtc = istToUtc(oneMonthAgoIst);
+            const endUtc = istToUtc(nowIst);
+
+            const StockTransfers = await models.StockTransfer.findAll({
+                where: {
+                    companyId: Number(companyId),
+                    productionId: { [Op.ne]: null },
+                    createdAt: { [Op.between]: [startUtc, endUtc] },
+                    quantity: {
+                        [Op.gt]: 0
+                    }
+                },
+                raw: true
+            });
+
+            const itemIds = StockTransfers.map(t => t.itemId);
+
+            const uoms = await models.UOM.findAll({
+                where: { companyId: { [Op.or]: [null, Number(companyId)] } },
+                raw: true
+            });
+            const uomMap = uoms.reduce((acc, curr) => {
+                acc[curr.id] = curr.code;
+                return acc;
+            }, {});
+
+            const items = await models.Items.findAll({
+                where: {
+                    companyId: Number(companyId),
+                    id: { [Op.in]: itemIds }
+                },
+                raw: true
+            });
+            const itemsMap = items.reduce((acc, curr) => {
+                acc[curr.id] = curr;
+                return acc;
+            }, {});
+
+            const itemDailyData = {};
+            StockTransfers.forEach(transfer => {
+                const itemId = transfer.itemId;
+                const dateKey = formatToIstDate(new Date(transfer.createdAt));
+                const qty = transfer.quantity || 0;
+
+                if (!itemDailyData[itemId]) {
+                    itemDailyData[itemId] = { totalQuantity: 0 };
+                }
+                if (!itemDailyData[itemId][dateKey]) {
+                    itemDailyData[itemId][dateKey] = 0;
+                }
+
+                itemDailyData[itemId][dateKey] += qty;
+                itemDailyData[itemId].totalQuantity += qty;
+            });
+
+            const allDates = getAllDatesInRange(oneMonthAgoIst, nowIst);
+
+            const finalReport = Object.keys(itemDailyData).map(itemId => {
+                const row = {
+                    itemId: itemsMap[itemId]?.itemId || null,
+                    itemName: itemsMap[itemId]?.itemName || null,
+                    uom: uomMap[itemsMap[itemId]?.metricsUnit] || null,
+                    totalQuantity: itemDailyData[itemId].totalQuantity
+                };
+
+                allDates.forEach(dateKey => {
+                    row[dateKey] = itemDailyData[itemId][dateKey] || 0;
+                });
+
+                return row;
+            });
+
+            return res.status(200).json({
+                message: 'reports fetched.',
+                data: finalReport
+            })
+        }
         if (documentType === 'Store wise item stock') {
             const stores = await models.Store.findAll({
                 where: {
@@ -244,7 +326,7 @@ async function getReports(req, res) {
 
             let startDate, endDate;
 
-            if (dateRange.length === 2) {
+            if (dateRange?.length === 2) {
                 startDate = new Date(new Date(dateRange[0]).getTime() - (5.5 * 60 * 60 * 1000));
 
                 const endDateRaw = new Date(dateRange[1]);
