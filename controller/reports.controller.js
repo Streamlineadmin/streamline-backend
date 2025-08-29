@@ -7,6 +7,15 @@ async function getReports(req, res) {
     try {
         const { companyId, documentType = '', search = '' } = req.body;
         if (documentType === "productionReport") {
+            const { toStore, dateRange, itemType } = req.body;
+            let startDate = null, endDate = null;
+            if (dateRange?.length === 2) {
+                startDate = new Date(new Date(dateRange[0]).getTime() - (5.5 * 60 * 60 * 1000));
+
+                const endDateRaw = new Date(dateRange[1]);
+                endDateRaw.setHours(23, 59, 59, 999);
+                endDate = new Date(endDateRaw.getTime() - (5.5 * 60 * 60 * 1000));
+            }
             const nowIst = new Date(new Date().getTime() + 5.5 * 60 * 60 * 1000);
             const oneMonthAgoIst = new Date(nowIst);
             oneMonthAgoIst.setMonth(nowIst.getMonth() - 1);
@@ -18,10 +27,13 @@ async function getReports(req, res) {
                 where: {
                     companyId: Number(companyId),
                     productionId: { [Op.ne]: null },
-                    createdAt: { [Op.between]: [startUtc, endUtc] },
+                    createdAt: { [Op.between]: [startDate || startUtc, endDate || endUtc] },
                     quantity: {
                         [Op.gt]: 0
-                    }
+                    },
+                    toStoreId: {
+                        [Op.in]: toStore
+                    },
                 },
                 raw: true
             });
