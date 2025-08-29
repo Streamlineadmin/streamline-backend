@@ -6,7 +6,7 @@ const { Op } = require('sequelize');
 async function getReports(req, res) {
     try {
         const { companyId, documentType = '', search = '' } = req.body;
-        if (documentType === "production reports") {
+        if (documentType === "productionReport") {
             const nowIst = new Date(new Date().getTime() + 5.5 * 60 * 60 * 1000);
             const oneMonthAgoIst = new Date(nowIst);
             oneMonthAgoIst.setMonth(nowIst.getMonth() - 1);
