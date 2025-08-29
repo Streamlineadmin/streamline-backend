@@ -136,7 +136,7 @@ async function startProduction(req, res) {
                             itemName: data.itemName,
                             store: data.store,
                             uom: data.uom,
-                            quantity: finishedGoodsQuantity * quantity,
+                            quantity: productions[index]?.quantity * quantity,
                             conversionFactor,
                             status: 1
                         }
