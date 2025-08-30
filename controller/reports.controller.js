@@ -23,18 +23,18 @@ async function getReports(req, res) {
             const startUtc = istToUtc(oneMonthAgoIst);
             const endUtc = istToUtc(nowIst);
 
+            const whereClause = {
+                companyId: Number(companyId),
+                productionId: { [Op.ne]: null },
+                createdAt: { [Op.between]: [startDate || startUtc, endDate || endUtc] },
+                quantity: { [Op.gt]: 0 }
+            };
+            if (toStore?.length) {
+                whereClause.toStoreId = { [Op.in]: toStore };
+            }
+
             const StockTransfers = await models.StockTransfer.findAll({
-                where: {
-                    companyId: Number(companyId),
-                    productionId: { [Op.ne]: null },
-                    createdAt: { [Op.between]: [startDate || startUtc, endDate || endUtc] },
-                    quantity: {
-                        [Op.gt]: 0
-                    },
-                    toStoreId: {
-                        [Op.in]: toStore
-                    },
-                },
+                where: whereClause,
                 raw: true
             });
 
