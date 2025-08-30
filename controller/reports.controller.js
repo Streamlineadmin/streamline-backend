@@ -85,7 +85,8 @@ async function getReports(req, res) {
                     itemId: itemsMap[itemId]?.itemId || null,
                     itemName: itemsMap[itemId]?.itemName || null,
                     uom: uomMap[itemsMap[itemId]?.metricsUnit] || null,
-                    totalQuantity: itemDailyData[itemId].totalQuantity
+                    totalQuantity: itemDailyData[itemId].totalQuantity,
+                    documentNumber: itemId
                 };
 
                 allDates.forEach(dateKey => {
