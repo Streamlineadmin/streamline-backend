@@ -68,8 +68,6 @@ function buildMultiLevelProductionTree(items) {
   return roots;
 }
 
-
-
 const isValidJSON = (data) => {
   try {
     const jsonObj = JSON.parse(data);
@@ -79,5 +77,31 @@ const isValidJSON = (data) => {
   }
 }
 
+const istToUtc = (date) => {
+  return new Date(date.getTime() - (5.5 * 60 * 60 * 1000));
+}
 
-module.exports = { buildRawMaterialTreeWithLevel, isValidJSON, buildMultiLevelProductionTree }
+const getAllDatesInRange = (start, end) => {
+  const dates = [];
+  let curr = new Date(start);
+  while (curr <= end) {
+    dates.push(formatToIstDate(curr));
+    curr.setDate(curr.getDate() + 1);
+  }
+  return dates;
+}
+
+const formatToIstDate = (date) => {
+  const istOffset = 5.5 * 60 * 60 * 1000;
+  const istDate = new Date(date.getTime() + istOffset);
+  return istDate.toISOString().slice(0, 10).split("-").reverse().join("-");
+}
+
+module.exports = {
+  buildRawMaterialTreeWithLevel,
+  isValidJSON,
+  buildMultiLevelProductionTree,
+  istToUtc,
+  getAllDatesInRange,
+  formatToIstDate
+}
