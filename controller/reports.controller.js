@@ -7,26 +7,34 @@ async function getReports(req, res) {
     try {
         const { companyId, documentType = '', search = '' } = req.body;
         if (documentType === "productionReport") {
-            const { toStore, dateRange, itemType } = req.body;
+            const { toStore, dateRange, itemType, quickRange } = req.body;
             let startDate = null, endDate = null;
+
             if (dateRange?.length === 2) {
                 startDate = new Date(new Date(dateRange[0]).getTime() - (5.5 * 60 * 60 * 1000));
 
                 const endDateRaw = new Date(dateRange[1]);
                 endDateRaw.setHours(23, 59, 59, 999);
                 endDate = new Date(endDateRaw.getTime() - (5.5 * 60 * 60 * 1000));
+            } else if (quickRange) {
+                const nowIst = new Date(new Date().getTime() + 5.5 * 60 * 60 * 1000);
+                const startIst = new Date(nowIst);
+                startIst.setDate(nowIst.getDate() - quickRange);
+                startDate = istToUtc(startIst);
+                endDate = istToUtc(nowIst);
             }
+
             const nowIst = new Date(new Date().getTime() + 5.5 * 60 * 60 * 1000);
             const oneMonthAgoIst = new Date(nowIst);
             oneMonthAgoIst.setMonth(nowIst.getMonth() - 1);
 
-            const startUtc = istToUtc(oneMonthAgoIst);
-            const endUtc = istToUtc(nowIst);
+            const startUtc = istToUtc(startDate || oneMonthAgoIst);
+            const endUtc = istToUtc(endDate || nowIst);
 
             const whereClause = {
                 companyId: Number(companyId),
                 productionId: { [Op.ne]: null },
-                createdAt: { [Op.between]: [startDate || startUtc, endDate || endUtc] },
+                createdAt: { [Op.between]: [startUtc, endUtc] },
                 quantity: { [Op.gt]: 0 }
             };
             if (toStore?.length) {
@@ -78,7 +86,8 @@ async function getReports(req, res) {
                 itemDailyData[itemId].totalQuantity += qty;
             });
 
-            const allDates = getAllDatesInRange(oneMonthAgoIst, nowIst);
+            // build list of all dates between start and end
+            const allDates = getAllDatesInRange(startUtc, endUtc);
 
             const finalReport = Object.keys(itemDailyData).map(itemId => {
                 const row = {
@@ -99,8 +108,9 @@ async function getReports(req, res) {
             return res.status(200).json({
                 message: 'reports fetched.',
                 data: finalReport
-            })
+            });
         }
+
         if (documentType === 'Store wise item stock') {
             const stores = await models.Store.findAll({
                 where: {
