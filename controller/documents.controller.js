@@ -2307,7 +2307,10 @@ async function editDocument(req, res) {
       const document = await models.Documents.findOne({
         where: {
           quotationNumber: documentNumber,
-          companyId: Number(companyId)
+          companyId: Number(companyId),
+          documentType: {
+            [Op.notIn]: ['Sales Lead','Sales Quotation']
+          }
         }
       });
       if (document) {
@@ -2450,7 +2453,6 @@ async function editDocument(req, res) {
       supplyState
     });
 
-
     await models.CompanyTermsCondition.destroy({
       where: {
         companyId,
@@ -2581,6 +2583,8 @@ async function editDocument(req, res) {
           updatedAt: new Date()
         }),
     ]);
+
+    res.status(200).json({ message: 'Document Updated Successfully' });
 
   } catch (error) {
     res.status(400).json({
