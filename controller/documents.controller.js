@@ -103,7 +103,8 @@ async function createDocument(req, res) {
       department = '',
       showUnits = null,
       batches = null,
-      supplyState = ''
+      supplyState = '',
+      customFields = {}
     } = req.body;
 
     if (!isDraft) {
@@ -207,7 +208,8 @@ async function createDocument(req, res) {
       requestedBy,
       department,
       showUnits,
-      supplyState
+      supplyState,
+      customFields
     });
 
     else {
@@ -305,7 +307,8 @@ async function createDocument(req, res) {
       requestedBy,
       department,
       showUnits,
-      supplyState
+      supplyState,
+      customFields
     }, {
       where: {
         companyId,
@@ -2289,7 +2292,10 @@ async function editDocument(req, res) {
     const document = await models.Documents.findOne({
       where: {
         enquiryNumber: documentNumber,
-        companyId: Number(companyId)
+        companyId: Number(companyId),
+        documentType: {
+          [Op.ne]: 'Sales Lead'
+        }
       }
     });
     if (document) {
@@ -2342,7 +2348,7 @@ async function editDocument(req, res) {
       return res.status(400).json({ message: 'This document reference is available in other document. It is not be deleted.' });
     }
   }
-  else if (documentType == 'Purchase Request') {
+  else if (documentType == 'Purchase Order') {
     const document = await models.Documents.findOne({
       where: {
         purchaseOrderNumber: documentNumber,
