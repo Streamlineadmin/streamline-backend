@@ -103,7 +103,8 @@ async function createDocument(req, res) {
       department = '',
       showUnits = null,
       batches = null,
-      supplyState = ''
+      supplyState = '',
+      customFields = {}
     } = req.body;
 
     if (!isDraft) {
@@ -207,7 +208,8 @@ async function createDocument(req, res) {
       requestedBy,
       department,
       showUnits,
-      supplyState
+      supplyState,
+      customFields
     });
 
     else {
@@ -305,7 +307,8 @@ async function createDocument(req, res) {
       requestedBy,
       department,
       showUnits,
-      supplyState
+      supplyState,
+      customFields
     }, {
       where: {
         companyId,
@@ -2177,404 +2180,418 @@ async function getSalesDocumentItems(req, res) {
 }
 
 async function editDocument(req, res) {
-  const {
-    documentType = null,
-    documentNumber = null,
-    documentTo = null,
-    buyerName = null,
-    buyerBillingAddress = null,
-    advancePayment = null,
-    buyerDeliveryAddress = null,
-    buyerContactNumber = null,
-    buyerEmail = null,
-    supplierName = null,
-    supplierBillingAddress = null,
-    supplierDeliverAddress = null,
-    supplierContactNo = null,
-    supplierEmail = null,
-    documentDate = null,
-    ammendment = null,
-    deliveryDate = null,
-    ServiceConfirmationNumber = null,
-    ServiceConfirmationDate = null,
-    paymentTerm = null,
-    store = null,
-    rejectedStore = null,
-    enquiryNumber = null,
-    enquiryDate = null,
-    logisticDetailsId = null,
-    additionalDetails = null,
-    signature = null,
-    companyId = null,
-    createdBy = null,
-    status = null,
-    ip_address = null,
-    paymentDate = null,
-    POCName = null,
-    POCNumber = null,
-    POCDate = null,
-    OCNumber = null,
-    OCDate = null,
-    transporterName = null,
-    TGNumber = null,
-    TDNumber = null,
-    TDDate = null,
-    VehicleNumber = null,
-    replyDate = null,
-    Attention = null,
-    invoiceNumber = null,
-    invoiceDate = null,
-    billDate = null,
-    returnRecieveDate = null,
-    creditNoteNumber = null,
-    creditNotedate = null,
-    items = [],
-    additionalCharges = [],
-    bankDetails = {},
-    termsCondition = null,
-    quotationNumber = null,
-    quotationDate = null,
-    orderConfirmationNumber = null,
-    orderConfirmationDate = null,
-    purchaseOrderNumber = null,
-    purchaseOrderDate = null,
-    grn_number = null,
-    grn_Date = null,
-    indent_number = null,
-    indent_date = null,
-    supplier_invoice_number = null,
-    supplier_invoice_date = null,
-    challan_number = null,
-    challan_date = null,
-    debit_note_number = null,
-    performaInvoiceNumber = null,
-    performaInvoiceDate = null,
-    salesReturnNumber = null,
-    salesReturnDate = null,
-    debit_note_date = null,
-    pay_to_transporter = null,
-    inspection_date = null,
-    attachments = [],
-    documentComments = null,
-    tcsData = [],
-    BuyerPANNumber = null,
-    buyerSupplierKYCDetails = null,
-    isRounded = null,
-    reduceStockOnDC = '',
-    reduceStockOnIV = '',
-    GSTValue = null,
-    buyerGSTNumber = null,
-    supplierGSTNumber = null,
-    is_refered = null,
-    addStockOn = '',
-    isDraft = false,
-    purpose = '',
-    requiredDate = null,
-    requestedBy = '',
-    department = '',
-    showUnits = null,
-    batches = null,
-    supplyState = ''
-  } = req.body;
+  try {
+    const {
+      documentType = null,
+      documentNumber = null,
+      documentTo = null,
+      buyerName = null,
+      buyerBillingAddress = null,
+      advancePayment = null,
+      buyerDeliveryAddress = null,
+      buyerContactNumber = null,
+      buyerEmail = null,
+      supplierName = null,
+      supplierBillingAddress = null,
+      supplierDeliverAddress = null,
+      supplierContactNo = null,
+      supplierEmail = null,
+      documentDate = null,
+      ammendment = null,
+      deliveryDate = null,
+      ServiceConfirmationNumber = null,
+      ServiceConfirmationDate = null,
+      paymentTerm = null,
+      store = null,
+      rejectedStore = null,
+      enquiryNumber = null,
+      enquiryDate = null,
+      logisticDetailsId = null,
+      additionalDetails = null,
+      signature = null,
+      companyId = null,
+      createdBy = null,
+      status = null,
+      ip_address = null,
+      paymentDate = null,
+      POCName = null,
+      POCNumber = null,
+      POCDate = null,
+      OCNumber = null,
+      OCDate = null,
+      transporterName = null,
+      TGNumber = null,
+      TDNumber = null,
+      TDDate = null,
+      VehicleNumber = null,
+      replyDate = null,
+      Attention = null,
+      invoiceNumber = null,
+      invoiceDate = null,
+      billDate = null,
+      returnRecieveDate = null,
+      creditNoteNumber = null,
+      creditNotedate = null,
+      items = [],
+      additionalCharges = [],
+      bankDetails = {},
+      termsCondition = null,
+      quotationNumber = null,
+      quotationDate = null,
+      orderConfirmationNumber = null,
+      orderConfirmationDate = null,
+      purchaseOrderNumber = null,
+      purchaseOrderDate = null,
+      grn_number = null,
+      grn_Date = null,
+      indent_number = null,
+      indent_date = null,
+      supplier_invoice_number = null,
+      supplier_invoice_date = null,
+      challan_number = null,
+      challan_date = null,
+      debit_note_number = null,
+      performaInvoiceNumber = null,
+      performaInvoiceDate = null,
+      salesReturnNumber = null,
+      salesReturnDate = null,
+      debit_note_date = null,
+      pay_to_transporter = null,
+      inspection_date = null,
+      attachments = [],
+      documentComments = null,
+      tcsData = [],
+      BuyerPANNumber = null,
+      buyerSupplierKYCDetails = null,
+      isRounded = null,
+      reduceStockOnDC = '',
+      reduceStockOnIV = '',
+      GSTValue = null,
+      buyerGSTNumber = null,
+      supplierGSTNumber = null,
+      is_refered = null,
+      addStockOn = '',
+      isDraft = false,
+      purpose = '',
+      requiredDate = null,
+      requestedBy = '',
+      department = '',
+      showUnits = null,
+      batches = null,
+      supplyState = ''
+    } = req.body;
 
-  const document = await models.Documents.findOne({
-    where: {
+    const document = await models.Documents.findOne({
+      where: {
+        documentNumber,
+        companyId: Number(companyId)
+      }
+    });
+    if (!document) return res.status(404).json({ message: 'Document not found.' });
+
+    if (documentType == 'Sales Lead') {
+      const document = await models.Documents.findOne({
+        where: {
+          enquiryNumber: documentNumber,
+          companyId: Number(companyId),
+          documentType: {
+            [Op.ne]: 'Sales Lead'
+          }
+        }
+      });
+      if (document) {
+        return res.status(400).json({ message: 'This document reference is available in other document. It is not be deleted.' });
+      }
+    }
+    else if (documentType == 'Sales Quotation') {
+      const document = await models.Documents.findOne({
+        where: {
+          quotationNumber: documentNumber,
+          companyId: Number(companyId),
+          documentType: {
+            [Op.notIn]: ['Sales Lead','Sales Quotation']
+          }
+        }
+      });
+      if (document) {
+        return res.status(400).json({ message: 'This document reference is available in other document. It is not be deleted.' });
+      }
+    }
+    else if (documentType == 'Sales Order') {
+      const document = await models.Documents.findOne({
+        where: {
+          orderConfirmationNumber: documentNumber,
+          companyId: Number(companyId)
+        }
+      });
+      if (document) {
+        return res.status(400).json({ message: 'This document reference is available in other document. It is not be deleted.' });
+      }
+    }
+    else if (documentType == 'Proforma Invoice') {
+      const document = await models.Documents.findOne({
+        where: {
+          performaInvoiceNumber: documentNumber,
+          companyId: Number(companyId)
+        }
+      });
+      if (document) {
+        return res.status(400).json({ message: 'This document reference is available in other document. It is not be deleted.' });
+      }
+    }
+    else if (documentType == 'Purchase Request') {
+      const document = await models.Documents.findOne({
+        where: {
+          indent_number: {
+            [Op.like]: `%${documentNumber},%`,
+          },
+          companyId: Number(companyId)
+        }
+      });
+      if (document) {
+        return res.status(400).json({ message: 'This document reference is available in other document. It is not be deleted.' });
+      }
+    }
+    else if (documentType == 'Purchase Order') {
+      const document = await models.Documents.findOne({
+        where: {
+          purchaseOrderNumber: documentNumber,
+          companyId: Number(companyId)
+        }
+      });
+      if (document) {
+        return res.status(400).json({ message: 'This document reference is available in other document. It is not be deleted.' });
+      }
+    }
+
+    await document.update({
+      documentType,
       documentNumber,
-      companyId: Number(companyId)
-    }
-  });
-  if (!document) return res.status(404).json({ message: 'Document not found.' });
-
-  if (documentType == 'Sales Lead') {
-    const document = await models.Documents.findOne({
-      where: {
-        enquiryNumber: documentNumber,
-        companyId: Number(companyId)
-      }
-    });
-    if (document) {
-      return res.status(400).json({ message: 'This document reference is available in other document. It is not be deleted.' });
-    }
-  }
-  else if (documentType == 'Sales Quotation') {
-    const document = await models.Documents.findOne({
-      where: {
-        quotationNumber: documentNumber,
-        companyId: Number(companyId)
-      }
-    });
-    if (document) {
-      return res.status(400).json({ message: 'This document reference is available in other document. It is not be deleted.' });
-    }
-  }
-  else if (documentType == 'Sales Order') {
-    const document = await models.Documents.findOne({
-      where: {
-        orderConfirmationNumber: documentNumber,
-        companyId: Number(companyId)
-      }
-    });
-    if (document) {
-      return res.status(400).json({ message: 'This document reference is available in other document. It is not be deleted.' });
-    }
-  }
-  else if (documentType == 'Proforma Invoice') {
-    const document = await models.Documents.findOne({
-      where: {
-        performaInvoiceNumber: documentNumber,
-        companyId: Number(companyId)
-      }
-    });
-    if (document) {
-      return res.status(400).json({ message: 'This document reference is available in other document. It is not be deleted.' });
-    }
-  }
-  else if (documentType == 'Purchase Request') {
-    const document = await models.Documents.findOne({
-      where: {
-        indent_number: {
-          [Op.like]: `%${documentNumber},%`,
-        },
-        companyId: Number(companyId)
-      }
-    });
-    if (document) {
-      return res.status(400).json({ message: 'This document reference is available in other document. It is not be deleted.' });
-    }
-  }
-  else if (documentType == 'Purchase Request') {
-    const document = await models.Documents.findOne({
-      where: {
-        purchaseOrderNumber: documentNumber,
-        companyId: Number(companyId)
-      }
-    });
-    if (document) {
-      return res.status(400).json({ message: 'This document reference is available in other document. It is not be deleted.' });
-    }
-  }
-
-  await document.update({
-    documentType,
-    documentNumber,
-    buyerName,
-    documentTo,
-    buyerBillingAddress,
-    advancePayment,
-    GSTValue,
-    buyerGSTNumber,
-    supplierGSTNumber,
-    is_refered,
-    buyerDeliveryAddress,
-    buyerContactNumber,
-    buyerEmail,
-    supplierName,
-    supplierBillingAddress,
-    supplierDeliverAddress,
-    supplierContactNo,
-    supplierEmail,
-    documentDate,
-    ammendment,
-    deliveryDate,
-    ServiceConfirmationNumber,
-    ServiceConfirmationDate,
-    paymentTerm,
-    store,
-    rejectedStore,
-    enquiryNumber,
-    enquiryDate,
-    logisticDetailsId,
-    additionalDetails,
-    signature,
-    companyId,
-    createdBy,
-    status,
-    ip_address,
-    paymentDate,
-    POCName,
-    POCNumber,
-    POCDate,
-    OCNumber,
-    OCDate,
-    transporterName,
-    TGNumber,
-    TDNumber,
-    TDDate,
-    VehicleNumber,
-    replyDate,
-    Attention,
-    invoiceNumber,
-    invoiceDate,
-    billDate,
-    returnRecieveDate,
-    creditNoteNumber,
-    creditNotedate,
-    quotationNumber,
-    quotationDate,
-    orderConfirmationNumber,
-    orderConfirmationDate,
-    purchaseOrderNumber,
-    purchaseOrderDate,
-    grn_number,
-    grn_Date,
-    indent_number,
-    indent_date,
-    supplier_invoice_number,
-    supplier_invoice_date,
-    challan_number,
-    challan_date,
-    debit_note_number,
-    debit_note_date,
-    performaInvoiceNumber,
-    salesReturnNumber,
-    salesReturnDate,
-    performaInvoiceDate,
-    pay_to_transporter,
-    inspection_date,
-    BuyerPANNumber,
-    isRounded,
-    tcsData,
-    addStockOn,
-    purpose,
-    requiredDate,
-    requestedBy,
-    department,
-    showUnits,
-    supplyState
-  });
-
-
-  await models.CompanyTermsCondition.destroy({
-    where: {
+      buyerName,
+      documentTo,
+      buyerBillingAddress,
+      advancePayment,
+      GSTValue,
+      buyerGSTNumber,
+      supplierGSTNumber,
+      is_refered,
+      buyerDeliveryAddress,
+      buyerContactNumber,
+      buyerEmail,
+      supplierName,
+      supplierBillingAddress,
+      supplierDeliverAddress,
+      supplierContactNo,
+      supplierEmail,
+      documentDate,
+      ammendment,
+      deliveryDate,
+      ServiceConfirmationNumber,
+      ServiceConfirmationDate,
+      paymentTerm,
+      store,
+      rejectedStore,
+      enquiryNumber,
+      enquiryDate,
+      logisticDetailsId,
+      additionalDetails,
+      signature,
       companyId,
-      documentNumber
-    }
-  });
+      createdBy,
+      status,
+      ip_address,
+      paymentDate,
+      POCName,
+      POCNumber,
+      POCDate,
+      OCNumber,
+      OCDate,
+      transporterName,
+      TGNumber,
+      TDNumber,
+      TDDate,
+      VehicleNumber,
+      replyDate,
+      Attention,
+      invoiceNumber,
+      invoiceDate,
+      billDate,
+      returnRecieveDate,
+      creditNoteNumber,
+      creditNotedate,
+      quotationNumber,
+      quotationDate,
+      orderConfirmationNumber,
+      orderConfirmationDate,
+      purchaseOrderNumber,
+      purchaseOrderDate,
+      grn_number,
+      grn_Date,
+      indent_number,
+      indent_date,
+      supplier_invoice_number,
+      supplier_invoice_date,
+      challan_number,
+      challan_date,
+      debit_note_number,
+      debit_note_date,
+      performaInvoiceNumber,
+      salesReturnNumber,
+      salesReturnDate,
+      performaInvoiceDate,
+      pay_to_transporter,
+      inspection_date,
+      BuyerPANNumber,
+      isRounded,
+      tcsData,
+      addStockOn,
+      purpose,
+      requiredDate,
+      requestedBy,
+      department,
+      showUnits,
+      supplyState
+    });
 
-  const companyTermsCondition = await models.CompanyTermsCondition.create({
-    companyId: companyId,
-    termsCondition: termsCondition || [],
-    ip_address: ip_address,
-    documentNumber: document.documentNumber,
-    createdAt: new Date(),
-    updatedAt: new Date()
-  });
+    await models.CompanyTermsCondition.destroy({
+      where: {
+        companyId,
+        documentNumber
+      }
+    });
 
-  companyTermsCondition?.id && await models.Documents.update({
-    companyTermsConditionId: companyTermsCondition.id
-  }, {
-    where: {
-      companyId,
-      documentNumber
-    }
-  });
-  await Promise.all([
-    models.DocumentItems.destroy({
-      where: {
-        companyId,
-        documentNumber
-      }
-    }),
-    models.DocumentAdditionalCharges.destroy({
-      where: {
-        companyId,
-        documentNumber
-      }
-    }),
-    models.DocumentBankDetails.destroy({
-      where: {
-        companyId,
-        documentNumber
-      }
-    }),
-    models.DocumentAttachments.destroy({
-      where: {
-        companyId,
-        documentNumber
-      }
-    }),
-    models.DocumentComments.destroy(
-      {
-        where: { documentId: document.id },
-      })
-  ]);
+    const companyTermsCondition = await models.CompanyTermsCondition.create({
+      companyId: companyId,
+      termsCondition: termsCondition || [],
+      ip_address: ip_address,
+      documentNumber: document.documentNumber,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    });
 
-  await Promise.all([
-    models.DocumentItems.bulkCreate(
-      items.map(item => {
-        return ({
+    companyTermsCondition?.id && await models.Documents.update({
+      companyTermsConditionId: companyTermsCondition.id
+    }, {
+      where: {
+        companyId,
+        documentNumber
+      }
+    });
+    await Promise.all([
+      models.DocumentItems.destroy({
+        where: {
+          companyId,
+          documentNumber
+        }
+      }),
+      models.DocumentAdditionalCharges.destroy({
+        where: {
+          companyId,
+          documentNumber
+        }
+      }),
+      models.DocumentBankDetails.destroy({
+        where: {
+          companyId,
+          documentNumber
+        }
+      }),
+      models.DocumentAttachments.destroy({
+        where: {
+          companyId,
+          documentNumber
+        }
+      }),
+      models.DocumentComments.destroy(
+        {
+          where: { documentId: document.id },
+        })
+    ]);
+
+    await Promise.all([
+      models.DocumentItems.bulkCreate(
+        items.map(item => {
+          return ({
+            documentNumber: document.documentNumber,
+            companyId: companyId,
+            itemId: item.itemId,
+            itemName: item.itemName,
+            HSN: item.HSN,
+            UOM: item.UOM,
+            quantity: item.quantity,
+            price: item.price,
+            discountOne: item.discountOne,
+            discountTwo: item.discountTwo,
+            totalDiscount: item.totalDiscount,
+            taxType: item.taxType,
+            tax: item.tax,
+            totalTax: item.totalTax,
+            totalBeforeTax: item.totalBeforeTax,
+            totalAfterTax: item.totalAfterTax,
+            receivedToday: item.receivedToday || 0,
+            pendingQuantity: item.pendingQuantity || 0,
+            receivedQuantity: item.receivedQuantity || 0,
+            auQuantity: item?.auQuantity,
+            alternateUnit: item?.alternateUnit,
+            conversionFactor: item?.conversionFactor,
+            ServiceID: item?.ServiceID,
+            ServiceName: item?.ServiceName,
+            additionalDetails: item?.additionalDetails,
+            customFields: item?.customFields
+          })
+        })
+      ),
+      models.DocumentAdditionalCharges.bulkCreate(
+        additionalCharges.map(charge => ({
+          companyId: companyId,
+          documentNumber: document.documentNumber,
+          chargingFor: charge.chargingFor,
+          price: charge.price,
+          tax: charge.tax,
+          total: charge.total,
+          status: charge.status,
+          ip_address: charge.ip_address
+        }))
+      ),
+      models.DocumentBankDetails.create({
+        documentNumber: document.documentNumber,
+        companyId: companyId,
+        bankName: bankDetails.bankName || null,
+        accountName: bankDetails.accountName || null,
+        accountNumber: bankDetails.accountNumber || null,
+        branch: bankDetails.branch || null,
+        IFSCCode: bankDetails.IFSCCode || null,
+        MICRCode: bankDetails.MICRCode || null,
+        address: bankDetails.address || null,
+        SWIFTCode: bankDetails.SWIFTCode || null,
+        status: bankDetails.status || 1,
+        ip_address: bankDetails.ip_address || null,
+      }),
+      models.DocumentAttachments.bulkCreate(
+        attachments.map(attachment => ({
           documentNumber: document.documentNumber,
           companyId: companyId,
-          itemId: item.itemId,
-          itemName: item.itemName,
-          HSN: item.HSN,
-          UOM: item.UOM,
-          quantity: item.quantity,
-          price: item.price,
-          discountOne: item.discountOne,
-          discountTwo: item.discountTwo,
-          totalDiscount: item.totalDiscount,
-          taxType: item.taxType,
-          tax: item.tax,
-          totalTax: item.totalTax,
-          totalBeforeTax: item.totalBeforeTax,
-          totalAfterTax: item.totalAfterTax,
-          receivedToday: item.receivedToday || 0,
-          pendingQuantity: item.pendingQuantity || 0,
-          receivedQuantity: item.receivedQuantity || 0,
-          auQuantity: item?.auQuantity,
-          alternateUnit: item?.alternateUnit,
-          conversionFactor: item?.conversionFactor,
-          ServiceID: item?.ServiceID,
-          ServiceName: item?.ServiceName,
-          additionalDetails: item?.additionalDetails,
-          customFields: item?.customFields
-        })
-      })
-    ),
-    models.DocumentAdditionalCharges.bulkCreate(
-      additionalCharges.map(charge => ({
-        companyId: companyId,
-        documentNumber: document.documentNumber,
-        chargingFor: charge.chargingFor,
-        price: charge.price,
-        tax: charge.tax,
-        total: charge.total,
-        status: charge.status,
-        ip_address: charge.ip_address
-      }))
-    ),
-    models.DocumentBankDetails.create({
-      documentNumber: document.documentNumber,
-      companyId: companyId,
-      bankName: bankDetails.bankName || null,
-      accountName: bankDetails.accountName || null,
-      accountNumber: bankDetails.accountNumber || null,
-      branch: bankDetails.branch || null,
-      IFSCCode: bankDetails.IFSCCode || null,
-      MICRCode: bankDetails.MICRCode || null,
-      address: bankDetails.address || null,
-      SWIFTCode: bankDetails.SWIFTCode || null,
-      status: bankDetails.status || 1,
-      ip_address: bankDetails.ip_address || null,
-    }),
-    models.DocumentAttachments.bulkCreate(
-      attachments.map(attachment => ({
-        documentNumber: document.documentNumber,
-        companyId: companyId,
-        attachmentName: attachment
-      }))
-    ),
-    models.DocumentComments.create(
-      {
-        documentId: document.id,
-        commentText: documentComments,
-        createdBy: createdBy,
-        createdAt: new Date(),
-        updatedAt: new Date()
-      }),
-  ]);
+          attachmentName: attachment
+        }))
+      ),
+      models.DocumentComments.create(
+        {
+          documentId: document.id,
+          commentText: documentComments,
+          createdBy: createdBy,
+          createdAt: new Date(),
+          updatedAt: new Date()
+        }),
+    ]);
 
+    res.status(200).json({ message: 'Document Updated Successfully' });
+
+  } catch (error) {
+    res.status(400).json({
+      message: 'Something went wrong',
+      error
+    });
+  }
 
 }
 

@@ -175,7 +175,8 @@ module.exports = (sequelize, DataTypes) => {
     creditSetOff: DataTypes.FLOAT,
     debitSetOff: DataTypes.FLOAT,
     amountPaid: DataTypes.FLOAT,
-    isBatchAssigned: DataTypes.BOOLEAN
+    isBatchAssigned: DataTypes.BOOLEAN,
+    customFields: DataTypes.JSON
   }, {
     sequelize,
     modelName: 'Documents',

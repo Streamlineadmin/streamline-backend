@@ -12,7 +12,8 @@ async function addCustomfields(req, res) {
         defaultValue,
         documentType,
         options,
-        showByDefault
+        showByDefault,
+        level
       } = req.body;
     if (!fieldName || !type || !documentType) {
       return res.status(400).json({ message: "All fields are required" });
@@ -27,7 +28,8 @@ async function addCustomfields(req, res) {
       documentType,
       required: required || false,
       options: options || [],
-      showByDefault: showByDefault || false
+      showByDefault: showByDefault || false,
+      level: level || ''
     });
 
     return res.status(201).json({

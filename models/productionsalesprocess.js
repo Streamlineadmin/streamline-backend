@@ -43,6 +43,7 @@ module.exports = (sequelize, DataTypes) => {
             },
             productionId: { type: DataTypes.INTEGER },
             perHourCost: DataTypes.FLOAT,
+            processCompleteOn: DataTypes.FLOAT
         },
         {
             sequelize,

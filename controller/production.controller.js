@@ -434,11 +434,11 @@ async function getProductions(req, res) {
         }
         const productionMap = productions.reduce((acc, current) => {
             if (acc[current.documentNumber]) {
-                acc[current.documentNumber][current.productionItem.itemId] = current;
+                acc[current.documentNumber][current?.productionItem?.itemId] = current;
             }
             else {
-                acc[current.documentNumber] = {};
-                acc[current.documentNumber][current.productionItem.itemId] = current;
+                acc[current?.documentNumber] = {};
+                acc[current?.documentNumber][current?.productionItem?.itemId] = current;
             }
             return acc;
         }, {});
@@ -738,7 +738,7 @@ async function issueRawMaterial(req, res) {
         const itemMap = new Map(items.map(item => [item.itemId, item]));
         const stockTransferPayloads = [];
         for (const element of rawMaterialData) {
-            if (!element?.issuedToday) continue;
+            if (!element?.issuedToday || element.issuedToday === '0' || element.issuedToday === 0) continue;
             const storeName = element.store?.replaceAll("-fromrejectstore", "");
             const store = storeMap.get(storeName);
             const item = itemMap.get(element.itemId);
@@ -779,7 +779,7 @@ async function issueRawMaterial(req, res) {
             }
             await models.ProductionRawMaterials.update(
                 {
-                    issuedQuantity: (element.issuedQuantity || 0) + element.issuedToday,
+                    issuedQuantity: Number((element.issuedQuantity || 0)) + Number((element.issuedToday || 0)),
                     currentAverage: (element.currentAverage || 0) + price
                 },
                 {
@@ -804,12 +804,11 @@ async function updateProcess(req, res) {
     try {
         const { processData } = req.body;
         for (const element of processData) {
-            if (element.currentTime && element.amount) {
+            if ((element.currentTime && element.amount)) {
                 const process = await models.ProductionSalesProcess.findOne({ where: { id: element.id } });
                 const [days, hours, miniutes] = element.currentTime.split(":").map(Number);
                 const totalMinutes = ((((days || 0) * 24) + hours) * 60) + miniutes;
                 let totalCost = ((totalMinutes / 60) * element.amount);
-                console.log('totalCost', totalCost);
                 let currentAverageTime = '';
                 if (!process.currentPlannedTime) {
                     currentAverageTime = element.currentTime;
@@ -837,10 +836,17 @@ async function updateProcess(req, res) {
                 }
                 await models.ProductionSalesProcess.update({ currentaverageCost: (process.currentaverageCost || 0) + totalCost, currentPlannedTime: currentAverageTime }, {
                     where: {
-                        id: element.id
+                        id: element.id,
                     }
                 });
 
+            }
+            if (Number(element.todayProcessQuantity)) {
+                await models.ProductionSalesProcess.update({ processCompleteOn: (element.processCompleteOn || 0) + Number(element.todayProcessQuantity) }, {
+                    where: {
+                        id: element.id,
+                    }
+                });
             }
         }
         return res.status(200).json({ message: 'Process Updated' });
@@ -887,6 +893,7 @@ async function updateScrapLogs(req, res) {
             }
         });
         for (const element of scrapLogs) {
+            if (!element.value) continue;
             await models.ProductionScrapMaterials.update({ producedQuantity: (element?.producedQuantity || 0) + element.value }, {
                 where: {
                     id: element.id

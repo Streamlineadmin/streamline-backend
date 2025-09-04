@@ -306,7 +306,8 @@ async function getStoresByItem(req, res) {
           storeId: store.id,
           storeName: store.name,
           quantity: storeQuantities[store.id] || 0,
-          isReject: false
+          isReject: false,
+          itemId
         });
       }
 
@@ -315,7 +316,8 @@ async function getStoresByItem(req, res) {
           storeId: store.id,
           storeName: store.name,
           quantity: rejectStoreQuantities[store.id] || 0,
-          isReject: true
+          isReject: true,
+          itemId
         });
       }
     });
