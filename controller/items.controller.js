@@ -1040,9 +1040,9 @@ async function bulkStockUpdate(req, res) {
             where: {
                 storeId: {
                     [Op.in]: stores.map(store => store.id),
-                    quantity: {
-                        [Op.gt]: 0
-                    }
+                },
+                quantity: {
+                    [Op.gt]: 0
                 }
             },
             raw: true
@@ -1057,7 +1057,7 @@ async function bulkStockUpdate(req, res) {
                 quantityMap[element.itemId][element.storeId].quantity = (quantityMap[element.itemId][element.storeId].quantity || 0) + element.quantity;
             }
         }
-        const errorArray = [], bulkStockTransfer = [];
+        const errorArray = [], bulkStockTransfer = [], bulkStoreItems = [];
         for (const element of rows) {
             let error = '';
             if (!element.Quantity) error += 'Quantity is required. ';
@@ -1076,7 +1076,7 @@ async function bulkStockUpdate(req, res) {
                 continue;
             }
             if (element?.Type?.toLowerCase() === 'reduce') {
-                if (!quantityMap?.[selectedItem.id]?.[store.id] && quantityMap?.[selectedItem.id]?.[store.id] < (isReject ? quantityMap?.[selectedItem.id]?.[store.id]?.rejectedQuantity : quantityMap?.[selectedItem.id]?.[store.id].quantity)) {
+                if (!quantityMap?.[selectedItem.id]?.[store.id] || element.Quantity > (isReject ? quantityMap?.[selectedItem.id]?.[store.id]?.rejectedQuantity : quantityMap?.[selectedItem.id]?.[store.id].quantity)) {
                     error += 'Quantity is not available in Store.';
                     errorArray.push({ ...element, Error: error });
                     continue;
@@ -1128,12 +1128,24 @@ async function bulkStockUpdate(req, res) {
                     transferDate: new Date().toISOString(),
                     transferredBy: Number(companyId),
                     companyId: Number(companyId),
+                });
+                bulkStoreItems.push({
+                    storeId: store.id,
+                    itemId: selectedItem.id,
+                    quantity: element.Quantity,
+                    status: 1,
+                    addedBy: companyId,
+                    price: element?.Price,
+                    isRejected: isReject
                 })
             }
 
         }
 
-        if (bulkStockTransfer.length) await models.StockTransfer.bulkCreate(bulkStockTransfer);
+        if (bulkStockTransfer.length) {
+            await models.StockTransfer.bulkCreate(bulkStockTransfer);
+            await models.StoreItems.bulkCreate(bulkStoreItems);
+        }
         const msg = !errorArray.length
             ? 'Bulk Stock updated successfully.'
             : errorArray.length !== rows.length
