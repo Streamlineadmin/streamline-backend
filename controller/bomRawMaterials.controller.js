@@ -177,7 +177,8 @@ async function linkBOM(req, res) {
     });
     const rawMaterials = await models.BOMRawMaterial.findAll({
       where: {
-        bomId: finishedGood.bomId
+        bomId: finishedGood.bomId,
+        parentId: null
       },
       raw: true
     });
