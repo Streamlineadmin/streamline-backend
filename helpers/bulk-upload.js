@@ -8,7 +8,8 @@ const requiredColumnsFun = (key) => {
         bulkEdit: ['Item ID', 'Item Name', 'Item type', 'Category', 'Sub Category', 'Micro Category', 'HSN', 'Price', 'Tax Type', 'Tax', 'Min Stock', 'Max Stock', 'Description'],
         reconcileStock: ['Item ID', 'Item Name', 'Current Stock', 'Final Stock', 'Price/Unit', 'comment'],
         alternateUnit: ['* Item ID', 'Item Name', '* Base Unit', '* Alternate Unit', '* Conversion Factor'],
-        bulkUploadCompany: ["Person Name", "Person Email", "Phone", "* Company Name", "* Company Email", "* Company Type", "GST Number", "GST Type", "* Address", "* Address Type", "Pin Code", "* City", "* State"]
+        bulkUploadCompany: ["Person Name", "Person Email", "Phone", "* Company Name", "* Company Email", "* Company Type", "GST Number", "GST Type", "* Address", "* Address Type", "Pin Code", "* City", "* State"],
+
     }
     return colsObject[key] || [];
 }
@@ -26,6 +27,11 @@ const convertXlsxToJson = async (filePath, key) => {
         }
         const sheet = workbook.Sheets[sheetName];
         const jsonData = xlsx.utils.sheet_to_json(sheet);
+        if (key === 'bulkStockUpdate') {
+            fs.unlink(directory, (err) => {
+            });
+            return jsonData;
+        }
         const requiredColumns = requiredColumnsFun(key);
         const filteredData = jsonData.map(row => {
             let filteredRow = {};

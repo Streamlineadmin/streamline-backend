@@ -104,7 +104,8 @@ async function createDocument(req, res) {
       showUnits = null,
       batches = null,
       supplyState = '',
-      customFields = {}
+      customFields = {},
+      productionId = null
     } = req.body;
 
     if (!isDraft) {
@@ -308,7 +309,7 @@ async function createDocument(req, res) {
       department,
       showUnits,
       supplyState,
-      customFields
+      customFields,
     }, {
       where: {
         companyId,
@@ -1342,6 +1343,88 @@ async function createDocument(req, res) {
       }
     }
 
+    if (status && productionId && documentType === 'Service Order') {
+      await models.Production.update({ serviceOrderNumber: documentNumber }, {
+        where: {
+          id: Number(productionId)
+        }
+      });
+    }
+
+    if (status && documentType === "Service Challan" && ServiceConfirmationNumber) {
+      const production = await models.Production.findOne({
+        where: {
+          companyId: Number(companyId),
+          serviceOrderNumber: ServiceConfirmationNumber
+        },
+        raw: true
+      });
+      if (production) {
+
+        const itemsMap = items?.reduce((acc, curr) => {
+          acc[curr.itemId] = curr.quantity;
+          return acc;
+        }, {});
+        const itemsPriceMap = items?.reduce((acc, curr) => {
+          acc[curr.itemId] = curr.price;
+          return acc;
+        }, {});
+        const productionRawMaterial = await models.ProductionRawMaterials.findAll({
+          where: {
+            productionId: production.id
+          }
+        });
+        for (const element of productionRawMaterial) {
+          if (itemsMap[element.itemId]) {
+            await element.update({
+              consumedQuantity: (element.consumedQuantity || 0) + itemsMap[element.itemId],
+              averagePrice: itemsMap[element.itemId] * itemsPriceMap[element.itemId]
+            });
+          }
+        }
+      }
+
+    }
+
+    if (status && (documentType === 'Service Grn' || documentType === 'Service Qr') && ServiceConfirmationNumber) {
+      const serviceChallan = await models.Documents.findOne({
+        where: {
+          companyId,
+          documentNumber: challan_number,
+          documentType: documentTypes.serviceChallan
+        }
+      });
+      const production = await models.Production.findOne({
+        where: {
+          companyId: Number(companyId),
+          serviceOrderNumber: ServiceConfirmationNumber
+        },
+        raw: true
+      });
+      if (production && serviceChallan) {
+        const finishedGoods = await models.ProductionFinishedGoods.findAll({
+          where: {
+            productionId: production.id
+          }
+        });
+        for (const element of finishedGoods) {
+          if (documentType === 'Service Grn') {
+            element.update({
+              producedQuantity: items[0].receivedToday,
+              passedQuantity: serviceChallan.addStockOn === 'GRN' ? items[0].receivedToday : 0,
+              rejectQuantity: 0
+            });
+          } else {
+            element.update({
+              producedQuantity: (items[0].receivedToday || 0) + (items[0].pendingQuantity || 0),
+              passedQuantity: items[0].receivedToday,
+              rejectQuantity: items[0].pendingQuantity
+            });
+          }
+        }
+      }
+    }
+
     res.status(201).json({
       message: "Document and related data created successfully!"
     });
@@ -2309,7 +2392,7 @@ async function editDocument(req, res) {
           quotationNumber: documentNumber,
           companyId: Number(companyId),
           documentType: {
-            [Op.notIn]: ['Sales Lead','Sales Quotation']
+            [Op.notIn]: ['Sales Lead', 'Sales Quotation']
           }
         }
       });
@@ -2595,6 +2678,41 @@ async function editDocument(req, res) {
 
 }
 
+async function getServiceChallanItems(req, res) {
+  const { serviceOrderNumber, companyId, grn } = req.body;
+  try {
+    const production = await models.Production.findOne({
+      where: {
+        serviceOrderNumber: serviceOrderNumber,
+        companyId: Number(companyId)
+      }, raw: true
+    });
+    if (!production) {
+      return res.status(200).json({
+        data: []
+      });
+    }
+
+    const productionRawMaterial = !grn ? await models.ProductionRawMaterials.findAll({
+      where: {
+        productionId: production.id
+      }, raw: true
+    }) : await models.ProductionFinishedGoods.findAll({
+      where: {
+        productionId: production.id
+      }, raw: true
+    })
+
+    res.status(200).json({
+      data: productionRawMaterial
+    });
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Something went wrong.' });
+  }
+}
+
 module.exports = {
   getDocuments,
   getDocumentById,
@@ -2605,5 +2723,6 @@ module.exports = {
   getDocumentItems,
   shortCloseTransaction,
   getSalesDocumentItems,
-  editDocument
+  editDocument,
+  getServiceChallanItems
 };

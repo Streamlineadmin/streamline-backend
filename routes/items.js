@@ -13,5 +13,6 @@ router.post('/addBulkItem', upload.single('file'), itemController.addBulkItem);
 router.post('/editBulkItem', upload.single('file'), itemController.bulkEditItems);
 router.post('/stockReconcilation', upload.single('file'), itemController.stockReconcilation);
 router.post('/addbulkAlternateUnits', upload.single('file'), itemController.bulkUploadAlternateUnit);
+router.post('/bulkStockUpdate', upload.single('file'), itemController.bulkStockUpdate);
 
 module.exports = router;

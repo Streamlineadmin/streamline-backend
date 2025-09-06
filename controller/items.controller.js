@@ -1005,6 +1005,159 @@ async function bulkUploadAlternateUnit(req, res) {
     }
 }
 
+async function bulkStockUpdate(req, res) {
+    try {
+        const { companyId } = req.body;
+        const file = req.file;
+        const rows = await convertXlsxToJson(file.filename, "bulkStockUpdate");
+        const items = await models.Items.findAll({
+            where: {
+                companyId: Number(companyId)
+            },
+            raw: true
+        });
+        const itemIdMap = {}, itemMap = {}, itemNameMap = {};
+        for (const element of items) {
+            itemMap[element.id] = element;
+            itemIdMap[element.itemId?.toLowerCase()] = element;
+            itemNameMap[element?.itemName?.toLowerCase()] = element;
+        }
+        const stores = await models.Store.findAll({
+            where: {
+                companyId: Number(companyId)
+            },
+            raw: true
+        });
+        const storeMap = stores.reduce((acc, curr) => {
+            acc[curr.name] = curr;
+            return acc;
+        }, {});
+        let fromItemName = false;
+        if (Object.keys(rows[0])?.includes('Item')) {
+            fromItemName = true;
+        }
+        const storeItems = await models.StoreItems.findAll({
+            where: {
+                storeId: {
+                    [Op.in]: stores.map(store => store.id),
+                },
+                quantity: {
+                    [Op.gt]: 0
+                }
+            },
+            raw: true
+        });
+        const quantityMap = {};
+        for (const element of storeItems) {
+            if (!quantityMap[element.itemId]) quantityMap[element.itemId] = {};
+            if (!quantityMap[element.itemId][element.storeId]) quantityMap[element.itemId][element.storeId] = {};
+            if (element?.isRejected) {
+                quantityMap[element.itemId][element.storeId].rejectedQuantity = (quantityMap[element.itemId][element.storeId].rejectedQuantity || 0) + element.quantity;
+            } else {
+                quantityMap[element.itemId][element.storeId].quantity = (quantityMap[element.itemId][element.storeId].quantity || 0) + element.quantity;
+            }
+        }
+        const errorArray = [], bulkStockTransfer = [], bulkStoreItems = [];
+        for (const element of rows) {
+            let error = '';
+            if (!element.Quantity) error += 'Quantity is required. ';
+            if (!element.Price) error += 'Price is required. ';
+            if (!element.Store) error += 'Store is required. ';
+            const itemName = fromItemName ? element.Item.substring(0, element.Item.lastIndexOf("(")).trim() : element['Item Name/Id'];
+            if (!itemName) error += 'Item is required. ';
+            const selectedItem = itemIdMap[itemName?.toString()?.toLowerCase()] || itemNameMap[itemName?.toLowerCase()]
+            if (!selectedItem) error += 'Item not found. ';
+            const isReject = element.Store.includes('(Reject)');
+            const storeName = element.Store.substring(0, element.Store.lastIndexOf("(") - 1);
+            const store = storeMap[storeName];
+            if (!store) error += 'Store not found. ';
+            if (error) {
+                errorArray.push({ ...element, Error: error });
+                continue;
+            }
+            if (element?.Type?.toLowerCase() === 'reduce') {
+                if (!quantityMap?.[selectedItem.id]?.[store.id] || element.Quantity > (isReject ? quantityMap?.[selectedItem.id]?.[store.id]?.rejectedQuantity : quantityMap?.[selectedItem.id]?.[store.id].quantity)) {
+                    error += 'Quantity is not available in Store.';
+                    errorArray.push({ ...element, Error: error });
+                    continue;
+                }
+                const existingStock = await models.StoreItems.findAll({
+                    where: { storeId: (store.id), itemId: selectedItem.id, isRejected: isReject },
+                    order: [['createdAt', 'ASC']],
+                });
+                let remainingQuantity = element.Quantity;
+                const transferNumber = generateTransferNumber();
+                for (const stock of existingStock) {
+                    if (remainingQuantity <= 0) break;
+                    if (stock.quantity <= 0) continue;
+                    const deductQty = Math.min(stock.quantity, remainingQuantity);
+                    remainingQuantity -= deductQty;
+                    await models.StoreItems.update(
+                        { quantity: (stock.quantity - deductQty) },
+                        { where: { id: stock.id } }
+                    );
+                    bulkStockTransfer.push({
+                        fromStoreId: store.id,
+                        transferNumber,
+                        toStoreId: null,
+                        itemId: selectedItem.id,
+                        quantity: -deductQty,
+                        status: 1,
+                        addedBy: companyId,
+                        price: element.Price,
+                        isRejected: isReject,
+                        comment: element.Comment,
+                        transferDate: new Date().toISOString(),
+                        transferredBy: Number(companyId),
+                        companyId: Number(companyId),
+                        actualPrice: stock.price
+                    })
+                }
+            }
+            else {
+                bulkStockTransfer.push({
+                    toStoreId: store.id,
+                    fromStoreId: null,
+                    itemId: selectedItem.id,
+                    quantity: element.Quantity,
+                    status: 1,
+                    addedBy: companyId,
+                    price: element.Price,
+                    isRejected: isReject,
+                    comment: element.Comment,
+                    transferDate: new Date().toISOString(),
+                    transferredBy: Number(companyId),
+                    companyId: Number(companyId),
+                });
+                bulkStoreItems.push({
+                    storeId: store.id,
+                    itemId: selectedItem.id,
+                    quantity: element.Quantity,
+                    status: 1,
+                    addedBy: companyId,
+                    price: element?.Price,
+                    isRejected: isReject
+                })
+            }
+
+        }
+
+        if (bulkStockTransfer.length) {
+            await models.StockTransfer.bulkCreate(bulkStockTransfer);
+            await models.StoreItems.bulkCreate(bulkStoreItems);
+        }
+        const msg = !errorArray.length
+            ? 'Bulk Stock updated successfully.'
+            : errorArray.length !== rows.length
+                ? 'Bulk Stock updated successfully. Some rows contain invalid data. We Download Those Rows for you.'
+                : 'All rows contain invalid data. We Download Those Rows for you.';
+
+        res.status(200).json({ message: msg, invalidData: errorArray });
+    } catch (error) {
+        console.log(error);
+        return res.status(500).json({ message: "Something went wrong, please try again later!", error });
+    }
+}
 
 module.exports = {
     addItem: addItem,
@@ -1015,5 +1168,6 @@ module.exports = {
     addBulkItem: addBulkItem,
     bulkEditItems: bulkEditItems,
     stockReconcilation: stockReconcilation,
-    bulkUploadAlternateUnit: bulkUploadAlternateUnit
+    bulkUploadAlternateUnit: bulkUploadAlternateUnit,
+    bulkStockUpdate: bulkStockUpdate
 }
