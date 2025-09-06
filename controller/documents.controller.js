@@ -1394,7 +1394,6 @@ async function createDocument(req, res) {
           documentType: documentTypes.serviceChallan
         }
       });
-      console.log('serviceChallanvgvgv',serviceChallan)
       const production = await models.Production.findOne({
         where: {
           companyId: Number(companyId),
@@ -1402,7 +1401,6 @@ async function createDocument(req, res) {
         },
         raw: true
       });
-      console.log('produccccc',production)
       if (production && serviceChallan) {
         const finishedGoods = await models.ProductionFinishedGoods.findAll({
           where: {
@@ -1410,7 +1408,6 @@ async function createDocument(req, res) {
           }
         });
         for (const element of finishedGoods) {
-          console.log('inside loop');
           if (documentType === 'Service Grn') {
             element.update({
               producedQuantity: items[0].receivedToday,
