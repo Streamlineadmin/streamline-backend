@@ -1608,7 +1608,7 @@ async function getDocuments(req, res) {
       documentComments: documentComments.filter(comment => comment.documentId === document.id),
     }));
 
-    if (!currentPage || !pageSize) {
+    if ((!currentPage || !pageSize) || (pageSize == 5000)) {
       return res.status(200).json(formattedResult)
     }
     res.status(200).json({

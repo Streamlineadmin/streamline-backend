@@ -113,7 +113,7 @@ async function updateBOMRawMaterial(req, res) {
         bomId,
         itemId: item.itemId,
         itemName: item.itemName,
-        uom: item.UOM,
+        uom: item.UOM || item.uom,
         quantity: item.quantity,
         store: item.store,
         costAllocation: item.costAllocation,
@@ -166,13 +166,13 @@ async function deleteBOMRawMaterial(req, res) {
 
 async function linkBOM(req, res) {
   try {
-    const { data, companyId } = req.body;
+    const { data, companyId, bomId } = req.body;
     const finishedGood = await models.BOMFinishedGoods.findOne({
       where: {
         companyId: Number(companyId),
-        itemId: data.itemId
+        itemId: data.itemId,
+        bomId
       },
-      order: [['createdAt', 'DESC']],
       raw: true
     });
     const rawMaterials = await models.BOMRawMaterial.findAll({

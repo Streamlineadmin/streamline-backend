@@ -14,6 +14,12 @@ async function createBOMProductionProcess(req, res) {
       return res.status(400).json({ message: "Missing required fields" });
     }
 
+    await models.BOMProductionProcess.destroy({
+      where: {
+        bomId
+      }
+    });
+
     const bomProcesses = await models.BOMProductionProcess.bulkCreate(
       processes.map((process) => ({
         bomId,
