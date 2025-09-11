@@ -387,7 +387,16 @@ async function getProductions(req, res) {
                 }
             },
             raw: true,
-            order: [['createdAt', 'DESC']]
+            order: [['createdAt', 'DESC']],
+            attributes: [
+                "id",
+                "documentNumber",
+                "companyId",
+                "createdAt",
+                "status",
+                "requestedBy",
+                "deliveryDate"
+            ],
         });
         const salesDocumentsId = salesDocuments.map(doc => doc.documentNumber);
         const productions = await models.Production.findAll({
@@ -471,6 +480,7 @@ async function getProductions(req, res) {
         console.log(error);
     }
 }
+
 
 async function getProductionAndDescendants(productionId) {
     const result = [];

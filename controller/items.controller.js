@@ -1020,7 +1020,7 @@ async function bulkStockUpdate(req, res) {
         for (const element of items) {
             itemMap[element.id] = element;
             itemIdMap[element.itemId?.toLowerCase()] = element;
-            itemNameMap[element?.itemName?.toLowerCase()] = element;
+            itemNameMap[element?.itemName?.toLowerCase()?.trim()] = element;
         }
         const stores = await models.Store.findAll({
             where: {
