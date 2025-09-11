@@ -47,6 +47,7 @@ const logTDSRoutes = require("./routes/logTDS");
 const itemSeriesRoutes = require("./routes/itemSeries");
 const reportRoutes = require("./routes/reports");
 const settingsRoutes = require("./routes/settings");
+const tallyRoutes = require("./routes/tallyRoutes");
 const app = express();
 
 // Apply body-parser middleware to handle JSON request bodies
@@ -113,5 +114,6 @@ app.use("/logTDS", logTDSRoutes);
 app.use("/itemSeries", itemSeriesRoutes);
 app.use("/reports", reportRoutes);
 app.use("/settings", settingsRoutes);
+app.use("/tally", tallyRoutes);
 
 module.exports = app;
