@@ -11,7 +11,7 @@ module.exports = (sequelize, DataTypes) => {
      */   
   }
   Items.init({
-    itemName: DataTypes.STRING,
+    itemName: DataTypes.TEXT,
     itemType: DataTypes.INTEGER,
     category: DataTypes.INTEGER,
     subCategory: DataTypes.INTEGER,
