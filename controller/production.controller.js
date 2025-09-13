@@ -1175,11 +1175,11 @@ async function saveFinishedGoods(req, res) {
 }
 
 async function updateProductionStatus(req, res) {
-    const { productionId, status } = req.body;
+    const { productionId, status, userId } = req.body;
     try {
         await models.Production.update({
             status, ...(status == 2 ? { productionStartDate: new Date().toISOString() } : {}),
-            ...(status == 4 ? { productionCompletionDate: new Date().toISOString() } : {})
+            ...(status == 4 ? { productionCompletionDate: new Date().toISOString(), completedBy: Number(userId) } : {})
         }, {
             where: {
                 id: productionId
@@ -1735,7 +1735,8 @@ async function updateTable(req, res) {
                         store: element.store,
                         uom: element.uom,
                         quantity: element.plannedQty,
-                        status: 1
+                        status: 1,
+                        addDuringProduction: true
                     });
                 });
                 await models.ProductionRawMaterials.bulkCreate(insertData);

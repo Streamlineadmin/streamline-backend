@@ -13,7 +13,7 @@ module.exports = (sequelize, DataTypes) => {
   ProductionFinishedGoods.init({
     productionId: DataTypes.INTEGER,
     itemId: DataTypes.STRING,
-    itemName: DataTypes.STRING,
+    itemName: DataTypes.TEXT,
     uom: DataTypes.STRING,
     quantity: DataTypes.FLOAT,
     store: DataTypes.STRING,
