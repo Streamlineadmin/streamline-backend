@@ -9,6 +9,54 @@ require("dotenv").config();
 
 const crypto = require('crypto');
 
+async function connectToTally(req, res) {
+  try {
+    const envelope = `<?xml version="1.0" encoding="UTF-8"?>
+      <ENVELOPE>
+        <HEADER>
+          <VERSION>1</VERSION>
+          <TALLYREQUEST>Export</TALLYREQUEST>
+          <TYPE>Collection</TYPE>
+          <ID>Company Collection</ID>
+        </HEADER>
+        <BODY>
+          <DESC>
+            <STATICVARIABLES>
+              <SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT>
+            </STATICVARIABLES>
+            <TDL>
+              <TDLMESSAGE>
+                <COLLECTION NAME="Company Collection" ISINITIALIZE="Yes">
+                  <TYPE>Company</TYPE>
+                  <FETCH>Name,GUID,RemoteCompanyID</FETCH>
+                </COLLECTION>
+              </TDLMESSAGE>
+            </TDL>
+          </DESC>
+        </BODY>
+      </ENVELOPE>`;
+
+    const resp = await postToTally(envelope);
+
+    const companies = resp?.ENVELOPE?.BODY?.DATA?.TALLYMESSAGE || [];
+
+    return res.json({
+      ok: true,
+      message: companies.length
+        ? "Connected to Tally and fetched companies"
+        : "Connected to Tally but no companies returned",
+      companies
+    });
+  } catch (err) {
+    console.error(err.response?.data || err.message);
+    return res.status(500).json({
+      ok: false,
+      message: "Failed to connect to Tally",
+      error: err.message,
+      detail: err.response?.data
+    });
+  }
+}
 
 async function createLedger(req, res) {
   try {
@@ -52,5 +100,6 @@ async function createLedger(req, res) {
 
 
 module.exports = {
-    createLedger: createLedger,
+  connectToTally: connectToTally,
+  createLedger: createLedger,
 }
