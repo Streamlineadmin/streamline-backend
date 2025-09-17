@@ -15,7 +15,7 @@ module.exports = (sequelize, DataTypes) => {
     ProductionRawMaterials.init({
         productionId: DataTypes.INTEGER,
         itemId: DataTypes.STRING,
-        itemName: DataTypes.STRING,
+        itemName: DataTypes.TEXT,
         uom: DataTypes.STRING,
         quantity: DataTypes.FLOAT,
         store: DataTypes.STRING,
@@ -25,7 +25,8 @@ module.exports = (sequelize, DataTypes) => {
         currentAverage: DataTypes.FLOAT,
         status: DataTypes.INTEGER,
         conversionFactor: DataTypes.FLOAT,
-        batchesAssigned: DataTypes.FLOAT
+        batchesAssigned: DataTypes.FLOAT,
+        addDuringProduction: DataTypes.BOOLEAN
     }, {
         sequelize,
         modelName: 'ProductionRawMaterials',
