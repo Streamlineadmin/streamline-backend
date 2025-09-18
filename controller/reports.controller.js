@@ -110,7 +110,6 @@ async function getReports(req, res) {
                 data: finalReport
             });
         }
-
         if (documentType === "productionSummary") {
             const items = await models.Items.findAll({
                 where: {
@@ -176,7 +175,7 @@ async function getReports(req, res) {
                     }
                 },
                 raw: true,
-                order: [["createdAt", "DESC"]],
+               
             });
 
             const rawMaterials = await models.ProductionRawMaterials.findAll({
@@ -197,9 +196,7 @@ async function getReports(req, res) {
 
             const bomData = await models.BOMDetails.findAll({
                 where: {
-                    id: {
-                        [Op.in]: ids
-                    }
+                    companyId: Number(companyId)
                 },
                 attributes: ["id", "bomName", "bomId"],
                 raw: true
@@ -221,8 +218,6 @@ async function getReports(req, res) {
                     rejectQuantity: element?.rejectQuantity || 0,
                     assignedTo: userMap[productionMap[element.productionId]?.assignedTo],
                     status: statusArray[productionMap[element.productionId]?.status - 1],
-                    bomId: bomMap[productionMap[element.productionId]?.bomId]?.bomId,
-                    bomName: bomMap[productionMap[element.productionId]?.bomId]?.bomName,
                     completedBy: userMap[productionMap[element.productionId]?.completedBy],
                     rawMaterials: (rawMaterialMap[element.productionId] || [])?.map(raw => {
                         return {
@@ -236,11 +231,118 @@ async function getReports(req, res) {
                     category: categorysMap[itemsMap[element.itemId]?.category],
                     subCategory: categorysMap[itemsMap[element.itemId]?.subCategory],
                     microCategory: categorysMap[itemsMap[element.itemId]?.microCategory],
+                    documentNumber: element.id,
+                    salesOrderNumber: productionMap[element.productionId]?.documentNumber,
+                    bomId: bomMap[productionMap[element.productionId]?.bomId]?.bomId,
+                    bomName: bomMap[productionMap[element.productionId]?.bomId]?.bomName,
                 });
             }
             return res.status(200).json({ data, total: data.length });
         }
+        if (documentType === "productionProcess") {
+            const items = await models.Items.findAll({
+                where: {
+                    companyId: Number(companyId)
+                },
+                attributes: ['microCategory', 'subCategory', 'category', 'itemId'],
+                raw: true
+            });
+            const itemsMap = items.reduce((acc, curr) => {
+                acc[curr.itemId] = curr;
+                return acc;
+            }, {});
+            const categorys = await models.Categories.findAll({
+                where: {
+                    companyId: Number(companyId)
+                },
+                attributes: ['id', 'name'],
+                raw: true
+            });
+            const categorysMap = categorys.reduce((acc, curr) => {
+                acc[curr.id] = curr.name;
+                return acc;
+            }, {});
 
+            const uoms = await models.UOM.findAll({
+                where: {
+                    [Op.or]: [
+                        { companyId: companyId, status: 1 },
+                        { companyId: null, status: 0 }
+                    ]
+                },
+                attributes: ["id", "code"],
+                raw: true
+            });
+            const uomMap = uoms.reduce((acc, curr) => {
+                acc[curr.id?.toString()] = curr.code;
+                return acc;
+            }, {})
+            const productions = await models.Production.findAll({
+                where: {
+                    companyId: Number(companyId)
+                },
+                raw: true
+            });
+            const productionMap = {}, ids = [];
+            for (const element of productions) {
+                productionMap[element.id] = element;
+                ids.push(element.id);
+            }
+            const finishedGoods = await models.ProductionFinishedGoods.findAll({
+                where: {
+                    productionId: {
+                        [Op.in]: ids
+                    }
+                },
+                raw: true,
+                order: [["createdAt", "DESC"]],
+            });
+
+            const finishedGoodsMap = finishedGoods.reduce((acc, curr) => {
+                acc[curr.productionId] = curr;
+                return acc;
+            }, {});
+
+            const bomData = await models.BOMDetails.findAll({
+                where: {
+                    companyId: Number(companyId)
+                },
+                attributes: ["id", "bomName", "bomId"],
+                raw: true
+            });
+            const bomMap = bomData.reduce((acc, curr) => {
+                acc[curr.id] = curr;
+                return acc;
+            }, {});
+
+            const process = await models.ProductionSalesProcess.findAll({
+                where: {
+                    productionId: {
+                        [Op.in]: ids
+                    }
+                },
+                raw: true
+            });
+
+            const data = [];
+            for (const element of process) {
+                data.push({
+                    ...element,
+                    ...finishedGoodsMap[element.productionId],
+                    ...productionMap[element.productionId],
+                    completionPercent: element?.processCompleteOn ? ((element?.processCompleteOn * 100) / finishedGoodsMap[element.productionId]?.quantity) : 0,
+                    uom: uomMap[finishedGoodsMap[element.productionId]?.uom],
+                    bomId: bomMap[productionMap[element.productionId]?.bomId]?.bomId,
+                    bomName: bomMap[productionMap[element.productionId]?.bomId]?.bomName,
+                    category: categorysMap[itemsMap[finishedGoodsMap[element.productionId]?.itemId]?.category],
+                    subCategory: categorysMap[itemsMap[finishedGoodsMap[element.productionId]?.itemId]?.subCategory],
+                    microCategory: categorysMap[itemsMap[element.itemId]?.microCategory],
+                    documentNumber: element.id,
+                    salesOrderNumber: productionMap[element.productionId]?.documentNumber
+                });
+            }
+            return res.status(200).json({ data, total: data.length });
+        }
         if (documentType === 'Store wise item stock') {
             const stores = await models.Store.findAll({
                 where: {

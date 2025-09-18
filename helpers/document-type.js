@@ -2,6 +2,7 @@ documentTypes = {
     goodsReceive: 'Goods Received Note',
     invoice: 'Invoice',
     deliveryChallan: 'Delivery Challan',
+    stockTransferDeliveryChallan: 'Stock Transfer Delivery Challan',
     salesQuotation: 'Sales Quotation',
     salesEnquiry: 'Sales Enquiry',
     qualityReport: 'Quality Report',
@@ -32,7 +33,8 @@ const salesDocuments = [
     "Invoice",
     "Debit Note",
     "Credit Note",
-    "Sales Return"
+    "Sales Return",
+    "Stock Transfer Delivery Challan"
 ];
 
 const serviceDocuments = [
