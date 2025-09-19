@@ -1161,6 +1161,54 @@ async function getAllRejectStoreItems(req, res) {
   }
 }
 
+async function getFifoPrice(req, res) {
+  try {
+    const { rows } = req.body;
+    const items = await models.Items.findAll({
+      where: {
+        id: {
+          [Op.in]: rows.map(row => row.item)
+        }
+      },
+      attributes: ['id', 'itemId'],
+      raw: true
+    });
+    const itemsMap = items.reduce((acc, curr) => {
+      acc[curr.id] = curr.itemId;
+      return acc;
+    }, {});
+    const obj = {};
+    for (const element of rows) {
+      const storeItems = await models.StoreItems.findAll({
+        where: {
+          quantity: {
+            [Op.gt]: 0
+          },
+          itemId: element.item,
+          storeId: Number(element.fromStore),
+          isRejected: element.isRejected
+        },
+        raw: true
+      });
+      let fifoPrice = 0, quantity = element.quantity;
+      for (const store of storeItems) {
+        if (quantity <= 0) break;
+        const deductQty = Math.min(quantity, store.quantity);
+        quantity -= deductQty;
+        const currentAverarge = (deductQty * store.price);
+        fifoPrice += currentAverarge;
+      }
+      obj[itemsMap[element.item]] = fifoPrice / element.quantity;
+    }
+    res.status(200).json({
+      data: obj
+    });
+  } catch (error) {
+    console.log(error)
+    res.status(500).json({ message: "Internal server error." });
+  }
+}
+
 module.exports = {
   addStore: addStore,
   getStoresById: getStoresById,
@@ -1175,5 +1223,6 @@ module.exports = {
   getAllStoreItemsByStoresID: getAllStoreItemsByStoresID,
   getAllStoresWithItems: getAllStoresWithItems,
   getCompanyStoreTotals: getCompanyStoreTotals,
-  getAllRejectStoreItems
+  getAllRejectStoreItems,
+  getFifoPrice
 };

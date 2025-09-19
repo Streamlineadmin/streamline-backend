@@ -1,4 +1,4 @@
-const { Op, where } = require('sequelize');
+const { Op, where, NUMBER } = require('sequelize');
 const models = require('../models');
 const { documentTypes, purchaseDocuments, salesDocuments, serviceDocuments } = require('../helpers/document-type');
 const { generateTransferNumber } = require('../helpers/transfer-number');
@@ -1424,6 +1424,95 @@ async function createDocument(req, res) {
         }
       }
     }
+
+    if (status && (documentType == documentTypes.stockTransferDeliveryChallan)) {
+      const existingItems = await models.Items.findAll({
+        where: {
+          companyId,
+          itemId: {
+            [Op.in]: items.map(item => item.itemId)
+          }
+        },
+        attributes: ['id', 'itemId'],
+        raw: true
+      });
+
+      const itemsMap = existingItems.reduce((acc, curr) => {
+        acc[curr.itemId] = curr.id;
+        return acc;
+      }, {});
+
+      const fromStore = await models.Store.findOne({
+        where: {
+          companyId,
+          name: store
+        }
+      });
+      const rejectStore = await models.Store.findOne({
+        where: {
+          companyId,
+          name: rejectedStore
+        }
+      });
+      for (const element of items) {
+        let remainingQuantity = element.quantity;
+        const existingStock = await models.StoreItems.findAll({
+          where: { storeId: fromStore.id, itemId: itemsMap[element.itemId], isRejected: (element?.isRejected || false) },
+          order: [['createdAt', 'ASC']],
+        });
+        for (const stock of existingStock) {
+          if (remainingQuantity <= 0) break;
+          if (stock.quantity <= 0) continue;
+          const deductQty = Math.min(stock.quantity, remainingQuantity);
+          remainingQuantity -= deductQty;
+
+          // Reduce quantity from source store
+          await models.StoreItems.update(
+            { quantity: (stock.quantity - deductQty) },
+            { where: { id: stock.id } }
+          );
+
+          await models.StockTransfer.create({
+            transferNumber: generateTransferNumber(),
+            fromStoreId: fromStore?.id,
+            itemId: itemsMap[element.itemId],
+            quantity: deductQty,
+            toStoreId: rejectStore.id,
+            transferDate: new Date().toISOString(),
+            transferredBy: companyId,
+            companyId,
+            price: stock.price,
+            isRejected: element?.toReject || false
+          });
+
+          if (element.isRejected!=element.toReject) {
+            await models.StockTransfer.create({
+            transferNumber: generateTransferNumber(),
+            fromStoreId: fromStore?.id,
+            itemId: itemsMap[element.itemId],
+            quantity: deductQty,
+            toStoreId: rejectStore.id,
+            transferDate: new Date().toISOString(),
+            transferredBy: companyId,
+            companyId,
+            price: stock.price,
+            isRejected: element?.isRejected || false
+          });
+          }
+
+          await models.StoreItems.create({
+            storeId: rejectStore.id,
+            itemId: itemsMap[element.itemId],
+            quantity: deductQty,
+            status: 1,
+            addedBy: companyId,
+            price: stock.price,
+            isRejected: element?.toReject || false
+          });
+        }
+      }
+    }
+
 
     res.status(201).json({
       message: "Document and related data created successfully!"
