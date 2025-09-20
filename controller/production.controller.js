@@ -556,6 +556,18 @@ async function getProductionById(req, res) {
             isMulti = buildMultiLevelProductionTree(multiLevelProducionsWithFinishedGoods);
         }
 
+        let customFields = {};
+        if (production?.documentNumber) {
+            const documentItem = await models.DocumentItems.findOne({
+                where: {
+                    documentNumber: production?.documentNumber,
+                    companyId: production.companyId,
+                    itemId: finishedGoods[0]?.itemId
+                }
+            });
+            customFields = documentItem?.customFields || {}
+        }
+
         res.status(200).json({
             message: 'Production Data Fetched.',
             productionData: {
@@ -565,7 +577,7 @@ async function getProductionById(req, res) {
                 bom,
                 scrapLogs,
                 rawMaterials,
-                finishedGoods,
+                finishedGoods: [{ ...finishedGoods[0]?.toJSON(), customFields }],
                 additionalCharges,
                 process,
                 isMulti
