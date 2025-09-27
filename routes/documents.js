@@ -14,5 +14,6 @@ router.post('/shortCloseTranscation', documentsController.shortCloseTransaction)
 router.post('/getSalesDocumentItems', documentsController.getSalesDocumentItems);
 router.post('/editDocument', documentsController.editDocument);
 router.post('/getServiceChallanItems', documentsController.getServiceChallanItems);
+router.post('/approveDocument', documentsController.approveDocument);
 
 module.exports = router;
