@@ -110,67 +110,83 @@ async function signUp(req, res) {
 
 async function login(req, res) {
     try {
-        // Find the user by email or username
+        const { email, password } = req.body;
+
+        // 1️⃣ Fetch user
         const user = await models.Users.findOne({
             where: {
-                [Op.or]: [
-                    { email: req.body.email },
-                    { username: req.body.email }
-                ]
+                [Op.or]: [{ email }, { username: email }]
             },
+            attributes: { exclude: ["createdAt", "updatedAt"] },
             raw: true
         });
 
         if (!user) {
-            return res.status(401).json({ message: "Invalid Credentials!" });
+            return res.status(401).json({ message: "Invalid credentials!" });
         }
 
-        // Compare passwords
-        const isPasswordValid = await bcryptjs.compare(req.body.password, user.password);
+        // 2️⃣ Verify password
+        const isPasswordValid = await bcryptjs.compare(password, user.password);
         if (!isPasswordValid) {
             return res.status(401).json({ message: "Invalid credentials!" });
         }
 
-        // Fetch RolePermissions
+        // 3️⃣ Fetch role permissions
         const rolePermissionsData = await models.RolePermissions.findAll({
             where: { companyId: user.companyId, role: user.role },
+            raw: true
         });
 
-        const rolesAccess = [];
-        for (const rolePermission of rolePermissionsData) {
-            const feature = await models.PermissionsFeatures.findOne({
-                where: { id: rolePermission.permission }
-            });
-            const subfeature = await models.PermissionsSubFeatures.findOne({
-                where: { id: rolePermission.subpermission }
-            });
+        let rolesAccess = [];
+        if (rolePermissionsData.length) {
+            // Collect unique IDs
+            const permissionIds = [...new Set(rolePermissionsData.map(rp => rp.permission))];
+            const subpermissionIds = [...new Set(rolePermissionsData.map(rp => rp.subpermission))];
 
-            rolesAccess.push({
-                feature: feature ? feature.feature : null,
-                subfeature: subfeature ? subfeature.subfeature : null,
-                create: rolePermission.create,
-                edit: rolePermission.edit,
-                view: Number(rolePermission.view),
-                delete: rolePermission.delete
-            });
+            // 4️⃣ Fetch all features & subfeatures in one go
+            const [features, subfeatures] = await Promise.all([
+                models.PermissionsFeatures.findAll({
+                    where: { id: { [Op.in]: permissionIds } },
+                    attributes: ["id", "feature"],
+                    raw: true
+                }),
+                models.PermissionsSubFeatures.findAll({
+                    where: { id: { [Op.in]: subpermissionIds } },
+                    attributes: ["id", "subfeature"],
+                    raw: true
+                })
+            ]);
+
+            const featureMap = Object.fromEntries(features.map(f => [f.id, f.feature]));
+            const subfeatureMap = Object.fromEntries(subfeatures.map(s => [s.id, s.subfeature]));
+
+            // 5️⃣ Build access array
+            rolesAccess = rolePermissionsData.map(rp => ({
+                feature: featureMap[rp.permission] || null,
+                subfeature: subfeatureMap[rp.subpermission] || null,
+                create: rp.create,
+                edit: rp.edit,
+                view: Number(rp.view),
+                delete: rp.delete
+            }));
         }
 
-        if (user.role != 1) {
+        // 6️⃣ Attach admin logo if needed
+        let logoUrl = user.profileURL || "";
+        if (user.role !== 1 && !logoUrl) {
             const admin = await models.Users.findOne({
-                where: {
-                    role: 1,
-                    companyId: user.companyId
-                },
+                where: { role: 1, companyId: user.companyId },
+                attributes: ["profileURL"],
                 raw: true
             });
-            user.logoUrl = admin?.profileURL
+            logoUrl = admin?.profileURL || "";
         }
 
-        // Generate JWT token
-        const token = jwt.sign({
+        // 7️⃣ JWT payload
+        const payload = {
+            userId: user.id,
             username: user.username,
             email: user.email,
-            userId: user.id,
             companyId: user.companyId,
             companyName: user.companyName,
             businessType: user.businessType,
@@ -183,23 +199,24 @@ async function login(req, res) {
             gstNumber: user.gstNumber,
             cin: user.cin,
             permissions: rolesAccess,
-            logoUrl: user.logoUrl || user.profileURL || ''
-        }, 'secret', { expiresIn: '1h' });
+            logoUrl
+        };
 
-        res.status(200).json({
+        const token = jwt.sign(payload, process.env.JWT_SECRET || "secret", { expiresIn: "1h" });
+
+        return res.status(200).json({
             message: "Login successful.",
-            token: token
+            token
         });
 
     } catch (error) {
         console.error("Error during login:", error);
-        res.status(500).json({
-            message: "Something went wrong, Please try again later!",
+        return res.status(500).json({
+            message: "Something went wrong, please try again later.",
             error: error.message
         });
     }
 }
-
 
 async function forgotPassword(req, res) {
     try {

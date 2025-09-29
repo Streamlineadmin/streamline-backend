@@ -163,88 +163,66 @@ function getStoresById(req, res) {
 async function getStores(req, res) {
   const { companyId } = req.body;
 
-  // Step 1: Check if companyId is provided
   if (!companyId) {
     return res.status(400).json({
-      message: 'companyId is required in the request body',
+      message: "companyId is required in the request body",
     });
   }
 
   try {
-    // Step 2: Retrieve all stores for the company (without limiting columns)
+    // 1️⃣ Fetch all stores for the company
     const stores = await models.Store.findAll({
-      where: { companyId: companyId },
+      where: { companyId },
+      raw: true, // lightweight objects, no .toJSON() needed
     });
 
-    // Check if no stores were found
-    if (!stores || stores.length === 0) {
+    if (!stores.length) {
       return res.status(200).json([]);
     }
 
-    // Step 3: Count items in each store
-    const storesWithItemCount = [];
+    const storeIds = stores.map(s => s.id);
 
-    for (const store of stores) {
-      try {
-        // Count the number of items in the StoreItems table for each store
-        const items = await models.StoreItems.findAll({
-          where: {
-            storeId: store.id,
-            isRejected: false,
-          },
-          raw: true
-        });
-        const rejectedItems = await models.StoreItems.findAll({
-          where: {
-            storeId: store.id,
-            isRejected: true,
-          },
-          raw: true
-        });
+    // 2️⃣ Fetch all store items for these stores (both rejected + non-rejected)
+    const storeItems = await models.StoreItems.findAll({
+      where: { storeId: storeIds },
+      attributes: ["storeId", "itemId", "quantity", "isRejected"],
+      raw: true,
+    });
 
-        const itemsMap = {}, rejectedItemsMap = {};
-        for (const item of items) {
-          itemsMap[item.itemId] = (itemsMap[item.itemId] || 0) + item.quantity;
-        }
-        for (const item of rejectedItems) {
-          rejectedItemsMap[item.itemId] = (rejectedItemsMap[item.itemId] || 0) + item.quantity;
-        }
-        let itemCount = 0, rejectedItemCount = 0;
-        for (const key in itemsMap) {
-          if (itemsMap[key] > 0) itemCount += 1;
-        }
-
-        for (const key in rejectedItemsMap) {
-          if (rejectedItemsMap[key] > 0) rejectedItemCount += 1;
-        }
-
-        // Add store data along with item count to the response
-        storesWithItemCount.push({
-          ...store.toJSON(), // Spread the store object to include all columns
-          itemCount, // This is the number of items in the store
-          rejectedItemCount
-        });
-      } catch (err) {
-        // Log and continue if there's an error counting items for a particular store
-        console.error(`Error counting items for store ${store.id}:`, err);
-        storesWithItemCount.push({
-          ...store.toJSON(),
-          itemCount: 0, // Default to 0 if there's an issue counting items
-          rejectedItemCount: 0
-        });
+    // 3️⃣ Pre-group items by store
+    const storeMap = {};
+    for (const { storeId, itemId, quantity, isRejected } of storeItems) {
+      if (!storeMap[storeId]) {
+        storeMap[storeId] = { itemsMap: {}, rejectedMap: {} };
       }
+      const map = isRejected ? storeMap[storeId].rejectedMap : storeMap[storeId].itemsMap;
+      map[itemId] = (map[itemId] || 0) + quantity;
     }
 
+    // 4️⃣ Build response
+    const storesWithItemCount = stores.map(store => {
+      const { itemsMap = {}, rejectedMap = {} } = storeMap[store.id] || {};
+      const itemCount = Object.values(itemsMap).filter(qty => qty > 0).length;
+      const rejectedItemCount = Object.values(rejectedMap).filter(qty => qty > 0).length;
+
+      return {
+        ...store,
+        itemCount,
+        rejectedItemCount,
+      };
+    });
+
     res.status(200).json(storesWithItemCount);
+
   } catch (error) {
-    // Catch and log any errors that happen during the process
-    console.error('Error fetching stores:', error);
+    console.error("Error fetching stores:", error);
     res.status(500).json({
-      message: 'Something went wrong, please try again later!',
-      error: error.message, // Include the error message for debugging
+      message: "Something went wrong, please try again later!",
+      error: error.message,
     });
   }
 }
+
 
 async function getStoresByItem(req, res) {
   const { itemId } = req.body;
@@ -335,111 +313,145 @@ async function getStoresByItem(req, res) {
 }
 
 async function stockTransfer(req, res) {
-  const { transferNumber, stockData, transferDate, transferredBy, companyId, useFIFO, comment } = req.body;
+  const { transferNumber, stockData, transferDate, transferredBy, companyId, useFIFO, comment, userId } = req.body;
 
   try {
     // Iterate through each stock transfer item
+    const settings = await models.Settings.findOne({
+      where: {
+        companyId: Number(companyId)
+      },
+      raw: true
+    });
+    const approval = await models.InventoryApproval.create({
+      approvalId: generateProductionId(),
+      documentType: useFIFO ? 'Stock Update' : 'Stock Transfer',
+      documentNumber: '',
+      approvalStatus: settings?.['stockUpdate'] == 'manual' ? 'Pending' : 'Auto Approved',
+      requestedBy: userId,
+      companyId: companyId,
+      status: 1,
+      approvedBy: null
+    });
+
+    const inventoryHandling = useFIFO ? settings?.['stockUpdate'] : settings?.['stockTransfer'];
     for (const element of stockData) {
       let price = 0;
       let remainingQuantity = element.quantity * (element?.conversionFactor || 1);
       const addReduce = element.addReduce;
-      const item = await models.Items.findOne({
-        where: {
-          id: element.itemId
-        }
-      });
       if ((useFIFO && addReduce == 2) || !addReduce) {
         // Fetch existing stock based on FIFO (oldest stock first)
-        const existingStock = await models.StoreItems.findAll({
-          where: { storeId: (element.fromStore || element.toStore), itemId: element.itemId, isRejected: (element?.isReject || false) },
-          order: [['createdAt', 'ASC']], // Oldest entries first
-        });
-        for (const stock of existingStock) {
-          if (remainingQuantity <= 0) break;
-          if (stock.quantity <= 0) continue;
-          const deductQty = Math.min(stock.quantity, remainingQuantity);
-          remainingQuantity -= deductQty;
+        if (inventoryHandling != 'manual') {
+          const existingStock = await models.StoreItems.findAll({
+            where: { storeId: (element.fromStore || element.toStore), itemId: element.itemId, isRejected: (element?.isReject || false) },
+            order: [['createdAt', 'ASC']], // Oldest entries first
+          });
+          for (const stock of existingStock) {
+            if (remainingQuantity <= 0) break;
+            if (stock.quantity <= 0) continue;
+            const deductQty = Math.min(stock.quantity, remainingQuantity);
+            remainingQuantity -= deductQty;
 
-          // Reduce quantity from source store
-          await models.StoreItems.update(
-            { quantity: (stock.quantity - deductQty) },
-            { where: { id: stock.id } }
-          );
+            // Reduce quantity from source store
+            await models.StoreItems.update(
+              { quantity: (stock.quantity - deductQty) },
+              { where: { id: stock.id } }
+            );
 
-          if (!addReduce) {
-            await models.StoreItems.create({
-              storeId: element.toStore,
+            if (!addReduce) {
+              await models.StoreItems.create({
+                storeId: element.toStore,
+                itemId: element.itemId,
+                quantity: deductQty,
+                status: 1,
+                addedBy: transferredBy,
+                price: stock.price,
+                isRejected: element?.toReject || false
+              });
+
+              if (element?.toStore == element?.fromStore) {
+                await models.StockTransfer.create({
+                  transferNumber,
+                  fromStoreId: element?.fromStore,
+                  itemId: element.itemId,
+                  quantity: deductQty,
+                  toStoreId: element.toStore,
+                  transferDate: element.transferDate || transferDate,
+                  transferredBy,
+                  comment: element.comment || comment,
+                  companyId,
+                  price: stock.price,
+                  isRejected: element?.toReject || false
+                });
+                await models.StockTransfer.create({
+                  transferNumber,
+                  fromStoreId: element?.fromStore,
+                  itemId: element.itemId,
+                  quantity: deductQty * -1,
+                  toStoreId: element.toStore,
+                  transferDate: element.transferDate || transferDate,
+                  transferredBy,
+                  comment: element.comment || comment,
+                  companyId,
+                  price: stock.price,
+                  isRejected: element?.toReject ? false : true
+                });
+
+              }
+
+              else {
+                await models.StockTransfer.create({
+                  transferNumber,
+                  fromStoreId: element?.fromStore,
+                  itemId: element.itemId,
+                  quantity: deductQty,
+                  toStoreId: element.toStore,
+                  transferDate: element.transferDate || transferDate,
+                  transferredBy,
+                  comment: element.comment || comment,
+                  companyId,
+                  price: stock.price,
+                  isRejected: element?.toReject || false
+                });
+              }
+
+            }
+
+            addReduce && await models.StockTransfer.create({
+              transferNumber,
+              fromStoreId: !addReduce ? element?.fromStore : addReduce == 2 ? element?.toStore : (element?.fromStore || null),
               itemId: element.itemId,
-              quantity: deductQty,
-              status: 1,
-              addedBy: transferredBy,
-              price: stock.price,
-              isRejected: element?.toReject || false
+              quantity: -deductQty,
+              toStoreId: !addReduce ? element?.toStore : addReduce == 2 ? null : element.toStore,
+              transferDate: element.transferDate || transferDate,
+              transferredBy,
+              comment: element.comment || comment,
+              companyId,
+              price: (!addReduce ? stock.price : element?.price / (element?.conversionFactor || 1)),
+              isRejected: element?.isReject || false,
+              approvalId: approval.id,
+              quantityForApproval: -deductQty
             });
 
-            if (element?.toStore == element?.fromStore) {
-              await models.StockTransfer.create({
-                transferNumber,
-                fromStoreId: element?.fromStore,
-                itemId: element.itemId,
-                quantity: deductQty,
-                toStoreId: element.toStore,
-                transferDate: element.transferDate || transferDate,
-                transferredBy,
-                comment: element.comment || comment,
-                companyId,
-                price: stock.price,
-                isRejected: element?.toReject || false
-              });
-              await models.StockTransfer.create({
-                transferNumber,
-                fromStoreId: element?.fromStore,
-                itemId: element.itemId,
-                quantity: deductQty * -1,
-                toStoreId: element.toStore,
-                transferDate: element.transferDate || transferDate,
-                transferredBy,
-                comment: element.comment || comment,
-                companyId,
-                price: stock.price,
-                isRejected: element?.toReject ? false : true
-              });
-
-            }
-
-            else {
-              await models.StockTransfer.create({
-                transferNumber,
-                fromStoreId: element?.fromStore,
-                itemId: element.itemId,
-                quantity: deductQty,
-                toStoreId: element.toStore,
-                transferDate: element.transferDate || transferDate,
-                transferredBy,
-                comment: element.comment || comment,
-                companyId,
-                price: stock.price,
-                isRejected: element?.toReject || false
-              });
-            }
-
+            price += (stock.price * deductQty);
           }
-
-          addReduce && await models.StockTransfer.create({
+        }
+        else {
+          (useFIFO && addReduce == 2) && await models.StockTransfer.create({
             transferNumber,
             fromStoreId: !addReduce ? element?.fromStore : addReduce == 2 ? element?.toStore : (element?.fromStore || null),
             itemId: element.itemId,
-            quantity: -deductQty,
+            quantity: null,
             toStoreId: !addReduce ? element?.toStore : addReduce == 2 ? null : element.toStore,
             transferDate: element.transferDate || transferDate,
             transferredBy,
             comment: element.comment || comment,
             companyId,
             price: (!addReduce ? stock.price : element?.price / (element?.conversionFactor || 1)),
-            isRejected: element?.isReject || false
+            isRejected: element?.isReject || false,
+            approvalId: approval.id,
+            quantityForApproval: -remainingQuantity
           });
-
-          price += (stock.price * deductQty);
         }
       }
 
@@ -448,14 +460,16 @@ async function stockTransfer(req, res) {
           transferNumber,
           fromStoreId: element?.fromStore || null,
           itemId: element.itemId,
-          quantity: element.quantity * (element?.conversionFactor || 1),
+          quantity: settings?.['stockUpdate'] == 'manual' ? null : (element.quantity * (element?.conversionFactor || 1)),
           toStoreId: element.toStore,
           transferDate: element.transferDate || transferDate,
           transferredBy,
           comment: element.comment || comment,
           companyId,
           price: element.price / (element?.conversionFactor || 1),
-          isRejected: element?.isReject || false
+          isRejected: element?.isReject || false,
+          approvalId: approval.id,
+          quantityForApproval: element.quantity * (element?.conversionFactor || 1)
         });
       }
 
@@ -464,23 +478,14 @@ async function stockTransfer(req, res) {
         await models.StoreItems.create({
           storeId: element.toStore,
           itemId: element.itemId,
-          quantity: element.quantity * (element?.conversionFactor || 1),
+          quantity: settings?.['stockUpdate'] == 'manual' ? 0 : (element.quantity * (element?.conversionFactor || 1)),
           status: 1,
           addedBy: transferredBy,
           price: element?.price / (element?.conversionFactor || 1),
-          isRejected: element?.isReject || false
+          isRejected: element?.isReject || false,
+          approvalId: approval.id,
+          quantityForApproval: element.quantity * (element?.conversionFactor || 1)
         });
-      }
-
-      // Update item's current stock if no fromStore specified
-      if (!element.fromStore) {
-        await models.Items.update(
-          {
-            currentStock: item.currentStock + (addReduce != 2 ? element.quantity : element.quantity * -1),
-            // price: addReduce == 2 ? useFIFO ? ((item.price * item.currentStock) - price) / (item.currentStock - element.quantity) : item.price : (((item.currentStock * item.price) + (element.quantity * element.price)) / (item.currentStock + element.quantity))
-          },
-          { where: { id: element.itemId, companyId } }
-        );
       }
     }
 
@@ -497,31 +502,26 @@ async function stockTransfer(req, res) {
 }
 
 async function getItemStockTransferHistory(req, res) {
-  const { itemId } = req.body;
+  const { itemId, isRejected = false } = req.body;
 
   if (!itemId) {
     return res.status(400).json({ message: "itemId is required" });
   }
 
   try {
-    // Fetch stock transfers for the given itemId
+    // Step 1: Fetch stock transfers, item, stores, and users in parallel
     const stockTransfers = await models.StockTransfer.findAll({
-      where: { itemId, isRejected: req.body.isRejected || false },
+      where: {
+        itemId, isRejected,
+        quantity: {
+          [Op.ne]: null
+        }
+      },
       attributes: [
-        'createdAt',
-        'transferNumber',
-        'quantity',
-        'itemId',
-        'fromStoreId',
-        'toStoreId',
-        'transferredBy',
-        'comment',
-        'price',
-        'documentNumber',
-        'documentType',
-        'productionId',
-        'productionNavigationId',
-        'isRejected'
+        'createdAt', 'transferNumber', 'quantity', 'itemId',
+        'fromStoreId', 'toStoreId', 'transferredBy', 'comment',
+        'price', 'documentNumber', 'documentType',
+        'productionId', 'productionNavigationId', 'isRejected'
       ],
       order: [['createdAt', 'ASC']],
       raw: true,
@@ -530,112 +530,81 @@ async function getItemStockTransferHistory(req, res) {
     if (!stockTransfers.length) {
       return res.status(200).json({
         message: `No stock transfers found for itemId ${itemId}`,
-        data: [],
+        stockTransfers: [],
       });
     }
 
-    // Fetch item details
-    const item = await models.Items.findOne({
-      where: { id: itemId },
-      attributes: ['itemName', 'itemId'],
+    // Get unique store IDs and user IDs
+    const storeIds = new Set();
+    const userIds = new Set();
+    stockTransfers.forEach(t => {
+      storeIds.add(t.fromStoreId);
+      storeIds.add(t.toStoreId);
+      userIds.add(t.transferredBy);
     });
+
+    // Fetch item, stores, and users in parallel
+    const [item, stores, users] = await Promise.all([
+      models.Items.findOne({
+        where: { id: itemId },
+        attributes: ['id', 'itemName', 'itemId'],
+        raw: true
+      }),
+      models.Store.findAll({
+        where: { id: [...storeIds] },
+        attributes: ['id', 'name'],
+        raw: true
+      }),
+      models.Users.findAll({
+        where: { id: [...userIds] },
+        attributes: ['id', 'name'],
+        raw: true
+      }),
+    ]);
 
     if (!item) {
       return res.status(404).json({ message: `No item found with itemId ${itemId}` });
     }
 
-    // Get unique store IDs
-    const storeIds = [
-      ...new Set(stockTransfers.flatMap(transfer => [transfer.fromStoreId, transfer.toStoreId])),
-    ];
+    // Map stores and users
+    const storeMap = Object.fromEntries(stores.map(s => [s.id, s.name]));
+    const userMap = Object.fromEntries(users.map(u => [u.id, u.name]));
 
-    const stores = await models.Store.findAll({
-      where: { id: storeIds },
-      attributes: ['id', 'name'],
-    });
-
-    const storeMap = stores.reduce((map, store) => {
-      map[store.id] = store.name;
-      return map;
-    }, {});
-
-    // Get user names
-    const userIds = [...new Set(stockTransfers.map(t => t.transferredBy))];
-
-    const users = await models.Users.findAll({
-      where: { id: userIds },
-      attributes: ['id', 'name'],
-    });
-
-    const userMap = users.reduce((map, user) => {
-      map[user.id] = user.name;
-      return map;
-    }, {});
-
-    // Track cumulative quantities per store
+    // Step 2: Track cumulative quantities per store efficiently
     const storeQuantities = {};
+    const enrichedTransfers = stockTransfers.map(t => {
+      const from = t.fromStoreId;
+      const to = t.toStoreId;
+      const qty = t.quantity;
 
-    const enrichedTransfers = stockTransfers.map(transfer => {
-      const {
-        fromStoreId,
-        toStoreId,
-        quantity
-      } = transfer;
+      if (!(from in storeQuantities)) storeQuantities[from] = 0;
+      if (!(to in storeQuantities)) storeQuantities[to] = 0;
 
-      // Initialize quantities if not set
-      if (storeQuantities[fromStoreId] === undefined) {
-        storeQuantities[fromStoreId] = 0;
-      }
-      if (storeQuantities[toStoreId] === undefined) {
-        storeQuantities[toStoreId] = 0;
-      }
-
-      const sameStore = fromStoreId === toStoreId;
-
-      const fromStorePreviousQuantity = storeQuantities[fromStoreId];
-      const toStorePreviousQuantity = storeQuantities[toStoreId];
+      const sameStore = from === to;
+      const fromPrev = storeQuantities[from];
+      const toPrev = storeQuantities[to];
 
       if (sameStore) {
-        // Only apply the quantity once if it's the same store
-        storeQuantities[fromStoreId] += quantity;
+        storeQuantities[from] += qty;
       } else {
-        // Regular logic: subtract from source, add to destination
-        storeQuantities[fromStoreId] = quantity < 0
-          ? storeQuantities[fromStoreId] + quantity
-          : storeQuantities[fromStoreId] - quantity;
-
-        storeQuantities[toStoreId] = quantity > 0
-          ? storeQuantities[toStoreId] + quantity
-          : storeQuantities[toStoreId] - quantity;
+        storeQuantities[from] += qty < 0 ? qty : -qty;
+        storeQuantities[to] += qty > 0 ? qty : -qty;
       }
 
-      const fromStoreCurrentQuantity = storeQuantities[fromStoreId];
-      const toStoreCurrentQuantity = storeQuantities[toStoreId];
-
       return {
-        createdAt: transfer.createdAt,
-        transferNumber: transfer.transferNumber,
-        quantity: transfer.quantity,
+        ...t,
         itemName: item.itemName,
-        itemId: item.itemId,
         fromStore: {
-          name: storeMap[fromStoreId] || 'Unknown Store',
-          previousQuantity: fromStorePreviousQuantity,
-          currentQuantity: fromStoreCurrentQuantity,
+          name: storeMap[from] || 'Unknown Store',
+          previousQuantity: fromPrev,
+          currentQuantity: storeQuantities[from]
         },
         toStore: {
-          name: storeMap[toStoreId] || 'Unknown Store',
-          previousQuantity: toStorePreviousQuantity,
-          currentQuantity: toStoreCurrentQuantity,
+          name: storeMap[to] || 'Unknown Store',
+          previousQuantity: toPrev,
+          currentQuantity: storeQuantities[to]
         },
-        transferredBy: userMap[transfer.transferredBy] || 'Unknown User',
-        comment: transfer.comment,
-        price: transfer.price,
-        documentNumber: transfer.documentNumber || '',
-        documentType: transfer.documentType || '',
-        productionId: transfer?.productionId || '',
-        productionNavigationId: transfer?.productionNavigationId || '',
-        isRejected: transfer?.isRejected || false
+        transferredBy: userMap[t.transferredBy] || 'Unknown User',
       };
     });
 
@@ -648,10 +617,11 @@ async function getItemStockTransferHistory(req, res) {
     console.error("Error fetching stock transfers:", error);
     return res.status(500).json({
       message: "Something went wrong, please try again later!",
-      error: error.message,
+      error: error.message
     });
   }
 }
+
 
 
 async function getStockTransferHistory(req, res) {

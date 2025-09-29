@@ -48,6 +48,7 @@ const itemSeriesRoutes = require("./routes/itemSeries");
 const reportRoutes = require("./routes/reports");
 const settingsRoutes = require("./routes/settings");
 const documentApprovalRoutes = require("./routes/documentApproval");
+const inventoryApprovalRoutes = require("./routes/inventoryApproval");
 const app = express();
 
 // Apply body-parser middleware to handle JSON request bodies
@@ -115,5 +116,6 @@ app.use("/itemSeries", itemSeriesRoutes);
 app.use("/reports", reportRoutes);
 app.use("/settings", settingsRoutes);
 app.use("/documentApproval", documentApprovalRoutes);
+app.use("/inventoryApproval", inventoryApprovalRoutes);
 
 module.exports = app;

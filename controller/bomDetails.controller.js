@@ -1,3 +1,4 @@
+const { raw } = require("body-parser");
 const { buildRawMaterialTreeWithLevel } = require("../helpers/add-level");
 const models = require("../models");
 const { Op } = require('sequelize');
@@ -206,11 +207,8 @@ async function getBOMById(req, res) {
       return res.status(400).json({ message: "id and companyId are required" });
     }
 
-    const bom = await models.BOMDetails.findOne({
-      where: {
-        id,
-        companyId,
-      },
+    const bom = await models.BOMDetails.findByPk(id, {
+      where: { companyId }, // still need companyId filter
       include: [
         {
           model: models.BOMProductionProcess,
@@ -238,6 +236,8 @@ async function getBOMById(req, res) {
           attributes: ["id", "attachmentName"],
         },
       ],
+      raw: false,
+      nest: true,
     });
 
     if (!bom) {
@@ -261,7 +261,7 @@ async function getBOMById(req, res) {
       });
     }
 
-    const rawMaterials = bom.rawMaterials.map(material => material.get({ plain: true }));
+    const rawMaterials = bom.rawMaterials;
     const treeWithLevel = buildRawMaterialTreeWithLevel(rawMaterials);
     // const obj = {};
     // for (const element of rawMaterials) {
@@ -339,6 +339,9 @@ async function getAllBOMs(req, res) {
           attributes: ["id", "attachmentName"],
         },
       ],
+      order: [["createdAt", "DESC"]],
+      raw: false,
+      nest: true
     });
 
     return res.status(200).json({
