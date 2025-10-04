@@ -106,6 +106,7 @@ async function createDocument(req, res) {
       customFields = {},
       productionId = null,
       requestForApproval = false,
+      seriesId = null
     } = req.body;
 
     if (!isDraft) {
@@ -318,21 +319,13 @@ async function createDocument(req, res) {
     });
 
     if (documentType != documentTypes.purchaseInvoice) {
-      const lastIndex = documentNumber?.lastIndexOf("-");
-      const firstPart = documentNumber?.substring(0, lastIndex);
       const documentSeries = await models.DocumentSeries.findOne({
         where: {
-          prefix: firstPart,
-          companyId
+          id: seriesId
         }
       });
       if (documentSeries) {
-        await models.DocumentSeries.update({ nextNumber: documentSeries.nextNumber + 1 }, {
-          where: {
-            companyId,
-            prefix: documentSeries.prefix
-          }
-        });
+        await documentSeries.update({ nextNumber: documentSeries.nextNumber + 1 });
       }
     }
 

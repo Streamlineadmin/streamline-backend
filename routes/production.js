@@ -19,5 +19,6 @@ router.post('/getProductionsByCompanyId', productionController.getProductionsByC
 router.post('/productionBasedMaterialPlanning', productionController.productionBasedMaterialPlanning);
 router.post('/updateTable', productionController.updateTable);
 router.post('/removeRows', productionController.removeRows);
+router.post('/viewProductionHistory', productionController.viewProductionHistory);
 
 module.exports = router;

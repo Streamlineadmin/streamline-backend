@@ -1,6 +1,5 @@
 const { Op } = require("sequelize");
 const models = require("../models");
-const storeitems = require("../models/storeitems");
 
 async function getApprovals(req, res) {
   try {
@@ -31,7 +30,8 @@ async function getApprovalById(req, res) {
 
     const storeItem = await models.StockTransfer.findAll({
       where: { approvalId },
-      raw: true
+      raw: true,
+      order: [['createdAt', 'ASC']]
     });
 
     const storeItemMap = {}, storeItems = [];
@@ -40,7 +40,8 @@ async function getApprovalById(req, res) {
       element.quantity = Math.abs(element.quantity);
       if (!storeItemMap[element?.itemId]) {
         storeItems.push(element);
-        storeItemMap[element.itemId] = element;
+        if (approval.documentType != 'Finished Good')
+          storeItemMap[element.itemId] = element;
       } else {
         storeItemMap[element.itemId].quantity += element.qunatity;
       }
@@ -187,19 +188,197 @@ async function acceptRejectApproval(req, res) {
         return res.status(200).json({ message: 'Document Status Updated.' });
       }
 
-      if (approval?.documentType == 'Stock Update') {
+      if (approval?.documentType == 'Finished Good') {
+        const storeItems = await models.StoreItems.findAll({
+          where: {
+            approvalId: approval.id
+          }
+        });
+        for (const element of storeItems) {
+          if (element.isRejected) {
+            await element.update({ qunatity: (items[1]?.quantity || 0) });
+          }
+          else {
+            await element.update({ quantity: items[0]?.quantity || 0 });
+          }
+        }
+        const stockTransfer = await models.StockTransfer.findAll({
+          where: {
+            approvalId: approval.id
+          }
+        });
+        for (const element of stockTransfer) {
+          if (element.isRejected) {
+            await element.update({ qunatity: (items[1]?.quantity || 0) });
+          }
+          else {
+            await element.update({ quantity: items[0]?.quantity || 0 });
+          }
+        }
+        return res.status(200).json({ message: 'Document Status Updated.' });
+      }
+
+      if (approval?.documentType == 'Raw Material') {
+        const itemsWithId = await models.Items.findAll({
+          where: {
+            id: {
+              [Op.in]: items.map(item => item.itemId)
+            }
+          },
+          raw: true
+        });
+        const itemIdMap = itemsWithId?.reduce((acc, curr) => {
+          acc[curr.id] = curr.itemId;
+          return acc;
+        }, {});
         const stockTransfers = await models.StockTransfer.findAll({
           where: {
             approvalId
           }
         });
-        for (const element of storeItems) {
+        for (const element of stockTransfers) {
           const storeId = await models.Store.findOne({
             where: {
               id: element?.fromStoreId
             }
           });
+          let remainingQuantity = itemsMap[element.itemId];
+          let price = 0;
+          const existingStock = await models.StoreItems.findAll({
+            where: { storeId: storeId.id, itemId: element.itemId, isRejected: element.isRejected || false },
+            order: [['createdAt', 'ASC']],
+          });
+          for (const stock of existingStock) {
+            if (remainingQuantity <= 0) break;
+            if (stock.quantity <= 0) continue;
+            const deductQty = Math.min(stock.quantity, remainingQuantity);
+            remainingQuantity -= deductQty;
+
+            await models.StoreItems.update(
+              { quantity: (stock.quantity - deductQty) },
+              { where: { id: stock.id } }
+            );
+            await models.StockTransfer.create({
+              transferNumber: element.transferNumber,
+              fromStoreId: storeId.id || null,
+              itemId: element.itemId,
+              quantity: deductQty * -1,
+              toStoreId: null,
+              transferDate: new Date().toISOString(),
+              transferredBy: element.transferredBy,
+              comment: '',
+              companyId: element.companyId,
+              price: stock.price,
+              productionId: element.productionId,
+              productionNavigationId: element.id,
+              isRejected: element.isRejected,
+              actualPrice: stock.price,
+              approvalId: approval.id,
+              quantityForApproval: element.quantityForApproval
+            });
+            price += stock.price * deductQty;
+          }
+
+          const rawMaterial = await models.ProductionRawMaterials.findOne({
+            where: {
+              productionId: approval.documentNumber,
+              itemId: itemIdMap[element.itemId]
+            }
+          });
+          await rawMaterial.update(
+            {
+              issuedQuantity: Number((rawMaterial.issuedQuantity || 0)) + Number(itemsMap[element.itemId] || 0),
+              currentAverage: (rawMaterial.currentAverage || 0) + price
+            }
+          );
         }
+        await models.StockTransfer.destroy({
+          where: {
+            id: {
+              [Op.in]: stockTransfers.map(elem => elem.id)
+            }
+          }
+        });
+        return res.status(200).json({ message: 'Document Status Updated.' });
+      }
+
+      if (approval?.documentType == 'Scrap Material') {
+        const productionScrapMaterials = await models.ProductionScrapMaterials.findAll({
+          where: {
+            productionId: approval.documentNumber
+          }
+        });
+        const itemsWithId = await models.Items.findAll({
+          where: {
+            id: {
+              [Op.in]: items.map(item => item.itemId)
+            }
+          },
+          raw: true
+        });
+
+        const itemIdMap = itemsWithId?.reduce((acc, curr) => {
+          acc[curr.itemId] = curr.id;
+          return acc;
+        }, {});
+        for (const element of productionScrapMaterials) {
+          if (itemsMap[itemIdMap[element.itemId]]) {
+            await element.update({ producedQuantity: (element?.producedQuantity || 0) + (Number(itemsMap[itemIdMap[element.itemId]]) || 0) });
+          }
+        }
+      }
+
+      if (approval?.documentType == 'Stock Update' || approval?.documentType == 'Physical Stock Reconcilation') {
+        const stockTransfers = await models.StockTransfer.findAll({
+          where: {
+            approvalId,
+            quantityForApproval: {
+              [Op.lt]: 0
+            }
+          }
+        });
+        for (const element of stockTransfers) {
+          let remainingQuantity = itemsMap[element.itemId];
+          const existingStock = await models.StoreItems.findAll({
+            where: { storeId: element.fromStoreId, itemId: element.itemId, isRejected: element.isRejected || false },
+            order: [['createdAt', 'ASC']],
+          });
+          for (const stock of existingStock) {
+            if (remainingQuantity <= 0) break;
+            if (stock.quantity <= 0) continue;
+            const deductQty = Math.min(stock.quantity, remainingQuantity);
+            remainingQuantity -= deductQty;
+
+            await models.StoreItems.update(
+              { quantity: (stock.quantity - deductQty) },
+              { where: { id: stock.id } }
+            );
+            await models.StockTransfer.create({
+              transferNumber: element.transferNumber,
+              fromStoreId: element.fromStoreId || null,
+              itemId: element.itemId,
+              quantity: deductQty * -1,
+              toStoreId: null,
+              transferDate: new Date().toISOString(),
+              transferredBy: element.transferredBy,
+              comment: '',
+              companyId: element.companyId,
+              price: stock.price,
+              isRejected: element.isRejected,
+              actualPrice: stock.price,
+              approvalId: approval.id,
+              quantityForApproval: element.quantityForApproval
+            });
+          }
+        }
+
+        await models.StockTransfer.destroy({
+          where: {
+            id: {
+              [Op.in]: stockTransfers.map(data => data.id)
+            }
+          }
+        });
       }
       const storeItems = await models.StoreItems.findAll({
         where: {
@@ -213,7 +392,10 @@ async function acceptRejectApproval(req, res) {
 
       const stockTransfer = await models.StockTransfer.findAll({
         where: {
-          approvalId
+          approvalId,
+          quantityForApproval: {
+            [Op.gt]: 0
+          }
         }
       });
 
