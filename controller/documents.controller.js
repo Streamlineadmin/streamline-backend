@@ -1,4 +1,4 @@
-const { Op } = require('sequelize');
+const { Op, fn, col, where, cast } = require('sequelize');
 const models = require('../models');
 const { documentTypes, purchaseDocuments, salesDocuments, serviceDocuments } = require('../helpers/document-type');
 const { generateTransferNumber, generateProductionId } = require('../helpers/transfer-number');
@@ -1591,7 +1591,7 @@ async function createDocument(req, res) {
 async function getDocuments(req, res) {
   try {
 
-    const { companyId, currentPage, pageSize, documentType = '', search = '', dealStatus, docTypeFilter, dateRange } = req.body;
+    const { companyId, currentPage, labels, pageSize, documentType = '', search = '', dealStatus, docTypeFilter, dateRange } = req.body;
 
     const offset = ((currentPage || 1) - 1) * (pageSize || 10);
     let documentstype = [];
@@ -1687,6 +1687,14 @@ async function getDocuments(req, res) {
                 },
               }
             ],
+          }),
+          ...(labels?.length > 0 && {
+            [Op.or]: labels.map(label =>
+              where(
+                fn("LOWER", cast(col("labels"), "text")),
+                { [Op.like]: `%${label?.toLowerCase()}%` }
+              )
+            ),
           }),
         },
         include: [
