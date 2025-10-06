@@ -221,9 +221,11 @@ function getUsers(req, res) {
     models.Users.findAll({
         where: {
             companyId: req.body.companyId,
-            role: {
-                [Op.notIn]: [1, 2]  // Exclude roles 1 and 2
-            }
+            ...(!req.body.admin ? {
+                role: {
+                    [Op.notIn]: [1, 2]
+                }
+            } : {})
         }
     }).then(result => {
         if (!result || result.length === 0) {

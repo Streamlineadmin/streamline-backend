@@ -52,7 +52,25 @@ async function getApprovalPermission(req, res) {
     }
 }
 
+async function deleteApprovalPermission(req, res) {
+    try {
+        const { id } = req.body;
+        await models.DocumentApproval.destroy({
+            where: {
+                id
+            },
+        });
+        res.status(200).json({
+            message: 'Permisiion Deleted.'
+        });
+    } catch (error) {
+        console.error("Error submitting demo request:", error);
+        return res.status(500).json({ message: "Server error" });
+    }
+}
+
 module.exports = {
     addApprovalPermission,
-    getApprovalPermission
+    getApprovalPermission,
+    deleteApprovalPermission
 };
