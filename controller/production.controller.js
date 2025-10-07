@@ -3,6 +3,7 @@ const { documentTypes } = require('../helpers/document-type');
 const { generateProductionId, generateTransferNumber } = require('../helpers/transfer-number');
 const models = require('../models');
 const { buildMultiLevelProductionTree, isValidJSON } = require('../helpers/add-level');
+const e = require('express');
 
 async function startProduction(req, res) {
     try {
@@ -889,7 +890,7 @@ async function issueRawMaterial(req, res) {
 
 async function updateProcess(req, res) {
     try {
-        const { processData } = req.body;
+        const { processData, by } = req.body;
         for (const element of processData) {
             if ((element.currentTime && element.amount)) {
                 const process = await models.ProductionSalesProcess.findOne({ where: { id: element.id } });
@@ -934,6 +935,11 @@ async function updateProcess(req, res) {
                         id: element.id,
                     }
                 });
+                await models.ProductionHistory.create({
+                    productionId: element?.productionId,
+                    actionType: 'Process Logged',
+                    summary: `${element.todayProcessQuantity} Process Logged under ${element.processName} by ${by}. Total time recorded ${element?.currentTime || element?.currentPlannedTime} at ₹${element.amount || element?.currentAverage} /hour cost.`
+                });
             }
         }
         return res.status(200).json({ message: 'Process Updated' });
@@ -948,7 +954,7 @@ async function updateProcess(req, res) {
 
 async function updateCost(req, res) {
     try {
-        const { additionalChargesData } = req.body;
+        const { additionalChargesData, by } = req.body;
         for (const element of additionalChargesData) {
             const charges = await models.ProductionAdditionalCharges.findOne({
                 where: {
@@ -959,6 +965,12 @@ async function updateCost(req, res) {
                 where: {
                     id: element.id
                 }
+            });
+
+            await models.ProductionHistory.create({
+                productionId: element.productionId,
+                actionType: 'Additional Charges Added',
+                summary: `${element?.chargesName} charge : ₹${element?.todayCost} added by ${by}`
             });
         }
         return res.status(200).json({ message: 'Process Updated' });
@@ -1289,7 +1301,7 @@ async function saveFinishedGoods(req, res) {
 }
 
 async function updateProductionStatus(req, res) {
-    const { productionId, status, userId } = req.body;
+    const { productionId, status, userId, from, to, by } = req.body;
     try {
         await models.Production.update({
             status, ...(status == 2 ? { productionStartDate: new Date().toISOString() } : {}),
@@ -1298,6 +1310,11 @@ async function updateProductionStatus(req, res) {
             where: {
                 id: productionId
             }
+        });
+        await models.ProductionHistory.create({
+            productionId,
+            actionType: 'Production Stage changed',
+            summary: `Stage change from ${from} to ${to} by ${by}`
         });
         return res.status(200).json({ message: 'Production status Updated.' });
 
@@ -1831,9 +1848,22 @@ async function productionBasedMaterialPlanning(req, res) {
 
 async function updateTable(req, res) {
     try {
-        const { data, updateTableType } = req.body;
+        const { data, updateTableType, by, companyId } = req.body;
 
-        const insertData = [];
+        const insertData = [], logs = [];
+        const uoms = await models.UOM.findAll({
+            where: {
+                [Op.or]: [
+                    { companyId: req.body.companyId, status: 1 },
+                    { companyId: null, status: 0 }
+                ]
+            }
+        });
+
+        const uomMap = uoms.reduce((acc, curr) => {
+            acc[curr.id] = curr.name;
+            return acc;
+        })
 
         if (!Array.isArray(data) || data.length === 0) {
             return res.status(400).json({ message: 'Invalid or empty data array.' });
@@ -1852,8 +1882,14 @@ async function updateTable(req, res) {
                         status: 1,
                         addDuringProduction: true
                     });
+                    logs.push({
+                        productionId: element.productionId,
+                        actionType: `New Raw Material added to the ${element?.store || 'unknown'} Store`,
+                        summary: `${element.itemName} - ${element.plannedQty} ${uomMap?.[element.uom]}. Added by ${by}`
+                    });
                 });
                 await models.ProductionRawMaterials.bulkCreate(insertData);
+                await models.ProductionHistory.bulkCreate(logs);
                 break;
 
             case 'Left Over Item':
@@ -1867,8 +1903,14 @@ async function updateTable(req, res) {
                         quantity: element.plannedQty,
                         status: 1
                     });
+                    logs.push({
+                        productionId: element.productionId,
+                        actionType: `New Scrap Material added to the ${element?.store || 'unknown'} Store`,
+                        summary: `${element.itemName} - ${element.plannedQty} ${uomMap?.[element.uom]}. Added by ${by}`
+                    });
                 });
                 await models.ProductionScrapMaterials.bulkCreate(insertData);
+                await models.ProductionHistory.bulkCreate(logs);
                 break;
 
             case 'Additional Charges':
@@ -1879,8 +1921,14 @@ async function updateTable(req, res) {
                         amount: element.amount,
                         status: 1
                     });
+                    logs.push({
+                        productionId: element.productionId,
+                        actionType: `New Additional Charegs Added.`,
+                        summary: `${element.chargesName} - ${element.amount}. Added by ${by}`
+                    });
                 });
                 await models.ProductionAdditionalCharges.bulkCreate(insertData);
+                await models.ProductionHistory.bulkCreate(logs);
                 break;
 
             case 'Process':
@@ -1896,8 +1944,14 @@ async function updateTable(req, res) {
                         processName: element.processName,
                         status: 1
                     });
+                    logs.push({
+                        productionId: element.productionId,
+                        actionType: `New Process Added.`,
+                        summary: `${element.processName} - ${element.plannedTime}. Added by ${by}.`
+                    });
                 });
                 await models.ProductionSalesProcess.bulkCreate(insertData);
+                await models.ProductionHistory.bulkCreate(logs);
                 break;
 
             default:
@@ -1917,12 +1971,17 @@ async function updateTable(req, res) {
 
 async function removeRows(req, res) {
     try {
-        const { id, type } = req.body;
+        const { id, type, by, name, productionId } = req.body;
         if (type == 'rawMaterial') {
             await models.ProductionRawMaterials.destroy({
                 where: {
                     id
                 }
+            });
+            await models.ProductionHistory.create({
+                productionId,
+                actionType: `Raw Material removed.`,
+                summary: `Item Name: ${name}, removed By ${by}.`
             });
         } else if (type == 'process') {
             await models.ProductionSalesProcess.destroy({
@@ -1930,11 +1989,21 @@ async function removeRows(req, res) {
                     id
                 }
             });
+            await models.ProductionHistory.create({
+                productionId,
+                actionType: `Process removed.`,
+                summary: `Process Name: ${name}, removed By ${by}.`
+            });
         } else if (type == 'leftOver') {
             await models.ProductionScrapMaterials.destroy({
                 where: {
                     id
                 }
+            });
+            await models.ProductionHistory.create({
+                productionId,
+                actionType: `Scrap Material removed.`,
+                summary: `Item Name: ${name}, removed By ${by}.`
             });
         }
         else if (type == 'additionalCharges') {
@@ -1942,6 +2011,11 @@ async function removeRows(req, res) {
                 where: {
                     id
                 }
+            });
+            await models.ProductionHistory.create({
+                productionId,
+                actionType: `Additional Charges removed.`,
+                summary: `Charges Name: ${name}, removed By ${by}.`
             });
         }
         res.status(200).json({
@@ -1959,11 +2033,16 @@ async function removeRows(req, res) {
 async function viewProductionHistory(req, res) {
     try {
         const { productionId } = req.body;
-        setTimeout(() => {
-            res.status(200).json({
-                data: {}
-            });
-        }, 1000);
+        const data = await models.ProductionHistory.findAll({
+            where: {
+                productionId
+            },
+            raw: true,
+            order: [['createdAt', 'DESC']]
+        });
+        res.status(200).json({
+            data: data
+        });
     } catch (error) {
         console.error("Update Table Error:", error);
         res.status(500).json({

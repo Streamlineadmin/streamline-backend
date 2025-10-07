@@ -14,6 +14,7 @@ module.exports = (sequelize, DataTypes) => {
     }, {
         sequelize,
         modelName: 'ProductionHistory',
+        tableName: 'ProductionHistory',
     });
     return ProductionHistory;
 };
