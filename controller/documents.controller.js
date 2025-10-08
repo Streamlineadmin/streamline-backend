@@ -1526,7 +1526,7 @@ async function createDocument(req, res) {
 async function getDocuments(req, res) {
   try {
 
-    const { companyId, currentPage, labels, pageSize, documentType = '', search = '', dealStatus, docTypeFilter, dateRange } = req.body;
+    const { companyId, counts, approvedBy, requestedBy, currentPage, labels, pageSize, documentType = '', search = '', dealStatus, docTypeFilter, dateRange } = req.body;
 
     const offset = ((currentPage || 1) - 1) * (pageSize || 10);
     let documentstype = [];
@@ -1588,6 +1588,8 @@ async function getDocuments(req, res) {
               [Op.in]: documentstype
             }
           }),
+          ...(requestedBy ? { createdBy: requestedBy } : {}),
+          ...(approvedBy ? { approvedBy: approvedBy } : {}),
           ...(Array.isArray(dealStatus) && dealStatus.length > 0
             ? {
               status: {
@@ -1598,6 +1600,14 @@ async function getDocuments(req, res) {
               status: {
                 [Op.not]: 2,
               },
+            }),
+          ...(!dealStatus && counts
+            ? {
+              status: {
+                [Op.notIn]: [29, 30],
+              },
+            }
+            : {
             }),
           ...(docTypeFilter?.length > 0 && {
             documentType: {
@@ -1709,11 +1719,56 @@ async function getDocuments(req, res) {
     if ((!currentPage || !pageSize) || (pageSize == 5000)) {
       return res.status(200).json(formattedResult)
     }
+
+    if (counts) {
+      const [pending, reject, approved] = await Promise.all([
+        models.Documents.count({
+          where: {
+            status: 29,
+            companyId: Number(companyId),
+            documentType: {
+              [Op.in]: docTypeFilter,
+            },
+          }
+        }),
+        models.Documents.count({
+          where: {
+            status: 30,
+            companyId: Number(companyId),
+            documentType: {
+              [Op.in]: docTypeFilter,
+            },
+          }
+        }),
+        models.Documents.count({
+          where: {
+            companyId: Number(companyId),
+            status: {
+              [Op.notIn]: [2, 29, 30]
+            },
+            documentType: {
+              [Op.in]: docTypeFilter,
+            },
+
+          }
+        })
+      ]);
+      return res.status(200).json({
+        total: documents.count,
+        currentPage,
+        pageSize,
+        data: formattedResult,
+        approveCount: approved,
+        rejectedCount: reject,
+        pendingCount: pending
+      });
+    }
+
     res.status(200).json({
       total: documents.count,
       currentPage,
       pageSize,
-      data: formattedResult,
+      data: formattedResult
     });
 
   } catch (error) {
