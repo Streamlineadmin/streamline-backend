@@ -775,7 +775,20 @@ async function bulkGetProductionsByIds(req, res) {
 
 async function issueRawMaterial(req, res) {
     try {
-        const { rawMaterialData, companyId, userId } = req.body;
+        const { rawMaterialData, companyId, userId, by } = req.body;
+        const uoms = await models.UOM.findAll({
+            where: {
+                [Op.or]: [
+                    { companyId: companyId, status: 1 },
+                    { companyId: null, status: 0 }
+                ]
+            },
+            raw: true
+        });
+        const uomMap = uoms.reduce((acc, curr) => {
+            acc[curr.id] = curr.code;
+            return acc;
+        }, {});
         if (!rawMaterialData || rawMaterialData.length === 0) {
             return res.status(400).json({ message: 'No raw material data provided.' });
         }
@@ -860,6 +873,11 @@ async function issueRawMaterial(req, res) {
                         where: { id: element.id }
                     }
                 );
+                await models.ProductionHistory.create({
+                    productionId: element?.productionId,
+                    actionType: 'Raw Material Issued',
+                    summary: `${element?.itemName} - ${element?.issuedToday} ${uomMap[element.uom]} issued by ${by} from ${element.store?.replaceAll("-fromrejectstore", "")} store.`
+                });
             }
             else {
                 stockTransferPayloads.push({
@@ -877,6 +895,11 @@ async function issueRawMaterial(req, res) {
                     isRejected,
                     approvalId: approval.id,
                     quantityForApproval: element.issuedToday * (element?.conversionFactor || 1)
+                });
+                await models.ProductionHistory.create({
+                    productionId: element?.productionId,
+                    actionType: 'Raw Material Issue Request.',
+                    summary: `${element?.itemName} - ${element?.issuedToday} ${uomMap[element.uom]} requested by ${by}.`
                 });
             }
         }
@@ -993,7 +1016,7 @@ async function updateScrapLogs(req, res) {
         const { scrapLogs, companyId, userId, by } = req.body;
         const uoms = await models.UOM.findAll({
             where: {
-                [Sequelize.Op.or]: [
+                [Op.or]: [
                     { companyId: companyId, status: 1 },
                     { companyId: null, status: 0 }
                 ]
@@ -1108,8 +1131,23 @@ async function saveFinishedGoods(req, res) {
             rejectQty,
             companyId,
             batchData,
-            userId
+            userId,
+            by
         } = req.body;
+
+        const uoms = await models.UOM.findAll({
+            where: {
+                [Op.or]: [
+                    { companyId: companyId, status: 1 },
+                    { companyId: null, status: 0 }
+                ]
+            },
+            raw: true
+        });
+        const uomMap = uoms.reduce((acc, curr) => {
+            acc[curr.id] = curr.code;
+            return acc;
+        }, {});
 
         const production = await models.Production.findOne({
             where: {
@@ -1201,7 +1239,19 @@ async function saveFinishedGoods(req, res) {
             quantityForApproval: passedQty * (finishedGoods[0]?.conversionFactor || 1)
         }, { transaction });
 
+        await models.ProductionHistory.create({
+            productionId: production?.id,
+            actionType: 'Finished Good Tested.',
+            summary: `${finishedGoods[0]?.itemName} - ${passedQty} ${uomMap[finishedGoods[0]?.uom]} passed by ${by}.`
+        });
+
+
         if (rejectQty) {
+            await models.ProductionHistory.create({
+                productionId: production?.id,
+                actionType: 'Finished Good Tested.',
+                summary: `${finishedGoods[0]?.itemName} - ${rejectQty} ${uomMap[finishedGoods[0]?.uom]} rejected by ${by}.`
+            });
             await models.StoreItems.create({
                 storeId: rejectStores.id,
                 itemId: item.id,
@@ -1361,8 +1411,21 @@ async function updateProductionStatus(req, res) {
 }
 
 async function saveProduction(req, res) {
-    const { finishedGoods } = req.body;
+    const { finishedGoods, by, companyId } = req.body;
     try {
+        const uoms = await models.UOM.findAll({
+            where: {
+                [Op.or]: [
+                    { companyId: companyId, status: 1 },
+                    { companyId: null, status: 0 }
+                ]
+            },
+            raw: true
+        });
+        const uomMap = uoms.reduce((acc, curr) => {
+            acc[curr.id] = curr.code;
+            return acc;
+        }, {});
         for (const element of finishedGoods) {
             if (!element.todaysProduction) continue;
             const finishedGood = await models.ProductionFinishedGoods.findOne({
@@ -1379,6 +1442,12 @@ async function saveProduction(req, res) {
                 where: {
                     id: element.id
                 }
+            });
+
+            await models.ProductionHistory.create({
+                productionId: element?.productionId,
+                actionType: 'Finished Goods Produced.',
+                summary: `${element?.itemName} - ${element?.todaysProduction} ${uomMap[element.uom]} produced by ${by}.`
             });
 
         }

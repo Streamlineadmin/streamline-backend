@@ -112,7 +112,7 @@ async function getApprovalById(req, res) {
 
 async function acceptRejectApproval(req, res) {
   try {
-    const { approvalId, approvedBy, isApproved, items } = req.body;
+    const { approvalId, approvedBy, isApproved, items, by } = req.body;
 
     const itemsMap = items.reduce((acc, curr) => {
       acc[Number(curr.itemId)] = curr.quantity || 0;
@@ -120,6 +120,20 @@ async function acceptRejectApproval(req, res) {
     }, {});
 
     const approval = await models.InventoryApproval.findByPk(approvalId);
+
+    const uoms = await models.UOM.findAll({
+      where: {
+        [Op.or]: [
+          { companyId: approval.companyId, status: 1 },
+          { companyId: null, status: 0 }
+        ]
+      },
+      raw: true
+    });
+    const uomMap = uoms.reduce((acc, curr) => {
+      acc[curr.id] = curr.code;
+      return acc;
+    }, {});
 
     await models.InventoryApproval.update(
       {
@@ -228,7 +242,7 @@ async function acceptRejectApproval(req, res) {
           raw: true
         });
         const itemIdMap = itemsWithId?.reduce((acc, curr) => {
-          acc[curr.id] = curr.itemId;
+          acc[curr.id] = curr;
           return acc;
         }, {});
         const stockTransfers = await models.StockTransfer.findAll({
@@ -282,7 +296,7 @@ async function acceptRejectApproval(req, res) {
           const rawMaterial = await models.ProductionRawMaterials.findOne({
             where: {
               productionId: approval.documentNumber,
-              itemId: itemIdMap[element.itemId]
+              itemId: itemIdMap[element.itemId]?.itemId
             }
           });
           await rawMaterial.update(
@@ -291,6 +305,11 @@ async function acceptRejectApproval(req, res) {
               currentAverage: (rawMaterial.currentAverage || 0) + price
             }
           );
+          await models.ProductionHistory.create({
+            productionId: approval.documentNumber,
+            actionType: 'Raw Material Issued.',
+            summary: `${itemIdMap[element.itemId]?.itemName} - ${itemsMap[element.itemId]} ${uomMap[itemIdMap[element.itemId]?.metricsUnit]} issued by ${by}.`
+          });
         }
         await models.StockTransfer.destroy({
           where: {
@@ -318,12 +337,17 @@ async function acceptRejectApproval(req, res) {
         });
 
         const itemIdMap = itemsWithId?.reduce((acc, curr) => {
-          acc[curr.itemId] = curr.id;
+          acc[curr.itemId] = curr;
           return acc;
         }, {});
         for (const element of productionScrapMaterials) {
-          if (itemsMap[itemIdMap[element.itemId]]) {
-            await element.update({ producedQuantity: (element?.producedQuantity || 0) + (Number(itemsMap[itemIdMap[element.itemId]]) || 0) });
+          if (itemsMap[itemIdMap[element.itemId].id]) {
+            await element.update({ producedQuantity: (element?.producedQuantity || 0) + (Number(itemsMap[itemIdMap[element.itemId].id]) || 0) });
+            await models.ProductionHistory.create({
+              productionId: approval.documentNumber,
+              actionType: 'Scrap Material Produced.',
+              summary: `${itemIdMap[element.itemId]?.itemName} - ${uomMap[itemIdMap[element.itemId].metricsUnit]} ${uomMap[element.uom]} added by ${by}.`
+            });
           }
         }
       }
