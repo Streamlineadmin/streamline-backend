@@ -786,8 +786,13 @@ async function issueRawMaterial(req, res) {
             return res.status(404).json({ message: 'Production not found.' });
         }
         const settings = isValidJSON(production?.isManual) || {}
+        const approvalCount = await models.InventoryApproval.count({
+            where: {
+                companyId
+            }
+        });
         const approval = await models.InventoryApproval.create({
-            approvalId: generateProductionId(),
+            approvalId: `INA${approvalCount + 1}`,
             documentType: 'Raw Material',
             documentNumber: production.id,
             approvalStatus: settings?.['productionRawMaterial'] == 'manual' ? 'Pending' : 'Auto Approved',
@@ -985,15 +990,33 @@ async function updateCost(req, res) {
 
 async function updateScrapLogs(req, res) {
     try {
-        const { scrapLogs, companyId, userId } = req.body;
+        const { scrapLogs, companyId, userId, by } = req.body;
+        const uoms = await models.UOM.findAll({
+            where: {
+                [Sequelize.Op.or]: [
+                    { companyId: companyId, status: 1 },
+                    { companyId: null, status: 0 }
+                ]
+            },
+            raw: true
+        });
+        const uomMap = uoms.reduce((acc, curr) => {
+            acc[curr.id] = curr.code;
+            return acc;
+        }, {});
         const production = await models.Production.findOne({
             where: {
                 id: scrapLogs[0]?.productionId
             }
         });
         const settings = isValidJSON(production?.isManual) || {}
+        const approvalCount = await models.InventoryApproval.count({
+            where: {
+                companyId
+            }
+        });
         const approval = await models.InventoryApproval.create({
-            approvalId: generateProductionId(),
+            approvalId: `INA${approvalCount + 1}`,
             documentType: 'Scrap Material',
             documentNumber: production.id,
             approvalStatus: settings?.['productionScrapMaterial'] == 'manual' ? 'Pending' : 'Auto Approved',
@@ -1009,6 +1032,12 @@ async function updateScrapLogs(req, res) {
                     where: {
                         id: element.id
                     }
+                });
+            settings?.['productionScrapMaterial'] != 'manual' &&
+                await models.ProductionHistory.create({
+                    productionId: element.productionId,
+                    actionType: 'Scrap Material Produced.',
+                    summary: `${element.itemName} - ${element.value} ${uomMap[element.uom]} added in ${element.store?.replaceAll("-fromrejectstore", "")} store by ${by}.`
                 });
             const store = await models.Store.findOne({
                 where: {
@@ -1089,8 +1118,13 @@ async function saveFinishedGoods(req, res) {
         });
 
         const settings = isValidJSON(production?.isManual) || {}
+        const approvalCount = await models.InventoryApproval.count({
+            where: {
+                companyId
+            }
+        });
         const approval = await models.InventoryApproval.create({
-            approvalId: generateProductionId(),
+            approvalId: `INA${approvalCount + 1}`,
             documentType: 'Finished Good',
             documentNumber: production.id,
             approvalStatus: settings?.['productionFinishedGood'] == 'manual' ? 'Pending' : 'Auto Approved',
