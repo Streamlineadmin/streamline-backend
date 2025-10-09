@@ -2155,6 +2155,49 @@ async function viewProductionHistory(req, res) {
     }
 }
 
+async function returnRawMaterial(req, res) {
+    try {
+        const { data, navigationId, productionId, by, companyId } = req.body;
+        const uoms = await models.UOM.findAll({
+            where: {
+                [Op.or]: [
+                    { companyId: companyId, status: 1 },
+                    { companyId: null, status: 0 }
+                ]
+            },
+            raw: true
+        });
+        const uomMap = uoms.reduce((acc, curr) => {
+            acc[curr.id] = curr.code;
+            return acc;
+        }, {});
+        const production = await models.Production.findByPk(navigationId);
+        const settings = isValidJSON(production?.isManual) || {}
+        const approvalCount = await models.InventoryApproval.count({
+            where: {
+                companyId
+            }
+        });
+        const approval = await models.InventoryApproval.create({
+            approvalId: `INA${approvalCount + 1}`,
+            documentType: 'Raw Material',
+            documentNumber: production.id,
+            approvalStatus: settings?.['productionRawMaterial'] == 'manual' ? 'Pending' : 'Auto Approved',
+            requestedBy: userId,
+            companyId: companyId,
+            status: 1,
+            approvedBy: null
+        });
+
+    } catch (error) {
+        console.error("Update Table Error:", error);
+        res.status(500).json({
+            message: "Failed to return.",
+            error: error.message
+        });
+    }
+}
+
 module.exports = {
     startProduction: startProduction,
     getProductions: getProductions,
@@ -2173,5 +2216,6 @@ module.exports = {
     productionBasedMaterialPlanning: productionBasedMaterialPlanning,
     updateTable: updateTable,
     removeRows: removeRows,
-    viewProductionHistory: viewProductionHistory
+    viewProductionHistory: viewProductionHistory,
+    returnRawMaterial: returnRawMaterial
 }

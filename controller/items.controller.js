@@ -1221,7 +1221,7 @@ async function bulkStockUpdate(req, res) {
         for (const element of rows) {
             let error = '';
             if (!element.Quantity) error += 'Quantity is required. ';
-            if (!element.Price) error += 'Price is required. ';
+            if (!element.Price && element.Price != 0) error += 'Price is required. ';
             if (!element.Store) error += 'Store is required. ';
             const itemName = fromItemName ? element.Item.substring(0, element.Item.lastIndexOf("(")).trim() : element['Item Name/Id'];
             if (!itemName) error += 'Item is required. ';
