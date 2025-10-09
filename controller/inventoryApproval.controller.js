@@ -37,15 +37,18 @@ async function getApprovalById(req, res) {
     const storeItemMap = {}, storeItems = [];
 
     for (const element of storeItem) {
-      element.quantity = Math.abs(element.quantity);
+      element.quantity = Math.abs(element.quantity) || 0;
+      element.quantityForApproval = Math.abs(element.quantityForApproval) || 0;
       if (!storeItemMap[element?.itemId]) {
         storeItems.push(element);
         if (approval.documentType != 'Finished Good')
           storeItemMap[element.itemId] = element;
       } else {
-        storeItemMap[element.itemId].quantity += element.qunatity;
+        storeItemMap[element.itemId].quantity += (element.quantity || 0);
+        storeItemMap[element.itemId].quantityForApproval += Math.abs(element.quantityForApproval) || 0;
       }
     }
+    // console.log('storeItems',storeItems);
 
     const itemIds = [...new Set(storeItems.map(store => store.itemId))];
     const storeIds = [...new Set(storeItems.flatMap(s => [s.fromStoreId, s.toStoreId]))];
@@ -114,8 +117,8 @@ async function acceptRejectApproval(req, res) {
   try {
     const { approvalId, approvedBy, isApproved, items, by } = req.body;
 
-    const itemsMap = items.reduce((acc, curr) => {
-      acc[Number(curr.itemId)] = curr.quantity || 0;
+    let itemsMap = items.reduce((acc, curr) => {
+      acc[Number(curr.itemId)] = Number(curr.quantity || 0);
       return acc;
     }, {});
 
@@ -228,6 +231,67 @@ async function acceptRejectApproval(req, res) {
           else {
             await element.update({ quantity: items[0]?.quantity || 0 });
           }
+        }
+        return res.status(200).json({ message: 'Document Status Updated.' });
+      }
+
+      if (approval?.documentType == 'Raw Material Return') {
+        const saveitems = await models.Items.findAll({
+          where: {
+            companyId: approval.companyId,
+            id: {
+              [Op.in]: items.map(item => item.itemId)
+            }
+          },
+          raw: true
+        });
+        const saveItemsMap = saveitems.reduce((acc, curr) => {
+          acc[curr.id] = curr;
+          return acc;
+        }, {});
+        const production = await models.Production.findOne({
+          where: {
+            id: approval.documentNumber
+          }
+        });
+        const storeItems = await models.StoreItems.findAll({
+          where: {
+            approvalId: approval.id,
+          },
+          order: [['createdAt', 'ASC']]
+        });
+        for (const element of items) {
+          if (element.quantity) {
+            const rawMaterial = await models.ProductionRawMaterials.findOne({
+              where: {
+                productionId: production.id,
+                itemId: saveItemsMap[element.itemId]?.itemId
+              }
+            });
+            if (rawMaterial) {
+              await rawMaterial.update({ issuedQuantity: rawMaterial.issuedQuantity - itemsMap[element.itemId] })
+            }
+          }
+        }
+        for (const element of storeItems) {
+          if (itemsMap[element.itemId?.toString()] <= 0) break;
+          await element.update({ quantity: Math.min(itemsMap[element.itemId?.toString()], element.quantityForApproval) });
+          itemsMap[element.itemId?.toString()] = itemsMap[element.itemId?.toString()] - element.quantityForApproval;
+        }
+        itemsMap = items.reduce((acc, curr) => {
+          acc[(curr.itemId)] = curr.quantity || 0;
+          return acc;
+        }, {});
+        const stockTransfer = await models.StockTransfer.findAll({
+          where: {
+            approvalId: approval.id,
+          },
+          order: [['createdAt', 'ASC']]
+        });
+        for (const element of stockTransfer) {
+          if (itemsMap[element.itemId?.toString()] <= 0) break;
+          await element.update({ quantity: Math.min(itemsMap[element.itemId?.toString()], element.quantityForApproval) });
+          itemsMap[element.itemId?.toString()] = itemsMap[element.itemId?.toString()] - element.quantityForApproval;
         }
         return res.status(200).json({ message: 'Document Status Updated.' });
       }

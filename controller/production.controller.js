@@ -2157,7 +2157,7 @@ async function viewProductionHistory(req, res) {
 
 async function returnRawMaterial(req, res) {
     try {
-        const { data, navigationId, productionId, by, companyId } = req.body;
+        const { data, navigationId, productionId, by, companyId, userId } = req.body;
         const uoms = await models.UOM.findAll({
             where: {
                 [Op.or]: [
@@ -2171,6 +2171,18 @@ async function returnRawMaterial(req, res) {
             acc[curr.id] = curr.code;
             return acc;
         }, {});
+        const items = await models.Items.findAll({
+            where: {
+                itemId: {
+                    [Op.in]: data.map(row => row.itemId)
+                }
+            },
+            raw: true
+        });
+        const itemMap = items.reduce((acc, curr) => {
+            acc[curr.itemId] = curr;
+            return acc;
+        }, {});
         const production = await models.Production.findByPk(navigationId);
         const settings = isValidJSON(production?.isManual) || {}
         const approvalCount = await models.InventoryApproval.count({
@@ -2180,7 +2192,7 @@ async function returnRawMaterial(req, res) {
         });
         const approval = await models.InventoryApproval.create({
             approvalId: `INA${approvalCount + 1}`,
-            documentType: 'Raw Material',
+            documentType: 'Raw Material Return',
             documentNumber: production.id,
             approvalStatus: settings?.['productionRawMaterial'] == 'manual' ? 'Pending' : 'Auto Approved',
             requestedBy: userId,
@@ -2188,6 +2200,70 @@ async function returnRawMaterial(req, res) {
             status: 1,
             approvedBy: null
         });
+
+        for (const element of data) {
+            if (!element.returnQuantity || element.returnQuantity == 0 || isNaN(element.returnQuantity))
+                return;
+            let remainingQuantity = Number(element.returnQuantity) * element.conversionFactor;
+            const stockTransfer = await models.StockTransfer.findAll({
+                where: {
+                    itemId: itemMap[element.itemId]?.id,
+                    productionId,
+                    quantity: {
+                        [Op.lt]: 0
+                    }
+                },
+                order: [['createdAt', 'ASC']]
+            });
+
+            for (const element of stockTransfer) {
+                if (remainingQuantity <= 0) break;
+                const deductQty = Math.min(element.quantity * -1, remainingQuantity);
+                remainingQuantity -= deductQty;
+                await models.StoreItems.create({
+                    storeId: element.fromStoreId,
+                    itemId: element.itemId,
+                    quantity: settings?.['productionScrapMaterial'] == 'manual' ? 0 : deductQty,
+                    status: 1,
+                    addedBy: Number(userId),
+                    price: element.price,
+                    isRejected: element?.isReject || false,
+                    approvalId: approval.id,
+                    quantityForApproval: deductQty
+                });
+
+                await models.StockTransfer.create({
+                    transferNumber: generateTransferNumber(),
+                    fromStoreId: null,
+                    itemId: element.itemId,
+                    quantity: settings?.['productionScrapMaterial'] == 'manual' ? null : deductQty,
+                    toStoreId: element.fromStoreId,
+                    transferDate: new Date().toISOString(),
+                    transferredBy: Number(userId),
+                    companyId: Number(companyId),
+                    price: element.price,
+                    productionId: production.productionId,
+                    productionNavigationId: production.id,
+                    isRejected: element?.isReject || false,
+                    approvalId: approval.id,
+                    quantityForApproval: deductQty
+                });
+
+            }
+            await models.ProductionHistory.create({
+                productionId: production?.id,
+                actionType: settings?.['productionRawMaterial'] == 'manual' ? 'Raw material return request.' : 'Raw material returned.',
+                summary: `${element?.itemName} - ${element?.returnQuantity} ${uomMap[element.uom]}, ${settings?.['productionRawMaterial'] == 'manual' ? 'requested' : 'returned'} by ${by}`
+            });
+            if (settings?.['productionRawMaterial'] != 'manual') {
+                const rawmaterial = await models.ProductionRawMaterials.findByPk(element.id);
+                await rawmaterial.update({ issuedQuantity: rawmaterial.issuedQuantity - element?.returnQuantity });
+            }
+
+        }
+
+
+        res.status(200).json({ message: 'Raw Material Returned.' });
 
     } catch (error) {
         console.error("Update Table Error:", error);
