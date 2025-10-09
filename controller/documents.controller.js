@@ -1,6 +1,6 @@
 const { Op, fn, col, where, cast } = require('sequelize');
 const models = require('../models');
-const { documentTypes, purchaseDocuments, salesDocuments, serviceDocuments } = require('../helpers/document-type');
+const { documentTypes, purchaseDocuments, salesDocuments, serviceDocuments, serviceConfirmationDocuments } = require('../helpers/document-type');
 const { generateTransferNumber } = require('../helpers/transfer-number');
 const customfields = require('../models/customfields');
 
@@ -1539,6 +1539,9 @@ async function getDocuments(req, res) {
         break;
       case "documentServices":
         documentstype = serviceDocuments;
+        break;
+      case "serviceConfirmation":
+        documentstype = serviceConfirmationDocuments;
         break;
       default:
         break;
