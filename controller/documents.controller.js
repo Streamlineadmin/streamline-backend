@@ -1526,7 +1526,7 @@ async function createDocument(req, res) {
 async function getDocuments(req, res) {
   try {
 
-    const { companyId, counts, approvedBy, requestedBy, currentPage, labels, pageSize, documentType = '', search = '', dealStatus, docTypeFilter, dateRange } = req.body;
+    const { companyId, counts, createdBy, approvedBy, requestedBy, currentPage, labels, pageSize, documentType = '', search = '', dealStatus, docTypeFilter, dateRange } = req.body;
 
     const offset = ((currentPage || 1) - 1) * (pageSize || 10);
     let documentstype = [];
@@ -1609,11 +1609,32 @@ async function getDocuments(req, res) {
             }
             : {
             }),
-          ...(docTypeFilter?.length > 0 && {
+          ...(docTypeFilter?.length > 0 ? !createdBy ? {
             documentType: {
               [Op.in]: docTypeFilter,
             },
-          }),
+          } : {
+            [Op.or]: [
+              {
+                documentType: {
+                  [Op.in]: docTypeFilter
+                }
+              },
+              {
+                createdBy: Number(createdBy),
+                documentType: {
+                  [Op.in]: [
+                    'Sales Quotation',
+                    'Sales Order',
+                    'Invoice',
+                    'Purchase Request',
+                    'Purchase Order',
+                    'Purchase Invoice',
+                  ]
+                }
+              }
+            ],
+          } : {}),
           ...(search && {
             [Op.or]: [
               {
@@ -1660,7 +1681,7 @@ async function getDocuments(req, res) {
       });
     }
 
-    if (!documents || (documents?.rows?.length === 0 || documents?.length === 0)) {
+    if (!documents || ((documents?.rows?.length === 0 || documents?.length === 0) && !counts)) {
       return res.status(200).json({
         total: 0,
         currentPage,
@@ -1726,18 +1747,52 @@ async function getDocuments(req, res) {
           where: {
             status: 29,
             companyId: Number(companyId),
-            documentType: {
-              [Op.in]: docTypeFilter,
-            },
+            [Op.or]: [
+              {
+                documentType: {
+                  [Op.in]: docTypeFilter
+                }
+              },
+              {
+                createdBy: Number(createdBy),
+                documentType: {
+                  [Op.in]: [
+                    'Sales Quotation',
+                    'Sales Order',
+                    'Invoice',
+                    'Purchase Request',
+                    'Purchase Order',
+                    'Purchase Invoice',
+                  ]
+                }
+              }
+            ]
           }
         }),
         models.Documents.count({
           where: {
             status: 30,
             companyId: Number(companyId),
-            documentType: {
-              [Op.in]: docTypeFilter,
-            },
+            [Op.or]: [
+              {
+                documentType: {
+                  [Op.in]: docTypeFilter
+                }
+              },
+              {
+                createdBy: Number(createdBy),
+                documentType: {
+                  [Op.in]: [
+                    'Sales Quotation',
+                    'Sales Order',
+                    'Invoice',
+                    'Purchase Request',
+                    'Purchase Order',
+                    'Purchase Invoice',
+                  ]
+                }
+              }
+            ]
           }
         }),
         models.Documents.count({
@@ -1746,9 +1801,26 @@ async function getDocuments(req, res) {
             status: {
               [Op.notIn]: [2, 29, 30]
             },
-            documentType: {
-              [Op.in]: docTypeFilter,
-            },
+            [Op.or]: [
+              {
+                documentType: {
+                  [Op.in]: docTypeFilter
+                }
+              },
+              {
+                createdBy: Number(createdBy),
+                documentType: {
+                  [Op.in]: [
+                    'Sales Quotation',
+                    'Sales Order',
+                    'Invoice',
+                    'Purchase Request',
+                    'Purchase Order',
+                    'Purchase Invoice',
+                  ]
+                }
+              }
+            ]
 
           }
         })
@@ -1772,6 +1844,7 @@ async function getDocuments(req, res) {
     });
 
   } catch (error) {
+    console.log(error);
     return res.status(500).json({ message: "Something went wrong, please try again later!" });
   }
 }
