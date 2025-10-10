@@ -21,7 +21,9 @@ module.exports = (sequelize, DataTypes) => {
     addedBy: DataTypes.INTEGER,
     price: DataTypes.FLOAT,
     isRejected: DataTypes.BOOLEAN,
-    documentNumber: DataTypes.STRING
+    documentNumber: DataTypes.STRING,
+    approvalId: DataTypes.INTEGER,
+    quantityForApproval: DataTypes.FLOAT,
   }, {
     sequelize,
     modelName: 'StoreItems',

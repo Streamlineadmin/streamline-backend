@@ -1,0 +1,419 @@
+const { Op } = require("sequelize");
+const models = require("../models");
+
+async function getApprovals(req, res) {
+  try {
+    const { companyId } = req.body;
+    const approvals = await models.InventoryApproval.findAll({
+      where: {
+        companyId: Number(companyId)
+      },
+      order: [['createdAt', 'DESC']],
+      raw: true
+    });
+    return res.status(200).json({
+      data: approvals,
+    })
+  } catch (error) {
+    res.status(500).json({ message: 'Something went wrong', error });
+  }
+}
+
+async function getApprovalById(req, res) {
+  try {
+    const { approvalId, companyId } = req.body;
+
+    const approval = await models.InventoryApproval.findByPk(approvalId, { raw: true });
+    if (!approval) {
+      return res.status(404).json({ message: "Approval not found" });
+    }
+
+    const storeItem = await models.StockTransfer.findAll({
+      where: { approvalId },
+      raw: true,
+      order: [['createdAt', 'ASC']]
+    });
+
+    const storeItemMap = {}, storeItems = [];
+
+    for (const element of storeItem) {
+      element.quantity = Math.abs(element.quantity);
+      if (!storeItemMap[element?.itemId]) {
+        storeItems.push(element);
+        if (approval.documentType != 'Finished Good')
+          storeItemMap[element.itemId] = element;
+      } else {
+        storeItemMap[element.itemId].quantity += element.qunatity;
+      }
+    }
+
+    const itemIds = [...new Set(storeItems.map(store => store.itemId))];
+    const storeIds = [...new Set(storeItems.flatMap(s => [s.fromStoreId, s.toStoreId]))];
+
+    const [items, uoms, categories, stores, users] = await Promise.all([
+      models.Items.findAll({
+        where: { id: { [Op.in]: itemIds } },
+        raw: true
+      }),
+      models.UOM.findAll({
+        where: {
+          [Op.or]: [
+            { companyId, status: 1 },
+            { companyId: null, status: 0 }
+          ]
+        },
+        raw: true
+      }),
+      models.Categories.findAll({
+        where: { companyId },
+        raw: true
+      }),
+      models.Store.findAll({
+        where: { id: { [Op.in]: storeIds } },
+        raw: true
+      }),
+      models.Users.findAll({
+        where: { id: { [Op.in]: [approval.requestedBy, approval.approvedBy] } },
+        raw: true
+      })
+    ]);
+
+    const itemsMap = Object.fromEntries(items.map(i => [i.id, i]));
+    const uomMap = Object.fromEntries(uoms.map(u => [u.id, u.code]));
+    const categoryMap = Object.fromEntries(categories.map(c => [c.id, c.name]));
+    const storeMap = Object.fromEntries(stores.map(s => [s.id, s.name]));
+    const userMap = Object.fromEntries(users.map(u => [u.id, u.username]));
+
+    return res.status(200).json({
+      data: {
+        ...approval,
+        requestedBy: userMap[approval?.requestedBy] || null,
+        approvedBy: userMap[approval?.approvedBy] || null,
+        items: storeItems.map((data) => ({
+          ...data,
+          item: {
+            ...itemsMap?.[data.itemId],
+            category: categoryMap[itemsMap?.[data.itemId]?.category] || null,
+            subCategory: categoryMap[itemsMap?.[data.itemId]?.subCategory] || null,
+            microCategory: categoryMap[itemsMap?.[data.itemId]?.microCategory] || null,
+            metricsUnit: uomMap[itemsMap?.[data.itemId]?.metricsUnit] || null,
+          },
+          fromStore: storeMap?.[data?.fromStoreId] || null,
+          toStore: storeMap?.[data?.toStoreId] || null,
+          quantity: data.quantity ?? data.quantityForApproval
+        }))
+      }
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Something went wrong", error });
+  }
+}
+
+async function acceptRejectApproval(req, res) {
+  try {
+    const { approvalId, approvedBy, isApproved, items } = req.body;
+
+    const itemsMap = items.reduce((acc, curr) => {
+      acc[Number(curr.itemId)] = curr.quantity || 0;
+      return acc;
+    }, {});
+
+    const approval = await models.InventoryApproval.findByPk(approvalId);
+
+    await models.InventoryApproval.update(
+      {
+        approvalStatus: isApproved ? 'Accepted' : 'Rejected',
+        approvedBy,
+        approvalDate: new Date(),
+      },
+      {
+        where: { id: approvalId },
+      }
+    );
+    if (isApproved) {
+      if (approval?.documentType == 'Delivery Challan' || approval?.documentType == 'Invoice') {
+        const stockTransfers = await models.StockTransfer.findAll({
+          where: {
+            approvalId
+          }
+        });
+        const storeId = await models.Store.findOne({
+          where: {
+            id: stockTransfers[0]?.fromStoreId
+          }
+        });
+        for (const element of stockTransfers) {
+          let remainingQuantity = itemsMap[element.itemId];
+          const existingStock = await models.StoreItems.findAll({
+            where: { storeId: storeId.id, itemId: element.itemId },
+            order: [['createdAt', 'ASC']],
+          });
+          for (const stock of existingStock) {
+            if (remainingQuantity <= 0) break;
+            if (stock.quantity <= 0) continue;
+            const deductQty = Math.min(stock.quantity, remainingQuantity);
+            remainingQuantity -= deductQty;
+
+            await models.StoreItems.update(
+              { quantity: (stock.quantity - deductQty) },
+              { where: { id: stock.id } }
+            );
+            await models.StockTransfer.create({
+              transferNumber: element.transferNumber,
+              fromStoreId: storeId.id || null,
+              itemId: element.itemId,
+              quantity: deductQty * -1,
+              toStoreId: null,
+              transferDate: new Date().toISOString(),
+              transferredBy: element.transferredBy,
+              comment: '',
+              companyId: element.companyId,
+              price: element.price,
+              documentNumber: element.documentNumber,
+              documentType: element.documentType,
+              actualPrice: stock.price,
+              approvalId: approval.id,
+              quantityForApproval: element.quantityForApproval
+            });
+          }
+        }
+        await models.StockTransfer.destroy({
+          where: {
+            id: {
+              [Op.in]: stockTransfers.map(elem => elem.id)
+            }
+          }
+        });
+        return res.status(200).json({ message: 'Document Status Updated.' });
+      }
+
+      if (approval?.documentType == 'Finished Good') {
+        const storeItems = await models.StoreItems.findAll({
+          where: {
+            approvalId: approval.id
+          }
+        });
+        for (const element of storeItems) {
+          if (element.isRejected) {
+            await element.update({ qunatity: (items[1]?.quantity || 0) });
+          }
+          else {
+            await element.update({ quantity: items[0]?.quantity || 0 });
+          }
+        }
+        const stockTransfer = await models.StockTransfer.findAll({
+          where: {
+            approvalId: approval.id
+          }
+        });
+        for (const element of stockTransfer) {
+          if (element.isRejected) {
+            await element.update({ qunatity: (items[1]?.quantity || 0) });
+          }
+          else {
+            await element.update({ quantity: items[0]?.quantity || 0 });
+          }
+        }
+        return res.status(200).json({ message: 'Document Status Updated.' });
+      }
+
+      if (approval?.documentType == 'Raw Material') {
+        const itemsWithId = await models.Items.findAll({
+          where: {
+            id: {
+              [Op.in]: items.map(item => item.itemId)
+            }
+          },
+          raw: true
+        });
+        const itemIdMap = itemsWithId?.reduce((acc, curr) => {
+          acc[curr.id] = curr.itemId;
+          return acc;
+        }, {});
+        const stockTransfers = await models.StockTransfer.findAll({
+          where: {
+            approvalId
+          }
+        });
+        for (const element of stockTransfers) {
+          const storeId = await models.Store.findOne({
+            where: {
+              id: element?.fromStoreId
+            }
+          });
+          let remainingQuantity = itemsMap[element.itemId];
+          let price = 0;
+          const existingStock = await models.StoreItems.findAll({
+            where: { storeId: storeId.id, itemId: element.itemId, isRejected: element.isRejected || false },
+            order: [['createdAt', 'ASC']],
+          });
+          for (const stock of existingStock) {
+            if (remainingQuantity <= 0) break;
+            if (stock.quantity <= 0) continue;
+            const deductQty = Math.min(stock.quantity, remainingQuantity);
+            remainingQuantity -= deductQty;
+
+            await models.StoreItems.update(
+              { quantity: (stock.quantity - deductQty) },
+              { where: { id: stock.id } }
+            );
+            await models.StockTransfer.create({
+              transferNumber: element.transferNumber,
+              fromStoreId: storeId.id || null,
+              itemId: element.itemId,
+              quantity: deductQty * -1,
+              toStoreId: null,
+              transferDate: new Date().toISOString(),
+              transferredBy: element.transferredBy,
+              comment: '',
+              companyId: element.companyId,
+              price: stock.price,
+              productionId: element.productionId,
+              productionNavigationId: element.id,
+              isRejected: element.isRejected,
+              actualPrice: stock.price,
+              approvalId: approval.id,
+              quantityForApproval: element.quantityForApproval
+            });
+            price += stock.price * deductQty;
+          }
+
+          const rawMaterial = await models.ProductionRawMaterials.findOne({
+            where: {
+              productionId: approval.documentNumber,
+              itemId: itemIdMap[element.itemId]
+            }
+          });
+          await rawMaterial.update(
+            {
+              issuedQuantity: Number((rawMaterial.issuedQuantity || 0)) + Number(itemsMap[element.itemId] || 0),
+              currentAverage: (rawMaterial.currentAverage || 0) + price
+            }
+          );
+        }
+        await models.StockTransfer.destroy({
+          where: {
+            id: {
+              [Op.in]: stockTransfers.map(elem => elem.id)
+            }
+          }
+        });
+        return res.status(200).json({ message: 'Document Status Updated.' });
+      }
+
+      if (approval?.documentType == 'Scrap Material') {
+        const productionScrapMaterials = await models.ProductionScrapMaterials.findAll({
+          where: {
+            productionId: approval.documentNumber
+          }
+        });
+        const itemsWithId = await models.Items.findAll({
+          where: {
+            id: {
+              [Op.in]: items.map(item => item.itemId)
+            }
+          },
+          raw: true
+        });
+
+        const itemIdMap = itemsWithId?.reduce((acc, curr) => {
+          acc[curr.itemId] = curr.id;
+          return acc;
+        }, {});
+        for (const element of productionScrapMaterials) {
+          if (itemsMap[itemIdMap[element.itemId]]) {
+            await element.update({ producedQuantity: (element?.producedQuantity || 0) + (Number(itemsMap[itemIdMap[element.itemId]]) || 0) });
+          }
+        }
+      }
+
+      if (approval?.documentType == 'Stock Update' || approval?.documentType == 'Physical Stock Reconcilation') {
+        const stockTransfers = await models.StockTransfer.findAll({
+          where: {
+            approvalId,
+            quantityForApproval: {
+              [Op.lt]: 0
+            }
+          }
+        });
+        for (const element of stockTransfers) {
+          let remainingQuantity = itemsMap[element.itemId];
+          const existingStock = await models.StoreItems.findAll({
+            where: { storeId: element.fromStoreId, itemId: element.itemId, isRejected: element.isRejected || false },
+            order: [['createdAt', 'ASC']],
+          });
+          for (const stock of existingStock) {
+            if (remainingQuantity <= 0) break;
+            if (stock.quantity <= 0) continue;
+            const deductQty = Math.min(stock.quantity, remainingQuantity);
+            remainingQuantity -= deductQty;
+
+            await models.StoreItems.update(
+              { quantity: (stock.quantity - deductQty) },
+              { where: { id: stock.id } }
+            );
+            await models.StockTransfer.create({
+              transferNumber: element.transferNumber,
+              fromStoreId: element.fromStoreId || null,
+              itemId: element.itemId,
+              quantity: deductQty * -1,
+              toStoreId: null,
+              transferDate: new Date().toISOString(),
+              transferredBy: element.transferredBy,
+              comment: '',
+              companyId: element.companyId,
+              price: stock.price,
+              isRejected: element.isRejected,
+              actualPrice: stock.price,
+              approvalId: approval.id,
+              quantityForApproval: element.quantityForApproval
+            });
+          }
+        }
+
+        await models.StockTransfer.destroy({
+          where: {
+            id: {
+              [Op.in]: stockTransfers.map(data => data.id)
+            }
+          }
+        });
+      }
+      const storeItems = await models.StoreItems.findAll({
+        where: {
+          approvalId
+        }
+      });
+
+      for (const element of storeItems) {
+        await element.update({ quantity: itemsMap[element.itemId] });
+      }
+
+      const stockTransfer = await models.StockTransfer.findAll({
+        where: {
+          approvalId,
+          quantityForApproval: {
+            [Op.gt]: 0
+          }
+        }
+      });
+
+      for (const element of stockTransfer) {
+        await element.update({ quantity: itemsMap[element.itemId] });
+      }
+    }
+
+    res.status(200).json({ message: 'Document Status Updated.' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Something went wrong', error });
+  }
+}
+
+
+module.exports = {
+  getApprovals,
+  getApprovalById,
+  acceptRejectApproval
+};
