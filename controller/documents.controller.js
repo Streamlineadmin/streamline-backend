@@ -1606,7 +1606,7 @@ async function createDocument(req, res) {
 async function getDocuments(req, res) {
   try {
 
-    const { companyId, currentPage, labels, pageSize, documentType = '', search = '', dealStatus, docTypeFilter, dateRange } = req.body;
+    const { companyId, counts, createdBy, approvedBy, requestedBy, currentPage, labels, pageSize, documentType = '', search = '', dealStatus, docTypeFilter, dateRange } = req.body;
 
     const offset = ((currentPage || 1) - 1) * (pageSize || 10);
     let documentstype = [];
@@ -1668,6 +1668,8 @@ async function getDocuments(req, res) {
               [Op.in]: documentstype
             }
           }),
+          ...(requestedBy ? { createdBy: requestedBy } : {}),
+          ...(approvedBy ? { approvedBy: approvedBy } : {}),
           ...(Array.isArray(dealStatus) && dealStatus.length > 0
             ? {
               status: {
@@ -1679,11 +1681,40 @@ async function getDocuments(req, res) {
                 [Op.not]: 2,
               },
             }),
-          ...(docTypeFilter?.length > 0 && {
+          ...(!dealStatus && counts
+            ? {
+              status: {
+                [Op.notIn]: [29, 30],
+              },
+            }
+            : {
+            }),
+          ...(docTypeFilter?.length > 0 ? !createdBy ? {
             documentType: {
               [Op.in]: docTypeFilter,
             },
-          }),
+          } : {
+            [Op.or]: [
+              {
+                documentType: {
+                  [Op.in]: docTypeFilter
+                }
+              },
+              {
+                createdBy: Number(createdBy),
+                documentType: {
+                  [Op.in]: [
+                    'Sales Quotation',
+                    'Sales Order',
+                    'Invoice',
+                    'Purchase Request',
+                    'Purchase Order',
+                    'Purchase Invoice',
+                  ]
+                }
+              }
+            ],
+          } : {}),
           ...(search && {
             [Op.or]: [
               {
@@ -1730,7 +1761,7 @@ async function getDocuments(req, res) {
       });
     }
 
-    if (!documents || (documents?.rows?.length === 0 || documents?.length === 0)) {
+    if (!documents || ((documents?.rows?.length === 0 || documents?.length === 0) && !counts)) {
       return res.status(200).json({
         total: 0,
         currentPage,
@@ -1789,14 +1820,111 @@ async function getDocuments(req, res) {
     if ((!currentPage || !pageSize) || (pageSize == 5000)) {
       return res.status(200).json(formattedResult)
     }
+
+    if (counts) {
+      const [pending, reject, approved] = await Promise.all([
+        models.Documents.count({
+          where: {
+            status: 29,
+            companyId: Number(companyId),
+            [Op.or]: [
+              {
+                documentType: {
+                  [Op.in]: docTypeFilter
+                }
+              },
+              {
+                createdBy: Number(createdBy),
+                documentType: {
+                  [Op.in]: [
+                    'Sales Quotation',
+                    'Sales Order',
+                    'Invoice',
+                    'Purchase Request',
+                    'Purchase Order',
+                    'Purchase Invoice',
+                  ]
+                }
+              }
+            ]
+          }
+        }),
+        models.Documents.count({
+          where: {
+            status: 30,
+            companyId: Number(companyId),
+            [Op.or]: [
+              {
+                documentType: {
+                  [Op.in]: docTypeFilter
+                }
+              },
+              {
+                createdBy: Number(createdBy),
+                documentType: {
+                  [Op.in]: [
+                    'Sales Quotation',
+                    'Sales Order',
+                    'Invoice',
+                    'Purchase Request',
+                    'Purchase Order',
+                    'Purchase Invoice',
+                  ]
+                }
+              }
+            ]
+          }
+        }),
+        models.Documents.count({
+          where: {
+            companyId: Number(companyId),
+            status: {
+              [Op.notIn]: [2, 29, 30]
+            },
+            [Op.or]: [
+              {
+                documentType: {
+                  [Op.in]: docTypeFilter
+                }
+              },
+              {
+                createdBy: Number(createdBy),
+                documentType: {
+                  [Op.in]: [
+                    'Sales Quotation',
+                    'Sales Order',
+                    'Invoice',
+                    'Purchase Request',
+                    'Purchase Order',
+                    'Purchase Invoice',
+                  ]
+                }
+              }
+            ]
+
+          }
+        })
+      ]);
+      return res.status(200).json({
+        total: documents.count,
+        currentPage,
+        pageSize,
+        data: formattedResult,
+        approveCount: approved,
+        rejectedCount: reject,
+        pendingCount: pending
+      });
+    }
+
     res.status(200).json({
       total: documents.count,
       currentPage,
       pageSize,
-      data: formattedResult,
+      data: formattedResult
     });
 
   } catch (error) {
+    console.log(error);
     return res.status(500).json({ message: "Something went wrong, please try again later!" });
   }
 }
