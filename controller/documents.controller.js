@@ -904,8 +904,13 @@ async function createDocument(req, res) {
         },
         raw: true
       });
+      const approvalCount = await models.InventoryApproval.count({
+        where: {
+          companyId
+        }
+      });
       const approval = await models.InventoryApproval.create({
-        approvalId: generateProductionId(),
+        approvalId: `INA${approvalCount + 1}`,
         documentType,
         documentNumber,
         approvalStatus: settings?.['purchaseDocument'] == 'manual' ? 'Pending' : 'Auto Approved',
@@ -1011,8 +1016,13 @@ async function createDocument(req, res) {
           },
           raw: true
         });
+        const approvalCount = await models.InventoryApproval.count({
+          where: {
+            companyId
+          }
+        });
         const approval = await models.InventoryApproval.create({
-          approvalId: generateProductionId(),
+          approvalId: `INA${approvalCount + 1}`,
           documentType,
           documentNumber,
           approvalStatus: settings?.['salesDocument'] == 'manual' ? 'Pending' : 'Auto Approved',
@@ -1291,8 +1301,13 @@ async function createDocument(req, res) {
           },
           raw: true
         });
+        const approvalCount = await models.InventoryApproval.count({
+          where: {
+            companyId
+          }
+        });
         const approval = await models.InventoryApproval.create({
-          approvalId: generateProductionId(),
+          approvalId: `INA${approvalCount + 1}`,
           documentType,
           documentNumber,
           approvalStatus: settings?.['serviceDocument'] == 'manual' ? 'Pending' : 'Auto Approved',

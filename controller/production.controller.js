@@ -3,6 +3,7 @@ const { documentTypes } = require('../helpers/document-type');
 const { generateProductionId, generateTransferNumber } = require('../helpers/transfer-number');
 const models = require('../models');
 const { buildMultiLevelProductionTree, isValidJSON } = require('../helpers/add-level');
+const e = require('express');
 
 async function startProduction(req, res) {
     try {
@@ -774,7 +775,20 @@ async function bulkGetProductionsByIds(req, res) {
 
 async function issueRawMaterial(req, res) {
     try {
-        const { rawMaterialData, companyId, userId } = req.body;
+        const { rawMaterialData, companyId, userId, by } = req.body;
+        const uoms = await models.UOM.findAll({
+            where: {
+                [Op.or]: [
+                    { companyId: companyId, status: 1 },
+                    { companyId: null, status: 0 }
+                ]
+            },
+            raw: true
+        });
+        const uomMap = uoms.reduce((acc, curr) => {
+            acc[curr.id] = curr.code;
+            return acc;
+        }, {});
         if (!rawMaterialData || rawMaterialData.length === 0) {
             return res.status(400).json({ message: 'No raw material data provided.' });
         }
@@ -785,8 +799,13 @@ async function issueRawMaterial(req, res) {
             return res.status(404).json({ message: 'Production not found.' });
         }
         const settings = isValidJSON(production?.isManual) || {}
+        const approvalCount = await models.InventoryApproval.count({
+            where: {
+                companyId
+            }
+        });
         const approval = await models.InventoryApproval.create({
-            approvalId: generateProductionId(),
+            approvalId: `INA${approvalCount + 1}`,
             documentType: 'Raw Material',
             documentNumber: production.id,
             approvalStatus: settings?.['productionRawMaterial'] == 'manual' ? 'Pending' : 'Auto Approved',
@@ -854,6 +873,11 @@ async function issueRawMaterial(req, res) {
                         where: { id: element.id }
                     }
                 );
+                await models.ProductionHistory.create({
+                    productionId: element?.productionId,
+                    actionType: 'Raw Material Issued',
+                    summary: `${element?.itemName} - ${element?.issuedToday} ${uomMap[element.uom]} issued by ${by} from ${element.store?.replaceAll("-fromrejectstore", "")} store.`
+                });
             }
             else {
                 stockTransferPayloads.push({
@@ -872,6 +896,11 @@ async function issueRawMaterial(req, res) {
                     approvalId: approval.id,
                     quantityForApproval: element.issuedToday * (element?.conversionFactor || 1)
                 });
+                await models.ProductionHistory.create({
+                    productionId: element?.productionId,
+                    actionType: 'Raw Material Issue Request.',
+                    summary: `${element?.itemName} - ${element?.issuedToday} ${uomMap[element.uom]} requested by ${by}.`
+                });
             }
         }
         if (stockTransferPayloads.length > 0) {
@@ -889,7 +918,7 @@ async function issueRawMaterial(req, res) {
 
 async function updateProcess(req, res) {
     try {
-        const { processData } = req.body;
+        const { processData, by } = req.body;
         for (const element of processData) {
             if ((element.currentTime && element.amount)) {
                 const process = await models.ProductionSalesProcess.findOne({ where: { id: element.id } });
@@ -934,6 +963,11 @@ async function updateProcess(req, res) {
                         id: element.id,
                     }
                 });
+                await models.ProductionHistory.create({
+                    productionId: element?.productionId,
+                    actionType: 'Process Logged',
+                    summary: `${element.todayProcessQuantity} Process Logged under ${element.processName} by ${by}. Total time recorded ${element?.currentTime || element?.currentPlannedTime} at ₹${element.amount || element?.currentAverage} /hour cost.`
+                });
             }
         }
         return res.status(200).json({ message: 'Process Updated' });
@@ -948,7 +982,7 @@ async function updateProcess(req, res) {
 
 async function updateCost(req, res) {
     try {
-        const { additionalChargesData } = req.body;
+        const { additionalChargesData, by } = req.body;
         for (const element of additionalChargesData) {
             const charges = await models.ProductionAdditionalCharges.findOne({
                 where: {
@@ -959,6 +993,12 @@ async function updateCost(req, res) {
                 where: {
                     id: element.id
                 }
+            });
+
+            await models.ProductionHistory.create({
+                productionId: element.productionId,
+                actionType: 'Additional Charges Added',
+                summary: `${element?.chargesName} charge : ₹${element?.todayCost} added by ${by}`
             });
         }
         return res.status(200).json({ message: 'Process Updated' });
@@ -973,15 +1013,33 @@ async function updateCost(req, res) {
 
 async function updateScrapLogs(req, res) {
     try {
-        const { scrapLogs, companyId, userId } = req.body;
+        const { scrapLogs, companyId, userId, by } = req.body;
+        const uoms = await models.UOM.findAll({
+            where: {
+                [Op.or]: [
+                    { companyId: companyId, status: 1 },
+                    { companyId: null, status: 0 }
+                ]
+            },
+            raw: true
+        });
+        const uomMap = uoms.reduce((acc, curr) => {
+            acc[curr.id] = curr.code;
+            return acc;
+        }, {});
         const production = await models.Production.findOne({
             where: {
                 id: scrapLogs[0]?.productionId
             }
         });
         const settings = isValidJSON(production?.isManual) || {}
+        const approvalCount = await models.InventoryApproval.count({
+            where: {
+                companyId
+            }
+        });
         const approval = await models.InventoryApproval.create({
-            approvalId: generateProductionId(),
+            approvalId: `INA${approvalCount + 1}`,
             documentType: 'Scrap Material',
             documentNumber: production.id,
             approvalStatus: settings?.['productionScrapMaterial'] == 'manual' ? 'Pending' : 'Auto Approved',
@@ -997,6 +1055,12 @@ async function updateScrapLogs(req, res) {
                     where: {
                         id: element.id
                     }
+                });
+            settings?.['productionScrapMaterial'] != 'manual' &&
+                await models.ProductionHistory.create({
+                    productionId: element.productionId,
+                    actionType: 'Scrap Material Produced.',
+                    summary: `${element.itemName} - ${element.value} ${uomMap[element.uom]} added in ${element.store?.replaceAll("-fromrejectstore", "")} store by ${by}.`
                 });
             const store = await models.Store.findOne({
                 where: {
@@ -1067,8 +1131,23 @@ async function saveFinishedGoods(req, res) {
             rejectQty,
             companyId,
             batchData,
-            userId
+            userId,
+            by
         } = req.body;
+
+        const uoms = await models.UOM.findAll({
+            where: {
+                [Op.or]: [
+                    { companyId: companyId, status: 1 },
+                    { companyId: null, status: 0 }
+                ]
+            },
+            raw: true
+        });
+        const uomMap = uoms.reduce((acc, curr) => {
+            acc[curr.id] = curr.code;
+            return acc;
+        }, {});
 
         const production = await models.Production.findOne({
             where: {
@@ -1077,8 +1156,13 @@ async function saveFinishedGoods(req, res) {
         });
 
         const settings = isValidJSON(production?.isManual) || {}
+        const approvalCount = await models.InventoryApproval.count({
+            where: {
+                companyId
+            }
+        });
         const approval = await models.InventoryApproval.create({
-            approvalId: generateProductionId(),
+            approvalId: `INA${approvalCount + 1}`,
             documentType: 'Finished Good',
             documentNumber: production.id,
             approvalStatus: settings?.['productionFinishedGood'] == 'manual' ? 'Pending' : 'Auto Approved',
@@ -1155,7 +1239,19 @@ async function saveFinishedGoods(req, res) {
             quantityForApproval: passedQty * (finishedGoods[0]?.conversionFactor || 1)
         }, { transaction });
 
+        await models.ProductionHistory.create({
+            productionId: production?.id,
+            actionType: 'Finished Good Tested.',
+            summary: `${finishedGoods[0]?.itemName} - ${passedQty} ${uomMap[finishedGoods[0]?.uom]} passed by ${by}.`
+        });
+
+
         if (rejectQty) {
+            await models.ProductionHistory.create({
+                productionId: production?.id,
+                actionType: 'Finished Good Tested.',
+                summary: `${finishedGoods[0]?.itemName} - ${rejectQty} ${uomMap[finishedGoods[0]?.uom]} rejected by ${by}.`
+            });
             await models.StoreItems.create({
                 storeId: rejectStores.id,
                 itemId: item.id,
@@ -1289,7 +1385,7 @@ async function saveFinishedGoods(req, res) {
 }
 
 async function updateProductionStatus(req, res) {
-    const { productionId, status, userId } = req.body;
+    const { productionId, status, userId, from, to, by } = req.body;
     try {
         await models.Production.update({
             status, ...(status == 2 ? { productionStartDate: new Date().toISOString() } : {}),
@@ -1298,6 +1394,11 @@ async function updateProductionStatus(req, res) {
             where: {
                 id: productionId
             }
+        });
+        await models.ProductionHistory.create({
+            productionId,
+            actionType: 'Production Stage changed',
+            summary: `Stage change from ${from} to ${to} by ${by}`
         });
         return res.status(200).json({ message: 'Production status Updated.' });
 
@@ -1310,8 +1411,21 @@ async function updateProductionStatus(req, res) {
 }
 
 async function saveProduction(req, res) {
-    const { finishedGoods } = req.body;
+    const { finishedGoods, by, companyId } = req.body;
     try {
+        const uoms = await models.UOM.findAll({
+            where: {
+                [Op.or]: [
+                    { companyId: companyId, status: 1 },
+                    { companyId: null, status: 0 }
+                ]
+            },
+            raw: true
+        });
+        const uomMap = uoms.reduce((acc, curr) => {
+            acc[curr.id] = curr.code;
+            return acc;
+        }, {});
         for (const element of finishedGoods) {
             if (!element.todaysProduction) continue;
             const finishedGood = await models.ProductionFinishedGoods.findOne({
@@ -1328,6 +1442,12 @@ async function saveProduction(req, res) {
                 where: {
                     id: element.id
                 }
+            });
+
+            await models.ProductionHistory.create({
+                productionId: element?.productionId,
+                actionType: 'Finished Goods Produced.',
+                summary: `${element?.itemName} - ${element?.todaysProduction} ${uomMap[element.uom]} produced by ${by}.`
             });
 
         }
@@ -1831,9 +1951,22 @@ async function productionBasedMaterialPlanning(req, res) {
 
 async function updateTable(req, res) {
     try {
-        const { data, updateTableType } = req.body;
+        const { data, updateTableType, by, companyId } = req.body;
 
-        const insertData = [];
+        const insertData = [], logs = [];
+        const uoms = await models.UOM.findAll({
+            where: {
+                [Op.or]: [
+                    { companyId: req.body.companyId, status: 1 },
+                    { companyId: null, status: 0 }
+                ]
+            }
+        });
+
+        const uomMap = uoms.reduce((acc, curr) => {
+            acc[curr.id] = curr.name;
+            return acc;
+        })
 
         if (!Array.isArray(data) || data.length === 0) {
             return res.status(400).json({ message: 'Invalid or empty data array.' });
@@ -1852,8 +1985,14 @@ async function updateTable(req, res) {
                         status: 1,
                         addDuringProduction: true
                     });
+                    logs.push({
+                        productionId: element.productionId,
+                        actionType: `New Raw Material added to the ${element?.store || 'unknown'} Store`,
+                        summary: `${element.itemName} - ${element.plannedQty} ${uomMap?.[element.uom]}. Added by ${by}`
+                    });
                 });
                 await models.ProductionRawMaterials.bulkCreate(insertData);
+                await models.ProductionHistory.bulkCreate(logs);
                 break;
 
             case 'Left Over Item':
@@ -1867,8 +2006,14 @@ async function updateTable(req, res) {
                         quantity: element.plannedQty,
                         status: 1
                     });
+                    logs.push({
+                        productionId: element.productionId,
+                        actionType: `New Scrap Material added to the ${element?.store || 'unknown'} Store`,
+                        summary: `${element.itemName} - ${element.plannedQty} ${uomMap?.[element.uom]}. Added by ${by}`
+                    });
                 });
                 await models.ProductionScrapMaterials.bulkCreate(insertData);
+                await models.ProductionHistory.bulkCreate(logs);
                 break;
 
             case 'Additional Charges':
@@ -1879,8 +2024,14 @@ async function updateTable(req, res) {
                         amount: element.amount,
                         status: 1
                     });
+                    logs.push({
+                        productionId: element.productionId,
+                        actionType: `New Additional Charegs Added.`,
+                        summary: `${element.chargesName} - ${element.amount}. Added by ${by}`
+                    });
                 });
                 await models.ProductionAdditionalCharges.bulkCreate(insertData);
+                await models.ProductionHistory.bulkCreate(logs);
                 break;
 
             case 'Process':
@@ -1896,8 +2047,14 @@ async function updateTable(req, res) {
                         processName: element.processName,
                         status: 1
                     });
+                    logs.push({
+                        productionId: element.productionId,
+                        actionType: `New Process Added.`,
+                        summary: `${element.processName} - ${element.plannedTime}. Added by ${by}.`
+                    });
                 });
                 await models.ProductionSalesProcess.bulkCreate(insertData);
+                await models.ProductionHistory.bulkCreate(logs);
                 break;
 
             default:
@@ -1917,12 +2074,17 @@ async function updateTable(req, res) {
 
 async function removeRows(req, res) {
     try {
-        const { id, type } = req.body;
+        const { id, type, by, name, productionId } = req.body;
         if (type == 'rawMaterial') {
             await models.ProductionRawMaterials.destroy({
                 where: {
                     id
                 }
+            });
+            await models.ProductionHistory.create({
+                productionId,
+                actionType: `Raw Material removed.`,
+                summary: `Item Name: ${name}, removed By ${by}.`
             });
         } else if (type == 'process') {
             await models.ProductionSalesProcess.destroy({
@@ -1930,11 +2092,21 @@ async function removeRows(req, res) {
                     id
                 }
             });
+            await models.ProductionHistory.create({
+                productionId,
+                actionType: `Process removed.`,
+                summary: `Process Name: ${name}, removed By ${by}.`
+            });
         } else if (type == 'leftOver') {
             await models.ProductionScrapMaterials.destroy({
                 where: {
                     id
                 }
+            });
+            await models.ProductionHistory.create({
+                productionId,
+                actionType: `Scrap Material removed.`,
+                summary: `Item Name: ${name}, removed By ${by}.`
             });
         }
         else if (type == 'additionalCharges') {
@@ -1942,6 +2114,11 @@ async function removeRows(req, res) {
                 where: {
                     id
                 }
+            });
+            await models.ProductionHistory.create({
+                productionId,
+                actionType: `Additional Charges removed.`,
+                summary: `Charges Name: ${name}, removed By ${by}.`
             });
         }
         res.status(200).json({
@@ -1959,15 +2136,139 @@ async function removeRows(req, res) {
 async function viewProductionHistory(req, res) {
     try {
         const { productionId } = req.body;
-        setTimeout(() => {
-            res.status(200).json({
-                data: {}
-            });
-        }, 1000);
+        const data = await models.ProductionHistory.findAll({
+            where: {
+                productionId
+            },
+            raw: true,
+            order: [['createdAt', 'DESC']]
+        });
+        res.status(200).json({
+            data: data
+        });
     } catch (error) {
         console.error("Update Table Error:", error);
         res.status(500).json({
             message: "Failed to fetch history",
+            error: error.message
+        });
+    }
+}
+
+async function returnRawMaterial(req, res) {
+    try {
+        const { data, navigationId, productionId, by, companyId, userId } = req.body;
+        const uoms = await models.UOM.findAll({
+            where: {
+                [Op.or]: [
+                    { companyId: companyId, status: 1 },
+                    { companyId: null, status: 0 }
+                ]
+            },
+            raw: true
+        });
+        const uomMap = uoms.reduce((acc, curr) => {
+            acc[curr.id] = curr.code;
+            return acc;
+        }, {});
+        const items = await models.Items.findAll({
+            where: {
+                itemId: {
+                    [Op.in]: data.map(row => row.itemId)
+                }
+            },
+            raw: true
+        });
+        const itemMap = items.reduce((acc, curr) => {
+            acc[curr.itemId] = curr;
+            return acc;
+        }, {});
+        const production = await models.Production.findByPk(navigationId);
+        const settings = isValidJSON(production?.isManual) || {}
+        const approvalCount = await models.InventoryApproval.count({
+            where: {
+                companyId
+            }
+        });
+        const approval = await models.InventoryApproval.create({
+            approvalId: `INA${approvalCount + 1}`,
+            documentType: 'Raw Material Return',
+            documentNumber: production.id,
+            approvalStatus: settings?.['productionRawMaterial'] == 'manual' ? 'Pending' : 'Auto Approved',
+            requestedBy: userId,
+            companyId: companyId,
+            status: 1,
+            approvedBy: null
+        });
+
+        for (const element of data) {
+            if (!element.returnQuantity || element.returnQuantity == 0 || isNaN(element.returnQuantity))
+                return;
+            let remainingQuantity = Number(element.returnQuantity) * element.conversionFactor;
+            const stockTransfer = await models.StockTransfer.findAll({
+                where: {
+                    itemId: itemMap[element.itemId]?.id,
+                    productionId,
+                    quantity: {
+                        [Op.lt]: 0
+                    }
+                },
+                order: [['createdAt', 'ASC']]
+            });
+
+            for (const element of stockTransfer) {
+                if (remainingQuantity <= 0) break;
+                const deductQty = Math.min(element.quantity * -1, remainingQuantity);
+                remainingQuantity -= deductQty;
+                await models.StoreItems.create({
+                    storeId: element.fromStoreId,
+                    itemId: element.itemId,
+                    quantity: settings?.['productionScrapMaterial'] == 'manual' ? 0 : deductQty,
+                    status: 1,
+                    addedBy: Number(userId),
+                    price: element.price,
+                    isRejected: element?.isReject || false,
+                    approvalId: approval.id,
+                    quantityForApproval: deductQty
+                });
+
+                await models.StockTransfer.create({
+                    transferNumber: generateTransferNumber(),
+                    fromStoreId: null,
+                    itemId: element.itemId,
+                    quantity: settings?.['productionScrapMaterial'] == 'manual' ? null : deductQty,
+                    toStoreId: element.fromStoreId,
+                    transferDate: new Date().toISOString(),
+                    transferredBy: Number(userId),
+                    companyId: Number(companyId),
+                    price: element.price,
+                    productionId: production.productionId,
+                    productionNavigationId: production.id,
+                    isRejected: element?.isReject || false,
+                    approvalId: approval.id,
+                    quantityForApproval: deductQty
+                });
+
+            }
+            await models.ProductionHistory.create({
+                productionId: production?.id,
+                actionType: settings?.['productionRawMaterial'] == 'manual' ? 'Raw material return request.' : 'Raw material returned.',
+                summary: `${element?.itemName} - ${element?.returnQuantity} ${uomMap[element.uom]}, ${settings?.['productionRawMaterial'] == 'manual' ? 'requested' : 'returned'} by ${by}`
+            });
+            if (settings?.['productionRawMaterial'] != 'manual') {
+                const rawmaterial = await models.ProductionRawMaterials.findByPk(element.id);
+                await rawmaterial.update({ issuedQuantity: rawmaterial.issuedQuantity - element?.returnQuantity });
+            }
+
+        }
+
+
+        res.status(200).json({ message: 'Raw Material Returned.' });
+
+    } catch (error) {
+        console.error("Update Table Error:", error);
+        res.status(500).json({
+            message: "Failed to return.",
             error: error.message
         });
     }
@@ -1991,5 +2292,6 @@ module.exports = {
     productionBasedMaterialPlanning: productionBasedMaterialPlanning,
     updateTable: updateTable,
     removeRows: removeRows,
-    viewProductionHistory: viewProductionHistory
+    viewProductionHistory: viewProductionHistory,
+    returnRawMaterial: returnRawMaterial
 }

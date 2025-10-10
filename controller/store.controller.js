@@ -324,8 +324,13 @@ async function stockTransfer(req, res) {
       },
       raw: true
     });
+    const approvalCount = await models.InventoryApproval.count({
+      where: {
+        companyId
+      }
+    });
     const approval = await models.InventoryApproval.create({
-      approvalId: generateProductionId(),
+      approvalId: `INA${approvalCount + 1}`,
       documentType: useFIFO ? 'Stock Update' : 'Stock Transfer',
       documentNumber: '',
       approvalStatus: settings?.['stockUpdate'] == 'manual' ? 'Pending' : 'Auto Approved',
