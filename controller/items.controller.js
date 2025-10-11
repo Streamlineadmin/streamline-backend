@@ -400,87 +400,87 @@ async function deleteItems(req, res) {
 
 async function getItems(req, res) {
     const { companyId } = req.body;
-  
+
     try {
-      // Step 1: Retrieve all items for the given company
-      const items = await models.Items.findAll({
-        where: { companyId },
-        raw: true,
-      });
-  
-      if (!items || items.length === 0) {
-        // Explicitly send clean JSON response
-        res.setHeader('Content-Type', 'application/json');
-        return res.status(200).send('[]');
-      }
-  
-      // Step 2: Retrieve store IDs and quantities
-      const itemIds = items.map((item) => item.id);
-  
-      const storeItems = await models.StoreItems.findAll({
-        where: { itemId: itemIds },
-        attributes: ['itemId', 'storeId', 'quantity', 'isRejected'],
-        raw: true,
-      });
-  
-      // Step 3: Retrieve alternate units
-      const alternateUnits = await models.AlternateUnits.findAll({
-        where: { itemId: itemIds },
-        attributes: ['itemId', 'alternateUnits', 'conversionfactor', 'ip_address'],
-        raw: true,
-      });
-  
-      // Step 4: Structure the response
-      const itemsWithStores = items.map((item) => {
-        const relatedStoreItems = storeItems.filter((si) => si.itemId === item.id);
-  
-        // Group quantities by store and isRejected
-        const storeDataMap = {};
-        relatedStoreItems.forEach(({ storeId, quantity, isRejected }) => {
-          if (!storeDataMap[storeId]) {
-            storeDataMap[storeId] = { quantity: 0, rejectedQuantity: 0 };
-          }
-          if (isRejected) {
-            storeDataMap[storeId].rejectedQuantity += quantity;
-          } else {
-            storeDataMap[storeId].quantity += quantity;
-          }
+        // Step 1: Retrieve all items for the given company
+        const items = await models.Items.findAll({
+            where: { companyId },
+            raw: true,
         });
-  
-        const stores = Object.entries(storeDataMap)
-          .filter(([_, data]) => data.quantity > 0 || data.rejectedQuantity > 0)
-          .map(([storeId, data]) => ({
-            storeId: parseInt(storeId),
-            ...(data?.quantity ? { quantity: data.quantity } : {}),
-            rejectedQuantity: data.rejectedQuantity,
-          }));
-  
-        const itemAlternateUnits = alternateUnits
-          .filter((unit) => unit.itemId === item.id)
-          .map(({ alternateUnits, conversionfactor, ip_address }) => ({
-            alternateUnits,
-            conversionfactor,
-            ip_address,
-          }));
-  
-        return {
-          ...item,
-          stores,
-          alternateUnits: itemAlternateUnits,
-        };
-      });
-  
-      // ✅ Safe response: avoid Content-Length mismatch
-      res.setHeader('Content-Type', 'application/json');
-      res.status(200).send(JSON.stringify(itemsWithStores));
+
+        if (!items || items.length === 0) {
+            // Explicitly send clean JSON response
+            res.setHeader('Content-Type', 'application/json');
+            return res.status(200).send('[]');
+        }
+
+        // Step 2: Retrieve store IDs and quantities
+        const itemIds = items.map((item) => item.id);
+
+        const storeItems = await models.StoreItems.findAll({
+            where: { itemId: itemIds },
+            attributes: ['itemId', 'storeId', 'quantity', 'isRejected'],
+            raw: true,
+        });
+
+        // Step 3: Retrieve alternate units
+        const alternateUnits = await models.AlternateUnits.findAll({
+            where: { itemId: itemIds },
+            attributes: ['itemId', 'alternateUnits', 'conversionfactor', 'ip_address'],
+            raw: true,
+        });
+
+        // Step 4: Structure the response
+        const itemsWithStores = items.map((item) => {
+            const relatedStoreItems = storeItems.filter((si) => si.itemId === item.id);
+
+            // Group quantities by store and isRejected
+            const storeDataMap = {};
+            relatedStoreItems.forEach(({ storeId, quantity, isRejected }) => {
+                if (!storeDataMap[storeId]) {
+                    storeDataMap[storeId] = { quantity: 0, rejectedQuantity: 0 };
+                }
+                if (isRejected) {
+                    storeDataMap[storeId].rejectedQuantity += quantity;
+                } else {
+                    storeDataMap[storeId].quantity += quantity;
+                }
+            });
+
+            const stores = Object.entries(storeDataMap)
+                .filter(([_, data]) => data.quantity > 0 || data.rejectedQuantity > 0)
+                .map(([storeId, data]) => ({
+                    storeId: parseInt(storeId),
+                    ...(data?.quantity ? { quantity: data.quantity } : {}),
+                    rejectedQuantity: data.rejectedQuantity,
+                }));
+
+            const itemAlternateUnits = alternateUnits
+                .filter((unit) => unit.itemId === item.id)
+                .map(({ alternateUnits, conversionfactor, ip_address }) => ({
+                    alternateUnits,
+                    conversionfactor,
+                    ip_address,
+                }));
+
+            return {
+                ...item,
+                stores,
+                alternateUnits: itemAlternateUnits,
+            };
+        });
+
+        // ✅ Safe response: avoid Content-Length mismatch
+        res.setHeader('Content-Type', 'application/json');
+        res.status(200).send(JSON.stringify(itemsWithStores));
     } catch (error) {
-      console.error(error);
-      res
-        .status(500)
-        .json({ message: 'Something went wrong, please try again later!' });
+        console.error(error);
+        res
+            .status(500)
+            .json({ message: 'Something went wrong, please try again later!' });
     }
-  }
-  
+}
+
 
 async function addBulkItem(req, res) {
     try {
@@ -838,7 +838,7 @@ async function bulkEditItems(req, res) {
 async function stockReconcilation(req, res) {
     try {
         const file = req.file;
-        const { userId } = req.body;
+        const { userId, companyId } = req.body;
         const items = await convertXlsxToJson(file.filename, 'reconcileStock');
         let isRejected = false;
         if (req.body?.storeId?.toString()?.includes('-reject')) isRejected = true;

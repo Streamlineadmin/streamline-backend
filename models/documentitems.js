@@ -47,7 +47,8 @@ module.exports = (sequelize, DataTypes) => {
     customFields: {
       type: DataTypes.JSON,
       defaultValue: []
-    }
+    },
+    type: DataTypes.STRING
   }, {
     sequelize,
     modelName: 'DocumentItems',
