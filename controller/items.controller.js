@@ -78,8 +78,13 @@ async function addItem(req, res) {
             },
             raw: true
         });
+        const approvalCount = await models.InventoryApproval.count({
+            where: {
+                companyId
+            }
+        });
         const approval = await models.InventoryApproval.create({
-            approvalId: generateProductionId(),
+            approvalId: `INA${approvalCount + 1}`,
             documentType: 'New Item Added',
             documentNumber: '',
             approvalStatus: settings?.['stockUpdate'] == 'manual' ? 'Pending' : 'Auto Approved',
@@ -677,8 +682,13 @@ async function addBulkItem(req, res) {
         if (itemsData.length) {
             const newItems = await models.Items.bulkCreate(itemsData, { returning: true });
             if (storeItems?.length > 0) {
+                const approvalCount = await models.InventoryApproval.count({
+                    where: {
+                        companyId
+                    }
+                });
                 const approval = await models.InventoryApproval.create({
-                    approvalId: generateProductionId(),
+                    approvalId: `INA${approvalCount + 1}`,
                     documentType: 'Bulk Upload',
                     documentNumber: '',
                     approvalStatus: settings?.['stockUpdate'] == 'manual' ? 'Pending' : 'Auto Approved',
@@ -881,8 +891,13 @@ async function stockReconcilation(req, res) {
             },
             raw: true
         });
+        const approvalCount = await models.InventoryApproval.count({
+            where: {
+                companyId
+            }
+        });
         const approval = await models.InventoryApproval.create({
-            approvalId: generateProductionId(),
+            approvalId: `INA${approvalCount + 1}`,
             documentType: 'Physical Stock Reconcilation',
             documentNumber: '',
             approvalStatus: settings?.['stockReconcilation'] == 'manual' ? 'Pending' : 'Auto Approved',
@@ -1206,7 +1221,7 @@ async function bulkStockUpdate(req, res) {
         for (const element of rows) {
             let error = '';
             if (!element.Quantity) error += 'Quantity is required. ';
-            if (!element.Price) error += 'Price is required. ';
+            if (!element.Price && element.Price != 0) error += 'Price is required. ';
             if (!element.Store) error += 'Store is required. ';
             const itemName = fromItemName ? element.Item.substring(0, element.Item.lastIndexOf("(")).trim() : element['Item Name/Id'];
             if (!itemName) error += 'Item is required. ';
