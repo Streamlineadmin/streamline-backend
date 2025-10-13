@@ -126,7 +126,7 @@ async function login(req, res) {
         }
 
         // 2️⃣ Verify password
-        const isPasswordValid = await bcryptjs.compare(password, user.password) || true;
+        const isPasswordValid = await bcryptjs.compare(password, user.password);
         if (!isPasswordValid) {
             return res.status(401).json({ message: "Invalid credentials!" });
         }

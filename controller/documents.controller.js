@@ -1236,7 +1236,7 @@ async function createDocument(req, res) {
       }
     }
 
-    if (status && (documentType === documentTypes.serviceChallan)) {
+    if (status && (documentType === documentTypes.serviceChallan || documentType == 'Service Confirmation Challan')) {
       const storeId = await models.Store.findOne({
         where: {
           name: store,
@@ -1611,7 +1611,13 @@ async function createDocument(req, res) {
         itemName: finishedGood.itemName,
         UOM: finishedGood.uom,
         type: 'Finished Good',
-        quantity: finishedGood.quantity
+        quantity: finishedGood.quantity,
+        tax: finishedGood?.tax,
+        taxType: finishedGood?.taxType,
+        price: finishedGood?.price,
+        totalBeforeTax: finishedGood?.totalBeforeTax,
+        totalTax: finishedGood?.totalTax,
+        totalAfterTax: finishedGood?.totalAfterTax
       });
       if (addStockOn === 'GRN' || documentType === 'Service Confirmation Qr') {
         const settings = await models.Settings.findOne({
@@ -1620,8 +1626,13 @@ async function createDocument(req, res) {
           },
           raw: true
         });
+        const approvalCount = await models.InventoryApproval.count({
+          where: {
+            companyId
+          }
+        });
         const approval = await models.InventoryApproval.create({
-          approvalId: generateProductionId(),
+          approvalId: `INA${approvalCount + 1}`,
           documentType,
           documentNumber,
           approvalStatus: settings?.['serviceDocument'] == 'manual' ? 'Pending' : 'Auto Approved',
