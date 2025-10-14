@@ -906,7 +906,7 @@ async function issueRawMaterial(req, res) {
         if (stockTransferPayloads.length > 0) {
             await models.StockTransfer.bulkCreate(stockTransferPayloads);
         }
-        return res.status(200).json({ message: 'Material Issued.' });
+        return res.status(200).json({ message: settings?.['productionRawMaterial'] != 'manual' ? 'Material Issued.' : 'Raw materials are sent for store approval' });
     } catch (error) {
         console.error("Issue Error:", error);
         return res.status(500).json({
@@ -1106,7 +1106,7 @@ async function updateScrapLogs(req, res) {
             });
 
         }
-        return res.status(200).json({ message: 'Scrap Log Updated.' });
+        return res.status(200).json({ message: settings?.['productionScrapMaterial'] == 'manual' ? 'Approval request send.' : 'Scrap Log Updated.' });
     } catch (error) {
         console.error("Issue Error:", error);
         return res.status(500).json({

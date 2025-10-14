@@ -898,28 +898,28 @@ async function createDocument(req, res) {
       });
       const itemsMap = new Map(existingItems.map(existingItem => [existingItem.itemId, existingItem.id]));
       const storesMap = new Map(stores.map(store => [store.name, store.id]));
-      const settings = await models.Settings.findOne({
-        where: {
-          companyId: Number(companyId)
-        },
-        raw: true
-      });
-      const approvalCount = await models.InventoryApproval.count({
-        where: {
-          companyId
-        }
-      });
-      const approval = await models.InventoryApproval.create({
-        approvalId: `INA${approvalCount + 1}`,
-        documentType,
-        documentNumber,
-        approvalStatus: settings?.['purchaseDocument'] == 'manual' ? 'Pending' : 'Auto Approved',
-        requestedBy: createdBy,
-        companyId: companyId,
-        status: 1,
-        approvedBy: null
-      });
       if ((documentType === documentTypes.goodsReceive && purchase_order.addStockOn == 'GRN') || (documentType === documentTypes.qualityReport && purchase_order.addStockOn == 'QR')) {
+        const settings = await models.Settings.findOne({
+          where: {
+            companyId: Number(companyId)
+          },
+          raw: true
+        });
+        const approvalCount = await models.InventoryApproval.count({
+          where: {
+            companyId
+          }
+        });
+        const approval = await models.InventoryApproval.create({
+          approvalId: `INA${approvalCount + 1}`,
+          documentType,
+          documentNumber,
+          approvalStatus: settings?.['purchaseDocument'] == 'manual' ? 'Pending' : 'Auto Approved',
+          requestedBy: createdBy,
+          companyId: companyId,
+          status: 1,
+          approvedBy: null
+        });
         await Promise.all([models.StoreItems.bulkCreate(items?.filter(item => item?.receivedToday).map(item => {
           const itemId = itemsMap.get(item.itemId) || null;
           const storeId = storesMap.get(store) || null;
@@ -958,48 +958,50 @@ async function createDocument(req, res) {
         })),
         ]
         );
+
+        if (documentType === documentTypes.qualityReport) {
+          await Promise.all([models.StoreItems.bulkCreate(items?.filter(item => item.pendingQuantity).map(item => {
+            const itemId = itemsMap.get(item.itemId) || null;
+            const storeId = storesMap.get(rejectedStore) || null;
+            return {
+              storeId,
+              itemId,
+              quantity: settings?.['purchaseDocument'] == 'manual' ? 0 : (item.pendingQuantity * (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1))) || 0,
+              status: 1,
+              addedBy: createdBy,
+              price: item?.price / (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1)),
+              isRejected: true,
+              documentNumber: document.documentNumber,
+              approvalId: approval.id,
+              quantityForApproval: (item.pendingQuantity * (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1))) || 0
+            }
+          })
+          ),
+          models.StockTransfer.bulkCreate(items?.filter(item => item.pendingQuantity).map(item => {
+            const itemId = itemsMap.get(item.itemId) || null;
+            const storeId = storesMap.get(rejectedStore) || null;
+            return {
+              transferNumber: generateTransferNumber(),
+              fromStoreId: null,
+              itemId,
+              quantity: settings?.['purchaseDocument'] == 'manual' ? null : (item.pendingQuantity * (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1))) || 0,
+              toStoreId: storeId,
+              transferDate: new Date().toISOString(),
+              transferredBy: createdBy,
+              comment: '',
+              companyId,
+              price: item?.price / (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1)),
+              documentNumber: document.documentNumber,
+              documentType,
+              isRejected: true,
+              approvalId: approval.id,
+              quantityForApproval: (item.pendingQuantity * (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1))) || 0
+            }
+          })),
+          ]);
+        }
       }
-      if (documentType === documentTypes.qualityReport) {
-        await Promise.all([models.StoreItems.bulkCreate(items?.filter(item => item.pendingQuantity).map(item => {
-          const itemId = itemsMap.get(item.itemId) || null;
-          const storeId = storesMap.get(rejectedStore) || null;
-          return {
-            storeId,
-            itemId,
-            quantity: settings?.['purchaseDocument'] == 'manual' ? 0 : (item.pendingQuantity * (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1))) || 0,
-            status: 1,
-            addedBy: createdBy,
-            price: item?.price / (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1)),
-            isRejected: true,
-            documentNumber: document.documentNumber,
-            approvalId: approval.id,
-            quantityForApproval: (item.pendingQuantity * (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1))) || 0
-          }
-        })
-        ),
-        models.StockTransfer.bulkCreate(items?.filter(item => item.pendingQuantity).map(item => {
-          const itemId = itemsMap.get(item.itemId) || null;
-          const storeId = storesMap.get(rejectedStore) || null;
-          return {
-            transferNumber: generateTransferNumber(),
-            fromStoreId: null,
-            itemId,
-            quantity: settings?.['purchaseDocument'] == 'manual' ? null : (item.pendingQuantity * (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1))) || 0,
-            toStoreId: storeId,
-            transferDate: new Date().toISOString(),
-            transferredBy: createdBy,
-            comment: '',
-            companyId,
-            price: item?.price / (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1)),
-            documentNumber: document.documentNumber,
-            documentType,
-            isRejected: true,
-            approvalId: approval.id,
-            quantityForApproval: (item.pendingQuantity * (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1))) || 0
-          }
-        })),
-        ]);
-      }
+
     }
 
     if (status && ((documentType === documentTypes.invoice && reduceStockOnIV === "true") || (documentType === documentTypes.deliveryChallan && reduceStockOnDC === "true"))) {
@@ -1009,28 +1011,28 @@ async function createDocument(req, res) {
           companyId
         }
       });
+      const settings = await models.Settings.findOne({
+        where: {
+          companyId: Number(companyId)
+        },
+        raw: true
+      });
+      const approvalCount = await models.InventoryApproval.count({
+        where: {
+          companyId
+        }
+      });
+      const approval = await models.InventoryApproval.create({
+        approvalId: `INA${approvalCount + 1}`,
+        documentType,
+        documentNumber,
+        approvalStatus: settings?.['salesDocument'] == 'manual' ? 'Pending' : 'Auto Approved',
+        requestedBy: createdBy,
+        companyId: companyId,
+        status: 1,
+        approvedBy: null
+      });
       for (const element of items) {
-        const settings = await models.Settings.findOne({
-          where: {
-            companyId: Number(companyId)
-          },
-          raw: true
-        });
-        const approvalCount = await models.InventoryApproval.count({
-          where: {
-            companyId
-          }
-        });
-        const approval = await models.InventoryApproval.create({
-          approvalId: `INA${approvalCount + 1}`,
-          documentType,
-          documentNumber,
-          approvalStatus: settings?.['salesDocument'] == 'manual' ? 'Pending' : 'Auto Approved',
-          requestedBy: createdBy,
-          companyId: companyId,
-          status: 1,
-          approvedBy: null
-        });
         if (settings?.['salesDocument'] != 'manual') {
           let price = 0;
           let remainingQuantity = (element.quantity * (element?.conversionFactor || 1));
