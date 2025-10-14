@@ -178,7 +178,9 @@ module.exports = (sequelize, DataTypes) => {
     isBatchAssigned: DataTypes.BOOLEAN,
     customFields: DataTypes.JSON,
     approvedBy: DataTypes.INTEGER,
-    labels: DataTypes.JSON
+    labels: DataTypes.JSON,
+    serviceOrderNumber: DataTypes.STRING,
+    serviceOrderDate: DataTypes.STRING
   }, {
     sequelize,
     modelName: 'Documents',

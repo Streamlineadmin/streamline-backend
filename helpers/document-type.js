@@ -48,6 +48,17 @@ const serviceDocuments = [
     "Service Credit Note"
 ];
 
+const serviceConfirmationDocuments = [
+    "Service Confirmation",
+    "Service Confirmation Challan",
+    "Service Confirmation Grn",
+    "Service Confirmation Qr",
+    "Service Confirmation Proforma Invoice",
+    "Service Confirmation Invoice",
+    "Service Confirmation Debit Note",
+    "Service Confirmation Credit Note"
+];
+
 
 const purchaseDocuments = [
     "Purchase Request",
@@ -60,4 +71,4 @@ const purchaseDocuments = [
     "Purchase Return"
 ];
 
-module.exports = { documentTypes, serviceDocuments, salesDocuments, purchaseDocuments };
+module.exports = { documentTypes, serviceDocuments, salesDocuments, purchaseDocuments, serviceConfirmationDocuments };

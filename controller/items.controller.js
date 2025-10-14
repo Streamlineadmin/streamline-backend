@@ -848,7 +848,7 @@ async function bulkEditItems(req, res) {
 async function stockReconcilation(req, res) {
     try {
         const file = req.file;
-        const { userId } = req.body;
+        const { userId, companyId } = req.body;
         const items = await convertXlsxToJson(file.filename, 'reconcileStock');
         let isRejected = false;
         if (req.body?.storeId?.toString()?.includes('-reject')) isRejected = true;
