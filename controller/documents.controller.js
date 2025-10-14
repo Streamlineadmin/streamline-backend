@@ -1,8 +1,7 @@
-const { Op, where, NUMBER } = require('sequelize');
+const { Op, fn, col, where, cast } = require('sequelize');
 const models = require('../models');
 const { documentTypes, purchaseDocuments, salesDocuments, serviceDocuments } = require('../helpers/document-type');
-const { generateTransferNumber } = require('../helpers/transfer-number');
-const customfields = require('../models/customfields');
+const { generateTransferNumber, generateProductionId } = require('../helpers/transfer-number');
 
 async function createDocument(req, res) {
   try {
@@ -105,7 +104,9 @@ async function createDocument(req, res) {
       batches = null,
       supplyState = '',
       customFields = {},
-      productionId = null
+      productionId = null,
+      requestForApproval = false,
+      seriesId = null
     } = req.body;
 
     if (!isDraft) {
@@ -157,7 +158,7 @@ async function createDocument(req, res) {
       signature,
       companyId,
       createdBy,
-      status,
+      status: requestForApproval ? 29 : status,
       ip_address,
       paymentDate,
       POCName,
@@ -318,21 +319,13 @@ async function createDocument(req, res) {
     });
 
     if (documentType != documentTypes.purchaseInvoice) {
-      const lastIndex = documentNumber?.lastIndexOf("-");
-      const firstPart = documentNumber?.substring(0, lastIndex);
       const documentSeries = await models.DocumentSeries.findOne({
         where: {
-          prefix: firstPart,
-          companyId
+          id: seriesId
         }
       });
       if (documentSeries) {
-        await models.DocumentSeries.update({ nextNumber: documentSeries.nextNumber + 1 }, {
-          where: {
-            companyId,
-            prefix: documentSeries.prefix
-          }
-        });
+        await documentSeries.update({ nextNumber: documentSeries.nextNumber + 1 });
       }
     }
 
@@ -905,6 +898,22 @@ async function createDocument(req, res) {
       });
       const itemsMap = new Map(existingItems.map(existingItem => [existingItem.itemId, existingItem.id]));
       const storesMap = new Map(stores.map(store => [store.name, store.id]));
+      const settings = await models.Settings.findOne({
+        where: {
+          companyId: Number(companyId)
+        },
+        raw: true
+      });
+      const approval = await models.InventoryApproval.create({
+        approvalId: generateProductionId(),
+        documentType,
+        documentNumber,
+        approvalStatus: settings?.['purchaseDocument'] == 'manual' ? 'Pending' : 'Auto Approved',
+        requestedBy: createdBy,
+        companyId: companyId,
+        status: 1,
+        approvedBy: null
+      });
       if ((documentType === documentTypes.goodsReceive && purchase_order.addStockOn == 'GRN') || (documentType === documentTypes.qualityReport && purchase_order.addStockOn == 'QR')) {
         await Promise.all([models.StoreItems.bulkCreate(items?.filter(item => item?.receivedToday).map(item => {
           const itemId = itemsMap.get(item.itemId) || null;
@@ -912,11 +921,13 @@ async function createDocument(req, res) {
           return {
             storeId,
             itemId,
-            quantity: (item?.receivedToday * (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1))) || 0,
+            quantity: settings?.['purchaseDocument'] == 'manual' ? 0 : ((item?.receivedToday * (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1))) || 0),
             status: 1,
             addedBy: createdBy,
             price: item?.price / (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1)),
-            documentNumber: document.documentNumber
+            documentNumber: document.documentNumber,
+            approvalId: approval.id,
+            quantityForApproval: (item?.receivedToday * (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1))) || 0
           }
         })
         ),
@@ -927,7 +938,7 @@ async function createDocument(req, res) {
             transferNumber: item?.transferNumber,
             fromStoreId: null,
             itemId,
-            quantity: (item?.receivedToday * (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1))) || 0,
+            quantity: settings?.['purchaseDocument'] == 'manual' ? 0 : ((item?.receivedToday * (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1))) || 0),
             toStoreId: storeId,
             transferDate: new Date().toISOString(),
             transferredBy: createdBy,
@@ -935,30 +946,13 @@ async function createDocument(req, res) {
             companyId,
             price: item?.price / (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1)),
             documentNumber: document.documentNumber,
-            documentType
+            documentType,
+            approvalId: approval.id,
+            quantityForApproval: (item?.receivedToday * (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1))) || 0
           }
         })),
         ]
         );
-
-        for (const item of items) {
-          const existItem = await models.Items.findOne({
-            where: {
-              id: itemsMap.get(item.itemId)
-            }
-          });
-          if (existItem) {
-            await models.Items.update(
-              { currentStock: (item.currentStock || 0) + ((item.receivedToday * (item.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1))) || 0) },
-              {
-                where: {
-                  id: itemsMap.get(item.itemId)
-                }
-              }
-            );
-          }
-
-        }
       }
       if (documentType === documentTypes.qualityReport) {
         await Promise.all([models.StoreItems.bulkCreate(items?.filter(item => item.pendingQuantity).map(item => {
@@ -967,12 +961,14 @@ async function createDocument(req, res) {
           return {
             storeId,
             itemId,
-            quantity: (item.pendingQuantity * (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1))) || 0,
+            quantity: settings?.['purchaseDocument'] == 'manual' ? 0 : (item.pendingQuantity * (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1))) || 0,
             status: 1,
             addedBy: createdBy,
             price: item?.price / (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1)),
             isRejected: true,
-            documentNumber: document.documentNumber
+            documentNumber: document.documentNumber,
+            approvalId: approval.id,
+            quantityForApproval: (item.pendingQuantity * (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1))) || 0
           }
         })
         ),
@@ -983,7 +979,7 @@ async function createDocument(req, res) {
             transferNumber: generateTransferNumber(),
             fromStoreId: null,
             itemId,
-            quantity: (item.pendingQuantity * (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1))) || 0,
+            quantity: settings?.['purchaseDocument'] == 'manual' ? null : (item.pendingQuantity * (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1))) || 0,
             toStoreId: storeId,
             transferDate: new Date().toISOString(),
             transferredBy: createdBy,
@@ -992,7 +988,9 @@ async function createDocument(req, res) {
             price: item?.price / (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1)),
             documentNumber: document.documentNumber,
             documentType,
-            isRejected: true
+            isRejected: true,
+            approvalId: approval.id,
+            quantityForApproval: (item.pendingQuantity * (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1))) || 0
           }
         })),
         ]);
@@ -1007,33 +1005,77 @@ async function createDocument(req, res) {
         }
       });
       for (const element of items) {
-        let price = 0;
-        let remainingQuantity = (element.quantity * (element?.conversionFactor || 1));;
-        const item = await models.Items.findOne({
+        const settings = await models.Settings.findOne({
           where: {
-            itemId: element.itemId,
-            companyId
-          }
+            companyId: Number(companyId)
+          },
+          raw: true
         });
-        const existingStock = await models.StoreItems.findAll({
-          where: { storeId: storeId.id, itemId: item.id },
-          order: [['createdAt', 'ASC']],
+        const approval = await models.InventoryApproval.create({
+          approvalId: generateProductionId(),
+          documentType,
+          documentNumber,
+          approvalStatus: settings?.['salesDocument'] == 'manual' ? 'Pending' : 'Auto Approved',
+          requestedBy: createdBy,
+          companyId: companyId,
+          status: 1,
+          approvedBy: null
         });
-        for (const stock of existingStock) {
-          if (remainingQuantity <= 0) break;
-          if (stock.quantity <= 0) continue;
-          const deductQty = Math.min(stock.quantity, remainingQuantity);
-          remainingQuantity -= deductQty;
+        if (settings?.['salesDocument'] != 'manual') {
+          let price = 0;
+          let remainingQuantity = (element.quantity * (element?.conversionFactor || 1));
+          const item = await models.Items.findOne({
+            where: {
+              itemId: element.itemId,
+              companyId
+            }
+          });
+          const existingStock = await models.StoreItems.findAll({
+            where: { storeId: storeId.id, itemId: item.id },
+            order: [['createdAt', 'ASC']],
+          });
+          for (const stock of existingStock) {
+            if (remainingQuantity <= 0) break;
+            if (stock.quantity <= 0) continue;
+            const deductQty = Math.min(stock.quantity, remainingQuantity);
+            remainingQuantity -= deductQty;
 
-          await models.StoreItems.update(
-            { quantity: (stock.quantity - deductQty) },
-            { where: { id: stock.id } }
-          );
+            await models.StoreItems.update(
+              { quantity: (stock.quantity - deductQty) },
+              { where: { id: stock.id } }
+            );
+            await models.StockTransfer.create({
+              transferNumber: element.transferNumber,
+              fromStoreId: storeId.id || null,
+              itemId: item.id,
+              quantity: deductQty * -1,
+              toStoreId: null,
+              transferDate: new Date().toISOString(),
+              transferredBy: createdBy,
+              comment: '',
+              companyId,
+              price: element.price / (element.conversionFactor || 1),
+              documentNumber: document.documentNumber,
+              documentType,
+              actualPrice: stock.price,
+              approvalId: approval.id,
+              quantityForApproval: element.quantity
+            });
+            price += (stock.price * deductQty);
+          }
+        }
+        else {
+          const item = await models.Items.findOne({
+            where: {
+              itemId: element.itemId,
+              companyId
+            }
+          });
           await models.StockTransfer.create({
             transferNumber: element.transferNumber,
             fromStoreId: storeId.id || null,
             itemId: item.id,
-            quantity: deductQty * -1,
+            quantity: null,
             toStoreId: null,
             transferDate: new Date().toISOString(),
             transferredBy: createdBy,
@@ -1042,9 +1084,10 @@ async function createDocument(req, res) {
             price: element.price / (element.conversionFactor || 1),
             documentNumber: document.documentNumber,
             documentType,
-            actualPrice: stock.price
+            actualPrice: element.price / (element.conversionFactor || 1),
+            approvalId: approval.id,
+            quantityForApproval: element.quantity
           });
-          price += (stock.price * deductQty);
         }
       }
     }
@@ -1242,6 +1285,22 @@ async function createDocument(req, res) {
               companyId
             }
           });
+        const settings = await models.Settings.findOne({
+          where: {
+            companyId: Number(companyId)
+          },
+          raw: true
+        });
+        const approval = await models.InventoryApproval.create({
+          approvalId: generateProductionId(),
+          documentType,
+          documentNumber,
+          approvalStatus: settings?.['serviceDocument'] == 'manual' ? 'Pending' : 'Auto Approved',
+          requestedBy: createdBy,
+          companyId: companyId,
+          status: 1,
+          approvedBy: null
+        });
         const existingItems = await models.Items.findAll({ where: { companyId: Number(companyId) } });
         const stores = await models.Store.findAll({ where: { companyId: Number(companyId) } });
         const itemsMap = new Map(existingItems.map(existingItem => [existingItem.itemId, existingItem.id]));
@@ -1253,11 +1312,13 @@ async function createDocument(req, res) {
           return {
             storeId,
             itemId,
-            quantity: (item?.receivedToday * (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1))) || 0,
+            quantity: settings?.['serviceDocument'] == 'manual' ? 0 : (item?.receivedToday * (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1))) || 0,
             status: 1,
             addedBy: createdBy,
             price: item?.price / (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1)),
-            documentNumber: document.documentNumber
+            documentNumber: document.documentNumber,
+            approvalId: approval.id,
+            quantityForApproval: (item?.receivedToday * (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1))) || 0
           }
         })
         ),
@@ -1268,7 +1329,7 @@ async function createDocument(req, res) {
             transferNumber: item?.transferNumber,
             fromStoreId: null,
             itemId,
-            quantity: (item?.receivedToday * (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1))) || 0,
+            quantity: settings?.['serviceDocument'] == 'manual' ? null : (item?.receivedToday * (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1))) || 0,
             toStoreId: storeId,
             transferDate: new Date().toISOString(),
             transferredBy: createdBy,
@@ -1276,7 +1337,9 @@ async function createDocument(req, res) {
             companyId,
             price: item?.price / (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1)),
             documentNumber: document.documentNumber,
-            documentType
+            documentType,
+            approvalId: approval.id,
+            quantityForApproval: (item?.receivedToday * (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1))) || 0
           }
         })),
         ]
@@ -1289,12 +1352,14 @@ async function createDocument(req, res) {
             return {
               storeId,
               itemId,
-              quantity: (item.pendingQuantity * (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1))) || 0,
+              quantity: settings?.['serviceDocument'] == 'manual' ? 0 : (item.pendingQuantity * (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1))) || 0,
               status: 1,
               addedBy: createdBy,
               price: item?.price / (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1)),
               isRejected: true,
-              documentNumber: document.documentNumber
+              documentNumber: document.documentNumber,
+              approvalId: approval.id,
+              quantityForApproval: (item.pendingQuantity * (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1))) || 0
             }
           })
           ),
@@ -1305,7 +1370,7 @@ async function createDocument(req, res) {
               transferNumber: generateTransferNumber(),
               fromStoreId: null,
               itemId,
-              quantity: (item.pendingQuantity * (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1))) || 0,
+              quantity: settings?.['serviceDocument'] == 'manual' ? 0 : (item.pendingQuantity * (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1))) || 0,
               toStoreId: storeId,
               transferDate: new Date().toISOString(),
               transferredBy: createdBy,
@@ -1314,7 +1379,9 @@ async function createDocument(req, res) {
               price: item?.price / (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1)),
               documentNumber: document.documentNumber,
               documentType,
-              isRejected: true
+              isRejected: true,
+              approvalId: approval.id,
+              quantityForApproval: (item.pendingQuantity * (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1))) || 0
             }
           })),
           ]);
@@ -1485,19 +1552,19 @@ async function createDocument(req, res) {
             isRejected: element?.toReject || false
           });
 
-          if (element.isRejected!=element.toReject) {
+          if (element.isRejected != element.toReject) {
             await models.StockTransfer.create({
-            transferNumber: generateTransferNumber(),
-            fromStoreId: fromStore?.id,
-            itemId: itemsMap[element.itemId],
-            quantity: deductQty,
-            toStoreId: rejectStore.id,
-            transferDate: new Date().toISOString(),
-            transferredBy: companyId,
-            companyId,
-            price: stock.price,
-            isRejected: element?.isRejected || false
-          });
+              transferNumber: generateTransferNumber(),
+              fromStoreId: fromStore?.id,
+              itemId: itemsMap[element.itemId],
+              quantity: deductQty,
+              toStoreId: rejectStore.id,
+              transferDate: new Date().toISOString(),
+              transferredBy: companyId,
+              companyId,
+              price: stock.price,
+              isRejected: element?.isRejected || false
+            });
           }
 
           await models.StoreItems.create({
@@ -1513,7 +1580,6 @@ async function createDocument(req, res) {
       }
     }
 
-
     res.status(201).json({
       message: "Document and related data created successfully!"
     });
@@ -1525,7 +1591,7 @@ async function createDocument(req, res) {
 async function getDocuments(req, res) {
   try {
 
-    const { companyId, currentPage, pageSize, documentType = '', search = '', dealStatus, docTypeFilter, dateRange } = req.body;
+    const { companyId, counts, createdBy, approvedBy, requestedBy, currentPage, labels, pageSize, documentType = '', search = '', dealStatus, docTypeFilter, dateRange } = req.body;
 
     const offset = ((currentPage || 1) - 1) * (pageSize || 10);
     let documentstype = [];
@@ -1587,6 +1653,8 @@ async function getDocuments(req, res) {
               [Op.in]: documentstype
             }
           }),
+          ...(requestedBy ? { createdBy: requestedBy } : {}),
+          ...(approvedBy ? { approvedBy: approvedBy } : {}),
           ...(Array.isArray(dealStatus) && dealStatus.length > 0
             ? {
               status: {
@@ -1598,11 +1666,40 @@ async function getDocuments(req, res) {
                 [Op.not]: 2,
               },
             }),
-          ...(docTypeFilter?.length > 0 && {
+          ...(!dealStatus && counts
+            ? {
+              status: {
+                [Op.notIn]: [29, 30],
+              },
+            }
+            : {
+            }),
+          ...(docTypeFilter?.length > 0 ? !createdBy ? {
             documentType: {
               [Op.in]: docTypeFilter,
             },
-          }),
+          } : {
+            [Op.or]: [
+              {
+                documentType: {
+                  [Op.in]: docTypeFilter
+                }
+              },
+              {
+                createdBy: Number(createdBy),
+                documentType: {
+                  [Op.in]: [
+                    'Sales Quotation',
+                    'Sales Order',
+                    'Invoice',
+                    'Purchase Request',
+                    'Purchase Order',
+                    'Purchase Invoice',
+                  ]
+                }
+              }
+            ],
+          } : {}),
           ...(search && {
             [Op.or]: [
               {
@@ -1621,6 +1718,14 @@ async function getDocuments(req, res) {
                 },
               }
             ],
+          }),
+          ...(labels?.length > 0 && {
+            [Op.or]: labels.map(label =>
+              where(
+                fn("LOWER", cast(col("labels"), "text")),
+                { [Op.like]: `%${label?.toLowerCase()}%` }
+              )
+            ),
           }),
         },
         include: [
@@ -1641,7 +1746,7 @@ async function getDocuments(req, res) {
       });
     }
 
-    if (!documents || (documents?.rows?.length === 0 || documents?.length === 0)) {
+    if (!documents || ((documents?.rows?.length === 0 || documents?.length === 0) && !counts)) {
       return res.status(200).json({
         total: 0,
         currentPage,
@@ -1700,14 +1805,111 @@ async function getDocuments(req, res) {
     if ((!currentPage || !pageSize) || (pageSize == 5000)) {
       return res.status(200).json(formattedResult)
     }
+
+    if (counts) {
+      const [pending, reject, approved] = await Promise.all([
+        models.Documents.count({
+          where: {
+            status: 29,
+            companyId: Number(companyId),
+            [Op.or]: [
+              {
+                documentType: {
+                  [Op.in]: docTypeFilter
+                }
+              },
+              {
+                createdBy: Number(createdBy),
+                documentType: {
+                  [Op.in]: [
+                    'Sales Quotation',
+                    'Sales Order',
+                    'Invoice',
+                    'Purchase Request',
+                    'Purchase Order',
+                    'Purchase Invoice',
+                  ]
+                }
+              }
+            ]
+          }
+        }),
+        models.Documents.count({
+          where: {
+            status: 30,
+            companyId: Number(companyId),
+            [Op.or]: [
+              {
+                documentType: {
+                  [Op.in]: docTypeFilter
+                }
+              },
+              {
+                createdBy: Number(createdBy),
+                documentType: {
+                  [Op.in]: [
+                    'Sales Quotation',
+                    'Sales Order',
+                    'Invoice',
+                    'Purchase Request',
+                    'Purchase Order',
+                    'Purchase Invoice',
+                  ]
+                }
+              }
+            ]
+          }
+        }),
+        models.Documents.count({
+          where: {
+            companyId: Number(companyId),
+            status: {
+              [Op.notIn]: [2, 29, 30]
+            },
+            [Op.or]: [
+              {
+                documentType: {
+                  [Op.in]: docTypeFilter
+                }
+              },
+              {
+                createdBy: Number(createdBy),
+                documentType: {
+                  [Op.in]: [
+                    'Sales Quotation',
+                    'Sales Order',
+                    'Invoice',
+                    'Purchase Request',
+                    'Purchase Order',
+                    'Purchase Invoice',
+                  ]
+                }
+              }
+            ]
+
+          }
+        })
+      ]);
+      return res.status(200).json({
+        total: documents.count,
+        currentPage,
+        pageSize,
+        data: formattedResult,
+        approveCount: approved,
+        rejectedCount: reject,
+        pendingCount: pending
+      });
+    }
+
     res.status(200).json({
       total: documents.count,
       currentPage,
       pageSize,
-      data: formattedResult,
+      data: formattedResult
     });
 
   } catch (error) {
+    console.log(error);
     return res.status(500).json({ message: "Something went wrong, please try again later!" });
   }
 }
@@ -1718,7 +1920,9 @@ async function getDocumentById(req, res) {
 
     const document = await models.Documents.findOne({
       where: { documentNumber, companyId },
-      include: [{ model: models.LogisticDetails, as: 'logisticDetails' }]
+      include: [{ model: models.LogisticDetails, as: 'logisticDetails' }],
+      raw: true,
+      nest: true
     });
 
     if (!document) {
@@ -1726,16 +1930,16 @@ async function getDocumentById(req, res) {
     }
 
     const [items, additionalCharges, bankDetails, termsCondition, attachments, documentComments] = await Promise.all([
-      models.DocumentItems.findAll({ where: { documentNumber, companyId } }),
-      models.DocumentAdditionalCharges.findAll({ where: { documentNumber, companyId } }),
-      models.DocumentBankDetails.findOne({ where: { documentNumber, companyId } }),
-      models.CompanyTermsCondition.findOne({ where: { companyId, documentNumber } }),
-      models.DocumentAttachments.findAll({ where: { documentNumber, companyId } }),
-      models.DocumentComments.findAll({ where: { documentId: document.id } }),
+      models.DocumentItems.findAll({ where: { documentNumber, companyId }, raw: true }),
+      models.DocumentAdditionalCharges.findAll({ where: { documentNumber, companyId }, raw: true }),
+      models.DocumentBankDetails.findOne({ where: { documentNumber, companyId }, raw: true }),
+      models.CompanyTermsCondition.findOne({ where: { companyId, documentNumber }, raw: true }),
+      models.DocumentAttachments.findAll({ where: { documentNumber, companyId }, raw: true }),
+      models.DocumentComments.findAll({ where: { documentId: document.id }, raw: true }),
     ]);
 
     const response = {
-      ...document.toJSON(),
+      ...document,
       items,
       additionalCharges,
       bankDetails: bankDetails || {},
@@ -2802,6 +3006,413 @@ async function getServiceChallanItems(req, res) {
   }
 }
 
+async function approveDocument(req, res) {
+  try {
+    const { isApproved, documentNumber, companyId, userId, reduceStockOnIV } = req.body;
+    if (!isApproved) {
+      await models.Documents.update({ status: 30, approvedBy: userId }, {
+        where: {
+          companyId: Number(companyId),
+          documentNumber
+        }
+      })
+    } else {
+      const document = await models.Documents.findOne({
+        where: {
+          companyId: Number(companyId),
+          documentNumber
+        }
+      });
+
+      const items = await models.DocumentItems.findAll({
+        where: {
+          companyId,
+          documentNumber
+        }
+      })
+      // Handle Sales Quotation Approval
+      if (document?.documentType === documentTypes.salesQuotation && document?.enquiryNumber) {
+        const existingDocument = await models.Documents.findOne({
+          where: { documentNumber: document?.enquiryNumber, companyId },
+        });
+
+        if (existingDocument) {
+          await existingDocument.update({
+            quotationNumber: documentNumber,
+            is_refered: true,
+            status: 8
+          });
+        }
+      }
+
+      // Handle Sales Order Approval
+      if (document?.documentType === documentTypes.orderConfirmation && document?.quotationNumber) {
+        const existingDocument = await models.Documents.findOne({
+          where: { documentNumber: document?.quotationNumber, companyId },
+        });
+
+        if (existingDocument) {
+          await existingDocument.update({
+            orderConfirmationNumber: documentNumber,
+            is_refered: true,
+            status: 9
+          });
+        }
+      }
+
+      // Handle Invoice Approval
+      if (document?.documentType === documentTypes.invoice && document?.orderConfirmationNumber) {
+        const existingDocument = await models.Documents.findOne({
+          where: { documentNumber: document?.orderConfirmationNumber, companyId },
+        });
+        if (existingDocument) {
+          // Find all Document Items against orderConfirmationNumber 
+          const documentItems = await models.DocumentItems.findAll({
+            where: {
+              companyId,
+              documentNumber: document?.orderConfirmationNumber
+            }
+          });
+
+          // Create a map of documentsItems with Items id as key and quantity as value
+          const documentsItemMap = documentItems?.reduce((acc, current) => {
+            acc[current.itemId] = current.quantity;
+            return acc;
+          }, {});
+
+          // find all previously created Delivery Challan or invoice against same orderConfirmationNumber
+          const deliveryChallan = await models.Documents.findAll({
+            where: {
+              orderConfirmationNumber: document.orderConfirmationNumber,
+              documentType: 'Invoice',
+              companyId,
+              status: {
+                [Op.notIn]: [0, 2, 29, 30]
+              }
+            }
+          });
+
+          const documentNumbers = deliveryChallan.map(doc => doc.documentNumber);
+
+          // find All Document Items against previously created delivery challan or Invoice
+          const deliveryChallanItems = await models.DocumentItems.findAll({
+            where: {
+              documentNumber: documentNumbers,
+              companyId
+            }
+          });
+
+          // Create deliverychallan or invoice items map where item id is key and quantity as value
+          const deliveryChallanItemsMap = deliveryChallanItems?.reduce((acc, current) => {
+            !acc[current?.itemId] ? acc[current?.itemId] = current.quantity : acc[current?.itemId] += current.quantity;
+            return acc;
+          }, {});
+          // // Add quantity of existing items in dellivery challan items map
+          for (const item of items) {
+            if (deliveryChallanItemsMap[item.itemId]) deliveryChallanItemsMap[item.itemId] += Number(item.quantity);
+            else deliveryChallanItemsMap[item.itemId] = Number(item.quantity);
+          }
+
+          let statusCode = 0, handleStatus = existingDocument.status;
+
+          // comapare documentsItem map and delivery challam items map 
+          for (const elem of Object.keys(documentsItemMap)) {
+            if (documentsItemMap[elem] > deliveryChallanItemsMap[elem] || !deliveryChallanItemsMap[elem]) {
+              statusCode = document.documentType === documentTypes.invoice ? 12 : 10;
+              break;
+            }
+          }
+
+          if (!statusCode) {
+            // handle completely billing status
+            if (existingDocument.status === 1 || existingDocument.status === 12) {
+              handleStatus = 13;
+            }
+            // handle partially delivered completely billed
+            if (existingDocument.status === 10 || existingDocument.status == 19) {
+              handleStatus = 20;
+            }
+            // handle completely delivered completely billed
+            if (existingDocument.status === 11 || existingDocument.status === 21) {
+              handleStatus = 22;
+            }
+          }
+          else {
+            // handle partially billing status
+            if (existingDocument.status === 1 || existingDocument.status === 12) {
+              handleStatus = 12;
+            }
+            // handle partially delivered partially billed
+            if (existingDocument.status === 10) {
+              handleStatus = 19;
+            }
+            // handle completely delivered partially billed
+            if (existingDocument.status === 11) {
+              handleStatus = 21;
+            }
+          }
+
+          // update the status accordingly
+          await existingDocument.update({
+            status: handleStatus
+          });
+        }
+      }
+
+      if (document?.documentType === documentTypes.invoice && reduceStockOnIV === "true") {
+        const storeId = await models.Store.findOne({
+          where: {
+            name: document.store,
+            companyId
+          }
+        });
+        for (const element of items) {
+          let price = 0;
+          let remainingQuantity = (element.quantity * (element?.conversionFactor || 1));;
+          const item = await models.Items.findOne({
+            where: {
+              itemId: element.itemId,
+              companyId
+            }
+          });
+          const existingStock = await models.StoreItems.findAll({
+            where: { storeId: storeId.id, itemId: item.id },
+            order: [['createdAt', 'ASC']],
+          });
+          for (const stock of existingStock) {
+            if (remainingQuantity <= 0) break;
+            if (stock.quantity <= 0) continue;
+            const deductQty = Math.min(stock.quantity, remainingQuantity);
+            remainingQuantity -= deductQty;
+
+            await models.StoreItems.update(
+              { quantity: (stock.quantity - deductQty) },
+              { where: { id: stock.id } }
+            );
+            await models.StockTransfer.create({
+              transferNumber: generateTransferNumber(),
+              fromStoreId: storeId.id || null,
+              itemId: item.id,
+              quantity: deductQty * -1,
+              toStoreId: null,
+              transferDate: new Date().toISOString(),
+              transferredBy: companyId,
+              comment: '',
+              companyId,
+              price: element.price / (element.conversionFactor || 1),
+              documentNumber: document.documentNumber,
+              documentType: 'Invoice',
+              actualPrice: stock.price
+            });
+            price += (stock.price * deductQty);
+          }
+        }
+      }
+      // Handle Purchase Order Approval
+      if (document?.documentType === documentTypes.purchaseOrder && document?.indent_number) {
+        const indent_numbers = document?.indent_number.split(',');
+        const itemsMap = items.reduce((item, current) => {
+          item[current.itemId] = current.quantity;
+          return item;
+        }, {});
+        for (const ind_number of indent_numbers) {
+          const purchaseRequest = await models.Documents.findOne({
+            where: {
+              companyId,
+              documentNumber: ind_number
+            }
+          });
+          if (purchaseRequest) {
+            const purchaseRequestItems = await models.DocumentItems.findAll({
+              where: {
+                companyId,
+                documentNumber: ind_number
+              }
+            });
+            const purchaseRequestItemsMap = {};
+            const consumeItemsMap = {};
+
+            for (const current of purchaseRequestItems) {
+              let quantity = 0, remaining = 0;
+              if (current.receivedToday) quantity += current.receivedToday;
+              if (itemsMap[current.itemId]) {
+                if ((quantity + itemsMap[current.itemId]) > current.quantity) {
+                  remaining = (quantity + itemsMap[current.itemId]) - current.quantity;
+                  quantity = current.quantity;
+                  current.receivedToday = quantity;
+                  consumeItemsMap[current?.itemId] = itemsMap[current.itemId] - remaining;
+                }
+                else {
+                  quantity += itemsMap[current.itemId];
+                  current.receivedToday = quantity;
+                }
+              }
+
+              itemsMap[current.itemId] && await current.update({ receivedToday: quantity });
+              itemsMap[current.itemId] = remaining;
+              if (purchaseRequestItemsMap[current.itemId]) {
+                purchaseRequestItemsMap[current.itemId] += current.quantity;
+              } else {
+                purchaseRequestItemsMap[current.itemId] = current.quantity;
+              }
+            }
+
+            let status = purchaseRequest.status, isPartial = false;
+            for (const current of purchaseRequestItems) {
+              if (current?.quantity > current?.receivedToday) {
+                isPartial = true;
+                if (status == 1) {
+                  status = 14;
+                }
+                break;
+              }
+            }
+            if (!isPartial) {
+              if (status == 1 || status == 14) {
+                status = 16;
+              }
+              else if (status == 15) status = 17;
+            }
+            await purchaseRequest.update({ status });
+          }
+        }
+      }
+
+      // Handle Purchase Invoice
+      if ((document?.documentType === documentTypes.purchaseInvoice) && document?.purchaseOrderNumber) {
+        const existingDocument = await models.Documents.findOne({
+          where: { documentNumber: document?.purchaseOrderNumber, companyId },
+        });
+        const documentItems = await models.DocumentItems.findAll({
+          where: {
+            companyId,
+            documentNumber: document.purchaseOrderNumber
+          }
+        });
+        const documentsItemMap = documentItems?.reduce((acc, current) => {
+          acc[current.itemId] = current.quantity;
+          return acc;
+        }, {});
+
+        console.log('documentmap', documentsItemMap);
+
+        const purchaseDoc = await models.Documents.findAll({
+          where: {
+            purchaseOrderNumber: document.purchaseOrderNumber,
+            documentType: 'Purchase Invoice',
+            companyId,
+            status: {
+              [Op.notIn]: [0, 2, 29, 30]
+            }
+          }
+        });
+
+        const documentNumbers = purchaseDoc.map(doc => doc.documentNumber);
+
+        const purchaseDocItems = await models.DocumentItems.findAll({
+          where: {
+            documentNumber: documentNumbers,
+            companyId
+          }
+        });
+
+        const purchaseDocItemsMap = purchaseDocItems?.reduce((acc, current) => {
+          !acc[current?.itemId] ? acc[current?.itemId] = (current.receivedToday || current.quantity) : acc[current?.itemId] += (current.receivedToday || current.quantity);
+          return acc;
+        }, {});
+        console.log(purchaseDocItemsMap);
+        // Add quantity of existing items in purchase documents items map
+        for (const item of items) {
+          if (purchaseDocItemsMap[item.itemId]) purchaseDocItemsMap[item.itemId] += Number(item.receivedToday || item.quantity);
+          else purchaseDocItemsMap[item.itemId] = Number(item.receivedToday || item.quantity);
+        }
+
+        console.log('objectdata', purchaseDocItemsMap, documentsItemMap)
+        let statusCode = 0, handleStatus = existingDocument.status;
+
+        // comapare documentsItem map and delivery challam items map 
+        for (const elem of Object.keys(documentsItemMap)) {
+          if (documentsItemMap[elem] > purchaseDocItemsMap[elem]) {
+            statusCode = 1;
+            break;
+          }
+        }
+
+        if (!statusCode) {
+          for (const elem of Object.keys(documentsItemMap)) {
+            if (documentsItemMap[elem] < purchaseDocItemsMap[elem]) {
+              statusCode = 2;
+              break;
+            }
+          }
+        }
+
+        if (statusCode == 1) {
+          if (existingDocument.status === 1 || existingDocument.status === 12) {
+            handleStatus = 12;
+          }
+          if (existingDocument.status === 4) {
+            handleStatus = 23;
+          }
+          if (existingDocument.status === 5) {
+            handleStatus = 24;
+          }
+          if (existingDocument.status === 6) {
+            handleStatus = 25;
+          }
+        } else if (statusCode == 0) {
+          if (existingDocument.status === 1 || existingDocument.status === 12) {
+            handleStatus = 12;
+          }
+          if (existingDocument.status === 4 || existingDocument.status === 23) {
+            handleStatus = 26;
+          }
+          if (existingDocument.status === 5 || existingDocument.status === 24) {
+            handleStatus = 27;
+          }
+          if (existingDocument.status === 6 || existingDocument.status === 25) {
+            handleStatus = 28;
+          }
+        } else {
+          if (existingDocument.status === 1 || existingDocument.status === 12) {
+            handleStatus = 12;
+          }
+          if (existingDocument.status === 4 || existingDocument.status === 23) {
+            handleStatus = 26;
+          }
+          if (existingDocument.status === 5 || existingDocument.status === 24) {
+            handleStatus = 27;
+          }
+          if (existingDocument.status === 6 || existingDocument.status === 25) {
+            handleStatus = 28;
+          }
+        }
+        await existingDocument.update({
+          status: handleStatus
+        });
+
+      }
+
+      await models.Documents.update({ status: 1, approvedBy: userId }, {
+        where: {
+          companyId: Number(companyId),
+          documentNumber
+        }
+      })
+
+    }
+    res.status(200).json({
+      message: 'Document Status Updated.'
+    });
+  } catch (error) {
+    console.log(error)
+    res.status(500).json({
+      message: 'Something went wrong',
+      error
+    });
+  }
+}
+
 module.exports = {
   getDocuments,
   getDocumentById,
@@ -2813,5 +3424,6 @@ module.exports = {
   shortCloseTransaction,
   getSalesDocumentItems,
   editDocument,
-  getServiceChallanItems
+  getServiceChallanItems,
+  approveDocument
 };

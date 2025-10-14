@@ -22,7 +22,8 @@ module.exports = (sequelize, DataTypes) => {
         status: DataTypes.INTEGER,
         parentProductionId: DataTypes.INTEGER,
         serviceOrderNumber: DataTypes.STRING,
-        completedBy: DataTypes.INTEGER
+        completedBy: DataTypes.INTEGER,
+        isManual: DataTypes.JSON
     }, {
         sequelize,
         modelName: 'Production',
