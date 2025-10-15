@@ -340,7 +340,7 @@ async function stockTransfer(req, res) {
       approvedBy: null
     });
 
-    const inventoryHandling = useFIFO ? settings?.['stockUpdate'] : settings?.['stockTransfer'];
+    const inventoryHandling = stockData?.[0]?.addReduce ? settings?.['stockUpdate'] : settings?.['stockTransfer'];
     for (const element of stockData) {
       let price = 0;
       let remainingQuantity = element.quantity * (element?.conversionFactor || 1);
@@ -372,7 +372,9 @@ async function stockTransfer(req, res) {
                 status: 1,
                 addedBy: transferredBy,
                 price: stock.price,
-                isRejected: element?.toReject || false
+                isRejected: element?.toReject || false,
+                approvalId: approval.id,
+                quantityForApproval: deductQty
               });
 
               if (element?.toStore == element?.fromStore) {
@@ -387,7 +389,9 @@ async function stockTransfer(req, res) {
                   comment: element.comment || comment,
                   companyId,
                   price: stock.price,
-                  isRejected: element?.toReject || false
+                  isRejected: element?.toReject || false,
+                  approvalId: approval.id,
+                  quantityForApproval: deductQty
                 });
                 await models.StockTransfer.create({
                   transferNumber,
@@ -400,7 +404,9 @@ async function stockTransfer(req, res) {
                   comment: element.comment || comment,
                   companyId,
                   price: stock.price,
-                  isRejected: element?.toReject ? false : true
+                  isRejected: element?.toReject ? false : true,
+                  approvalId: approval.id,
+                  quantityForApproval: deductQty
                 });
 
               }
@@ -417,7 +423,9 @@ async function stockTransfer(req, res) {
                   comment: element.comment || comment,
                   companyId,
                   price: stock.price,
-                  isRejected: element?.toReject || false
+                  isRejected: element?.toReject || false,
+                  approvalId: approval.id,
+                  quantityForApproval: deductQty
                 });
               }
 
@@ -443,7 +451,8 @@ async function stockTransfer(req, res) {
           }
         }
         else {
-          (useFIFO && addReduce == 2) && await models.StockTransfer.create({
+          console.log('I am here called');
+          await models.StockTransfer.create({
             transferNumber,
             fromStoreId: !addReduce ? element?.fromStore : addReduce == 2 ? element?.toStore : (element?.fromStore || null),
             itemId: element.itemId,
@@ -453,7 +462,7 @@ async function stockTransfer(req, res) {
             transferredBy,
             comment: element.comment || comment,
             companyId,
-            price: (!addReduce ? stock.price : element?.price / (element?.conversionFactor || 1)),
+            price: 0,
             isRejected: element?.isReject || false,
             approvalId: approval.id,
             quantityForApproval: -remainingQuantity
@@ -496,7 +505,7 @@ async function stockTransfer(req, res) {
     }
 
     res.status(201).json({
-      message: "Stock transfer completed successfully with FIFO handling",
+      message: inventoryHandling == 'manual' ? 'Inventory Approval Requested.' : "Stock transfer completed successfully with FIFO handling",
     });
   } catch (error) {
     console.log(error);
