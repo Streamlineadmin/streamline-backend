@@ -1167,7 +1167,7 @@ async function bulkUploadAlternateUnit(req, res) {
 
 async function bulkStockUpdate(req, res) {
     try {
-        const { companyId } = req.body;
+        const { companyId, userId } = req.body;
         const file = req.file;
         const rows = await convertXlsxToJson(file.filename, "bulkStockUpdate");
         const items = await models.Items.findAll({
@@ -1218,6 +1218,27 @@ async function bulkStockUpdate(req, res) {
             }
         }
         const errorArray = [], bulkStockTransfer = [], bulkStoreItems = [];
+        const settings = await models.Settings.findOne({
+            where: {
+                companyId: Number(companyId)
+            },
+            raw: true
+        });
+        const approvalCount = await models.InventoryApproval.count({
+            where: {
+                companyId
+            }
+        });
+        const approval = await models.InventoryApproval.create({
+            approvalId: `INA${approvalCount + 1}`,
+            documentType: 'Stock Update',
+            documentNumber: '',
+            approvalStatus: settings?.['stockUpdate'] == 'manual' ? 'Pending' : 'Auto Approved',
+            requestedBy: userId,
+            companyId: companyId,
+            status: 1,
+            approvedBy: null
+        });
         for (const element of rows) {
             let error = '';
             if (!element.Quantity) error += 'Quantity is required. ';
@@ -1247,30 +1268,52 @@ async function bulkStockUpdate(req, res) {
                 });
                 let remainingQuantity = element.Quantity;
                 const transferNumber = generateTransferNumber();
-                for (const stock of existingStock) {
-                    if (remainingQuantity <= 0) break;
-                    if (stock.quantity <= 0) continue;
-                    const deductQty = Math.min(stock.quantity, remainingQuantity);
-                    remainingQuantity -= deductQty;
-                    await models.StoreItems.update(
-                        { quantity: (stock.quantity - deductQty) },
-                        { where: { id: stock.id } }
-                    );
+                if (settings?.['stockUpdate'] != 'manual') {
+                    for (const stock of existingStock) {
+                        if (remainingQuantity <= 0) break;
+                        if (stock.quantity <= 0) continue;
+                        const deductQty = Math.min(stock.quantity, remainingQuantity);
+                        remainingQuantity -= deductQty;
+                        await models.StoreItems.update(
+                            { quantity: (stock.quantity - deductQty) },
+                            { where: { id: stock.id } }
+                        );
+                        bulkStockTransfer.push({
+                            fromStoreId: store.id,
+                            transferNumber,
+                            toStoreId: null,
+                            itemId: selectedItem.id,
+                            quantity: -deductQty,
+                            status: 1,
+                            addedBy: userId,
+                            price: element.Price,
+                            isRejected: isReject,
+                            comment: element.Comment,
+                            transferDate: new Date().toISOString(),
+                            transferredBy: Number(userId),
+                            companyId: Number(companyId),
+                            actualPrice: stock.price,
+                            approvalId: approval.id,
+                            quantityForApproval: element.Quantity
+                        })
+                    }
+                } else {
                     bulkStockTransfer.push({
                         fromStoreId: store.id,
                         transferNumber,
                         toStoreId: null,
                         itemId: selectedItem.id,
-                        quantity: -deductQty,
+                        quantity: null,
                         status: 1,
-                        addedBy: companyId,
+                        addedBy: userId,
                         price: element.Price,
                         isRejected: isReject,
                         comment: element.Comment,
                         transferDate: new Date().toISOString(),
-                        transferredBy: Number(companyId),
+                        transferredBy: Number(userId),
                         companyId: Number(companyId),
-                        actualPrice: stock.price
+                        approvalId: approval.id,
+                        quantityForApproval: -element.Quantity
                     })
                 }
             }
@@ -1279,24 +1322,28 @@ async function bulkStockUpdate(req, res) {
                     toStoreId: store.id,
                     fromStoreId: null,
                     itemId: selectedItem.id,
-                    quantity: element.Quantity,
+                    quantity: settings?.['stockUpdate'] == 'manual' ? null : element.Quantity,
                     status: 1,
-                    addedBy: companyId,
+                    addedBy: userId,
                     price: element.Price,
                     isRejected: isReject,
                     comment: element.Comment,
                     transferDate: new Date().toISOString(),
-                    transferredBy: Number(companyId),
+                    transferredBy: Number(userId),
                     companyId: Number(companyId),
+                    approvalId: approval.id,
+                    quantityForApproval: element.Quantity
                 });
                 bulkStoreItems.push({
                     storeId: store.id,
                     itemId: selectedItem.id,
-                    quantity: element.Quantity,
+                    quantity: settings?.['stockUpdate'] == 'manual' ? 0 : element.Quantity,
                     status: 1,
-                    addedBy: companyId,
+                    addedBy: userId,
                     price: element?.Price,
-                    isRejected: isReject
+                    isRejected: isReject,
+                    approvalId: approval.id,
+                    quantityForApproval: element.Quantity
                 })
             }
 

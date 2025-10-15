@@ -152,7 +152,9 @@ async function acceptRejectApproval(req, res) {
       }
     );
     if (isApproved) {
-      if (approval?.documentType == 'Delivery Challan' || approval?.documentType == 'Invoice') {
+      if (approval?.documentType == 'Delivery Challan' || approval?.documentType == 'Invoice' ||
+        approval?.documentType == 'Service Challan' || approval?.documentType == 'Service Confirmation Challan'
+      ) {
         const stockTransfers = await models.StockTransfer.findAll({
           where: {
             approvalId
