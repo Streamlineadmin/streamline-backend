@@ -1,5 +1,6 @@
 const { Op } = require("sequelize");
 const models = require("../models");
+const { generateTransferNumber } = require("../helpers/transfer-number");
 
 async function getApprovals(req, res) {
   try {
@@ -197,6 +198,101 @@ async function acceptRejectApproval(req, res) {
               actualPrice: stock.price,
               approvalId: approval.id,
               quantityForApproval: element.quantityForApproval
+            });
+          }
+        }
+        await models.StockTransfer.destroy({
+          where: {
+            id: {
+              [Op.in]: stockTransfers.map(elem => elem.id)
+            }
+          }
+        });
+        return res.status(200).json({ message: 'Document Status Updated.' });
+      }
+
+      if (approval?.documentType == 'Stock Transfer') {
+        const stockTransfers = await models.StockTransfer.findAll({
+          where: {
+            approvalId: approval.id
+          }
+        });
+        for (const element of stockTransfers) {
+          let remainingQuantity = itemsMap[element.itemId];
+          const existingStock = await models.StoreItems.findAll({
+            where: { storeId: element.fromStoreId, itemId: element.itemId, isRejected: element.isRejected || false },
+            order: [['createdAt', 'ASC']],
+          });
+          for (const stock of existingStock) {
+            if (remainingQuantity <= 0) break;
+            if (stock.quantity <= 0) continue;
+            const deductQty = Math.min(stock.quantity, remainingQuantity);
+            remainingQuantity -= deductQty;
+
+            await models.StoreItems.update(
+              { quantity: (stock.quantity - deductQty) },
+              { where: { id: stock.id } }
+            );
+            if (element?.toStoreId == element?.fromStoreId) {
+              await models.StockTransfer.create({
+                transferNumber: element.transferNumber,
+                fromStoreId: element?.fromStoreId,
+                itemId: element.itemId,
+                quantity: deductQty,
+                toStoreId: element.toStoreId,
+                transferDate: element.transferDate,
+                transferredBy: element.transferredBy,
+                comment: element.comment,
+                companyId: element.companyId,
+                price: stock.price,
+                isRejected: element?.isRejected || false,
+                approvalId: approval.id,
+                quantityForApproval: element.quantityForApproval
+              });
+              await models.StockTransfer.create({
+                transferNumber: element.transferNumber,
+                fromStoreId: element?.fromStoreId,
+                itemId: element.itemId,
+                quantity: deductQty * -1,
+                toStoreId: element.toStoreId,
+                transferDate: element.transferDate,
+                transferredBy: element.transferredBy,
+                comment: element.comment,
+                companyId: element.companyId,
+                price: stock.price,
+                isRejected: element?.isRejected ? false : true,
+                approvalId: approval.id,
+                quantityForApproval: element.quantityForApproval
+              });
+
+            }
+            else {
+              await models.StockTransfer.create({
+                transferNumber: element.transferNumber,
+                fromStoreId: element?.fromStoreId,
+                itemId: element.itemId,
+                quantity: deductQty,
+                toStoreId: element.toStoreId,
+                transferDate: element.transferDate,
+                transferredBy: element.transferredBy,
+                comment: element.comment,
+                companyId: element.companyId,
+                price: stock.price,
+                isRejected: element?.isRejected || false,
+                approvalId: approval.id,
+                quantityForApproval: element.quantityForApproval
+              });
+            }
+            await models.StoreItems.create({
+              storeId: element.toStoreId,
+              itemId: element.itemId,
+              quantity: deductQty,
+              status: 1,
+              addedBy: element.transferredBy,
+              price: stock.price,
+              isRejected: element?.isRejected || false,
+              approvalId: approval.id,
+              quantityForApproval: deductQty
             });
           }
         }
