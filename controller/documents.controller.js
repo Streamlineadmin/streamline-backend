@@ -1728,7 +1728,7 @@ async function createDocument(req, res) {
             quantity: deductQty,
             toStoreId: rejectStore.id,
             transferDate: new Date().toISOString(),
-            transferredBy: companyId,
+            transferredBy: createdBy,
             companyId,
             price: stock.price,
             isRejected: element?.toReject || false
@@ -1742,7 +1742,7 @@ async function createDocument(req, res) {
               quantity: deductQty,
               toStoreId: rejectStore.id,
               transferDate: new Date().toISOString(),
-              transferredBy: companyId,
+              transferredBy: createdBy,
               companyId,
               price: stock.price,
               isRejected: element?.isRejected || false
@@ -1805,7 +1805,7 @@ async function createDocument(req, res) {
         const itemsMap = new Map(existingItems.map(existingItem => [existingItem.itemId, existingItem.id]));
         const storesMap = new Map(stores.map(store => [store.name, store.id]));
 
-        await Promise.all([models.StoreItems.bulkCreate(items?.filter(item => item?.receivedToday&&item.type!='Finished Good').map(item => {
+        await Promise.all([models.StoreItems.bulkCreate(items?.filter(item => item?.receivedToday && item.type != 'Finished Good').map(item => {
           const itemId = itemsMap.get(item.itemId) || null;
           const storeId = storesMap.get(store) || null;
           return {
@@ -1821,7 +1821,7 @@ async function createDocument(req, res) {
           }
         })
         ),
-        models.StockTransfer.bulkCreate(items?.filter(item => item?.receivedToday&&item.type!='Finished Good').map(item => {
+        models.StockTransfer.bulkCreate(items?.filter(item => item?.receivedToday && item.type != 'Finished Good').map(item => {
           const itemId = itemsMap.get(item.itemId) || null;
           const storeId = storesMap.get(store) || null;
           return {
@@ -1845,7 +1845,7 @@ async function createDocument(req, res) {
         );
 
         if (documentType === 'Service Confirmation Qr') {
-          await Promise.all([models.StoreItems.bulkCreate(items?.filter(item => item.pendingQuantity&&item.type!='Finished Good').map(item => {
+          await Promise.all([models.StoreItems.bulkCreate(items?.filter(item => item.pendingQuantity && item.type != 'Finished Good').map(item => {
             const itemId = itemsMap.get(item.itemId) || null;
             const storeId = storesMap.get(rejectedStore) || null;
             return {
@@ -1862,7 +1862,7 @@ async function createDocument(req, res) {
             }
           })
           ),
-          models.StockTransfer.bulkCreate(items?.filter(item => item.pendingQuantity&&item.type!='Finished Good').map(item => {
+          models.StockTransfer.bulkCreate(items?.filter(item => item.pendingQuantity && item.type != 'Finished Good').map(item => {
             const itemId = itemsMap.get(item.itemId) || null;
             const storeId = storesMap.get(rejectedStore) || null;
             return {
@@ -1958,7 +1958,7 @@ async function createDocument(req, res) {
 async function getDocuments(req, res) {
   try {
 
-    const { companyId, counts, createdBy, approvedBy, requestedBy, currentPage, labels, pageSize, documentType = '', search = '', dealStatus, docTypeFilter, dateRange } = req.body;
+    const { companyId, documentNumber, buyerName, counts, createdBy, approvedBy, requestedBy, currentPage, labels, pageSize, documentType = '', search = '', dealStatus, docTypeFilter, dateRange } = req.body;
 
     const offset = ((currentPage || 1) - 1) * (pageSize || 10);
     let documentstype = [];
@@ -2023,6 +2023,16 @@ async function getDocuments(req, res) {
               [Op.in]: documentstype
             }
           }),
+          ...(documentNumber ? {
+            documentNumber: {
+              [Op.like]: `%${documentNumber.trim()}%`,
+            }
+          } : {}),
+          ...(buyerName ? {
+            buyerName: {
+              [Op.like]: `%${buyerName.trim()}%`,
+            }
+          } : {}),
           ...(requestedBy ? { createdBy: requestedBy } : {}),
           ...(approvedBy ? { approvedBy: approvedBy } : {}),
           ...(Array.isArray(dealStatus) && dealStatus.length > 0
