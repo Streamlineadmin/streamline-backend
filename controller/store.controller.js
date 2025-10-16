@@ -529,14 +529,17 @@ async function getItemStockTransferHistory(req, res) {
       where: {
         itemId, isRejected,
         quantity: {
-          [Op.ne]: null
+          [Op.and]: [
+            { [Op.ne]: null },
+            { [Op.ne]: 0 }
+          ]
         }
       },
       attributes: [
         'createdAt', 'transferNumber', 'quantity', 'itemId',
         'fromStoreId', 'toStoreId', 'transferredBy', 'comment',
         'price', 'documentNumber', 'documentType',
-        'productionId', 'productionNavigationId', 'isRejected'
+        'productionId', 'productionNavigationId', 'isRejected',"updatedAt"
       ],
       order: [['createdAt', 'ASC']],
       raw: true,

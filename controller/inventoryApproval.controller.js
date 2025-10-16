@@ -89,7 +89,7 @@ async function getApprovalById(req, res) {
     const uomMap = Object.fromEntries(uoms.map(u => [u.id, u.code]));
     const categoryMap = Object.fromEntries(categories.map(c => [c.id, c.name]));
     const storeMap = Object.fromEntries(stores.map(s => [s.id, s.name]));
-    const userMap = Object.fromEntries(users.map(u => [u.id, u.username]));
+    const userMap = Object.fromEntries(users.map(u => [u.id, u.name]));
 
     return res.status(200).json({
       data: {
@@ -560,7 +560,7 @@ async function acceptRejectApproval(req, res) {
           }
         });
         for (const element of stockTransfers) {
-          let remainingQuantity = itemsMap[element.itemId];
+          let remainingQuantity = itemsMap[element.itemId] || 0;
           const existingStock = await models.StoreItems.findAll({
             where: { storeId: element.fromStoreId, itemId: element.itemId, isRejected: element.isRejected || false },
             order: [['createdAt', 'ASC']],
@@ -597,7 +597,7 @@ async function acceptRejectApproval(req, res) {
         await models.StockTransfer.destroy({
           where: {
             id: {
-              [Op.in]: stockTransfers.map(data => data.id)
+              [Op.in]: stockTransfers?.filter(data => itemsMap[data.itemId]).map(data => data.id)
             }
           }
         });
