@@ -167,7 +167,7 @@ async function acceptRejectApproval(req, res) {
           }
         });
         for (const element of stockTransfers) {
-          let remainingQuantity = itemsMap[element.itemId];
+          let remainingQuantity = itemsMap[element.itemId] || 0;
           const existingStock = await models.StoreItems.findAll({
             where: { storeId: storeId.id, itemId: element.itemId },
             order: [['createdAt', 'ASC']],
@@ -204,7 +204,7 @@ async function acceptRejectApproval(req, res) {
         await models.StockTransfer.destroy({
           where: {
             id: {
-              [Op.in]: stockTransfers.map(elem => elem.id)
+              [Op.in]: stockTransfers?.filter(elem => itemsMap[elem.itemId]).map(elem => elem.id)
             }
           }
         });
@@ -299,7 +299,7 @@ async function acceptRejectApproval(req, res) {
         await models.StockTransfer.destroy({
           where: {
             id: {
-              [Op.in]: stockTransfers.map(elem => elem.id)
+              [Op.in]: stockTransfers?.filter(elem => itemsMap[elem.itemId]).map(elem => elem.id)
             }
           }
         });
