@@ -340,6 +340,18 @@ async function acceptRejectApproval(req, res) {
       }
 
       if (approval?.documentType == 'Finished Good') {
+
+        const finishedGood = await models.ProductionFinishedGoods.findOne({
+          where: {
+            productionId: approval.documentNumber
+          }
+        });
+        if (finishedGood) {
+          await finishedGood.update({
+            passedQuantity: (finishedGood?.passedQuantity || 0) + ((items[0]?.quantity || 0) / (finishedGood?.conversionFactor || 1)),
+            rejectQuantity: (finishedGood?.rejectQuantity || 0) + ((items[1]?.quantity || 0) / (finishedGood?.conversionFactor || 1)),
+          })
+        }
         const storeItems = await models.StoreItems.findAll({
           where: {
             approvalId: approval.id
@@ -347,10 +359,10 @@ async function acceptRejectApproval(req, res) {
         });
         for (const element of storeItems) {
           if (element.isRejected) {
-            await element.update({ qunatity: (items[1]?.quantity || 0) });
+            await element.update({ quantity: Number(items[1]?.quantity || 0) });
           }
           else {
-            await element.update({ quantity: items[0]?.quantity || 0 });
+            await element.update({ quantity: Number(items[0]?.quantity || 0) });
           }
         }
         const stockTransfer = await models.StockTransfer.findAll({
@@ -360,10 +372,10 @@ async function acceptRejectApproval(req, res) {
         });
         for (const element of stockTransfer) {
           if (element.isRejected) {
-            await element.update({ qunatity: (items[1]?.quantity || 0) });
+            await element.update({ quantity: Number(items[1]?.quantity || 0) });
           }
           else {
-            await element.update({ quantity: items[0]?.quantity || 0 });
+            await element.update({ quantity: Number(items[0]?.quantity || 0) });
           }
         }
         return res.status(200).json({ message: 'Document Status Updated.' });

@@ -549,6 +549,14 @@ async function getProductionById(req, res) {
                 approvalStatus: 'Pending'
             }
         });
+
+        const isFinishedGoodLock = await models.InventoryApproval.findOne({
+            where: {
+                documentType: 'Finished Good',
+                documentNumber: production.id,
+                approvalStatus: 'Pending'
+            }
+        });
         const [salesOrder, productionItem, bom, scrapLogs, rawMaterials, finishedGoods, process, additionalCharges] = await Promise.all([
             models.Documents.findOne({ where: { documentNumber: production?.documentNumber || '' } }),
             models.ProductionItems.findOne({ where: { productionId: production.id } }),
@@ -613,7 +621,8 @@ async function getProductionById(req, res) {
                 process,
                 isMulti,
                 isRawMaterialLock: isRawMaterialLock ? true : false,
-                isScrapMaterialLock: isScrapMaterialLock ? true : false
+                isScrapMaterialLock: isScrapMaterialLock ? true : false,
+                isFinishedGoodLock: isFinishedGoodLock ? true : false
             }
         });
     } catch (error) {
@@ -948,7 +957,6 @@ async function updateProcess(req, res) {
                     hours = hours % 24;
                     const format = (num) => String(num).padStart(2, "0");
                     currentAverageTime = `${format(days)}:${format(hours)}:${format(minutes)}:${format(seconds)}`;
-                    console.log(currentAverageTime);
                 }
                 await models.ProductionSalesProcess.update({ currentaverageCost: (process.currentaverageCost || 0) + totalCost, currentPlannedTime: currentAverageTime }, {
                     where: {
@@ -1283,8 +1291,8 @@ async function saveFinishedGoods(req, res) {
         }
 
         await models.ProductionFinishedGoods.update({
-            passedQuantity: (finishedGoods[0]?.passedQuantity || 0) + passedQty,
-            rejectQuantity: (finishedGoods[0]?.rejectQuantity || 0) + (rejectQty || 0),
+            passedQuantity: (finishedGoods[0]?.passedQuantity || 0) + (settings?.['productionFinishedGood'] == 'manual' ? 0 : passedQty),
+            rejectQuantity: (finishedGoods[0]?.rejectQuantity || 0) + (settings?.['productionFinishedGood'] == 'manual' ? 0 : (rejectQty || 0)),
             cost: (finishedGoods[0]?.total || 0) + total,
             quantityToTest: 0
         }, {
@@ -1372,7 +1380,7 @@ async function saveFinishedGoods(req, res) {
                 await models.BatchItems.bulkCreate(batchItems);
             }
         }
-        return res.status(200).json({ message: 'Finished Goods Saved.' });
+        return res.status(200).json({ message: settings?.['productionFinishedGood'] == 'manual' ? 'Finished Goods Saved and Inventory approval Requested.' : 'Finished Goods Saved.' });
 
     } catch (error) {
         await transaction.rollback();
@@ -2202,7 +2210,6 @@ async function returnRawMaterial(req, res) {
         });
 
         for (const element of data) {
-            console.log('item here', element, itemMap[element.itemId]?.id, productionId);
             if (!element.returnQuantity || element.returnQuantity == 0 || isNaN(element.returnQuantity))
                 continue;
             let remainingQuantity = Number(element.returnQuantity) * (element.conversionFactor || 1);
@@ -2216,10 +2223,8 @@ async function returnRawMaterial(req, res) {
                 },
                 order: [['createdAt', 'ASC']]
             });
-            console.log('stocktransfer here', stockTransfer);
 
             for (const transfer of stockTransfer) {
-                console.log('in top of loop');
                 if (remainingQuantity <= 0) break;
                 const deductQty = Math.min(transfer.quantity * -1, remainingQuantity);
                 remainingQuantity -= deductQty;
@@ -2234,8 +2239,6 @@ async function returnRawMaterial(req, res) {
                     approvalId: approval.id,
                     quantityForApproval: Number(element.returnQuantity)
                 });
-
-                console.log('in bottom')
 
                 await models.StockTransfer.create({
                     transferNumber: generateTransferNumber(),
