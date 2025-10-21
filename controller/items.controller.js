@@ -806,29 +806,47 @@ async function bulkEditItems(req, res) {
                 continue;
             }
             const updatedObj = {
-                itemId
-            }
-            if (itemName) updatedObj.itemName = itemName;
-            if (category) updatedObj.category = category?.id || null;
-            if (subCategory) updatedObj.subCategory = subCategory?.id || null;
-            if (microCategory) updatedObj.microCategory = microCategory?.id || null;
-            if (item.Price) updatedObj.price = item.Price;
-            if (item["Min Stock"]) updatedObj.minStock = item["Min Stock"];
-            if (item["Max Stock"]) updatedObj.maxStock = item["Max Stock"];
-            if (item.Description) updatedObj.description = item.Description;
-            if (item["Tax Type"]) updatedObj.taxType = item['Tax Type'] == 'Inclusive' ? 1 : 2;
-            if (item.Tax) updatedObj.tax = item.Tax;
-            if (item["Item type"]) updatedObj.itemType = item["Item type"] === "Buy" ? 1 : item["Item type"] === "Sell" ? 2 : 3;
-            if (item?.customFields) updatedObj.customFields = item.customFields
+                id: existingItem.id,
+                companyId,
+                itemId,
+                ...(itemName && { itemName }),
+                ...(category && { category: category.id }),
+                ...(subCategory && { subCategory: subCategory.id }),
+                ...(microCategory && { microCategory: microCategory.id }),
+                ...(item.Price && { price: item.Price }),
+                ...(item["Min Stock"] && { minStock: item["Min Stock"] }),
+                ...(item["Max Stock"] && { maxStock: item["Max Stock"] }),
+                ...(item.Description && { description: item.Description }),
+                ...(item["Tax Type"] && { taxType: item['Tax Type'] === 'Inclusive' ? 1 : 2 }),
+                ...(item.Tax && { tax: item.Tax }),
+                ...(item["Item type"] && {
+                    itemType:
+                        item["Item type"] === "Buy" ? 1 :
+                            item["Item type"] === "Sell" ? 2 : 3,
+                }),
+                ...(item?.customFields && { customFields: item.customFields }),
+            };
             updateData.push(updatedObj);
         }
 
         if (updateData.length) {
-            await Promise.all(
-                updateData.map(data =>
-                    models.Items.update(data, { where: { itemId: data.itemId, companyId } })
-                )
-            );
+            await models.Items.bulkCreate(updateData, {
+                updateOnDuplicate: [
+                    'itemName',
+                    'category',
+                    'subCategory',
+                    'microCategory',
+                    'price',
+                    'minStock',
+                    'maxStock',
+                    'description',
+                    'taxType',
+                    'tax',
+                    'itemType',
+                    'customFields',
+                    'updatedAt'
+                ],
+            });
         }
 
         let msg =
@@ -1057,7 +1075,7 @@ async function stockReconcilation(req, res) {
             }
             await models.StockTransfer.create(stockTransfer);
         }
-        msg = !errorArray.length ? 'Stocks Reconcile Successfully.' : errorArray.length != items.length ? 'Few Items are Not Found. We Download Those Rows for you.' : 'All Items are Not Found. We Download Those Rows for you.'
+        msg = !errorArray.length ? settings?.['stockReconcilation'] != 'manual' ? 'Stocks Reconcile Successfully.' : 'Inventory Approval generated for current request.' : errorArray.length != items.length ? 'Few Items are Not Found. We Download Those Rows for you.' : 'All Items are Not Found. We Download Those Rows for you.'
         return res.status(200).json({ message: msg, invalidData: errorArray });
 
     } catch (error) {
@@ -1354,9 +1372,11 @@ async function bulkStockUpdate(req, res) {
             await models.StoreItems.bulkCreate(bulkStoreItems);
         }
         const msg = !errorArray.length
-            ? 'Bulk Stock updated successfully.'
+            ? settings?.['stockUpdate'] != 'manual' ? 'Bulk Stock updated successfully.' :
+                'Inventory Approval generated for current request.'
             : errorArray.length !== rows.length
-                ? 'Bulk Stock updated successfully. Some rows contain invalid data. We Download Those Rows for you.'
+                ? settings?.['stockUpdate'] != 'manual' ? 'Bulk Stock updated successfully. Some rows contain invalid data. We Download Those Rows for you.' :
+                    'Inventory Approval generated for current request. Some rows contain invalid data. We Download Those Rows for you.'
                 : 'All rows contain invalid data. We Download Those Rows for you.';
 
         res.status(200).json({ message: msg, invalidData: errorArray });

@@ -167,89 +167,89 @@ async function editTeam(req, res) {
     const companyId = req.body.companyId;
     const ip_address = req.body.ip_address;
     const updatedTeamData = {
-      companyId,
-      name: req.body.name,
-      description: req.body.description,
-      ip_address,
-      status: req.body.status || 1
+        companyId,
+        name: req.body.name,
+        description: req.body.description,
+        ip_address,
+        status: req.body.status || 1
     };
     const rolePermissions = req.body.rolePermissions || [];
-  
+
     try {
-      // Check if a different team with the same name already exists
-      const existingTeam = await models.Teams.findOne({
-        where: {
-          name: req.body.name,
-          companyId,
-          id: { [models.Sequelize.Op.ne]: teamId }
-        }
-      });
-  
-      if (existingTeam) {
-        return res.status(409).json({
-          message: "Team name already exists for this company!",
+        // Check if a different team with the same name already exists
+        const existingTeam = await models.Teams.findOne({
+            where: {
+                name: req.body.name,
+                companyId,
+                id: { [models.Sequelize.Op.ne]: teamId }
+            }
         });
-      }
-  
-      // Update the team
-      const result = await models.Teams.update(updatedTeamData, { where: { id: teamId } });
-  
-      if (result[0] === 0) {
-        return res.status(404).json({ message: "Team not found" });
-      }
-  
-      // Delete existing RolePermissions
-      await models.RolePermissions.destroy({ where: { role: teamId } });
-  
-      const rolePermissionInserts = []; // ✅ Declare this array
-  
-      for (const perm of rolePermissions) {
-        const feature = await models.PermissionsFeatures.findOne({
-          where: { feature: perm.feature }
-        });
-  
-        if (!feature) continue;
-  
-        for (const sub of perm.subFeature) {
-          const subFeature = await models.PermissionsSubFeatures.findOne({
-            where: { subfeature: sub.name, parent: feature.id }
-          });
-  
-          if (!subFeature) continue;
-  
-          rolePermissionInserts.push({
-            role: teamId,
-            companyId,
-            permission: feature.id,
-            subpermission: subFeature.id,
-            create: sub.create || 0,
-            view: sub.view || 0,
-            edit: sub.edit || 0,
-            delete: sub.delete || 0,
-            ip_address,
-            status: 1
-          });
+
+        if (existingTeam) {
+            return res.status(409).json({
+                message: "Team name already exists for this company!",
+            });
         }
-      }
-  
-      // Bulk insert
-      if (rolePermissionInserts.length > 0) {
-        await models.RolePermissions.bulkCreate(rolePermissionInserts);
-      }
-  
-      return res.status(200).json({
-        message: "Team and permissions updated successfully",
-        team: updatedTeamData,
-      });
-  
+
+        // Update the team
+        const result = await models.Teams.update(updatedTeamData, { where: { id: teamId } });
+
+        if (result[0] === 0) {
+            return res.status(404).json({ message: "Team not found" });
+        }
+
+        // Delete existing RolePermissions
+        await models.RolePermissions.destroy({ where: { role: teamId } });
+
+        const rolePermissionInserts = []; // ✅ Declare this array
+
+        for (const perm of rolePermissions) {
+            const feature = await models.PermissionsFeatures.findOne({
+                where: { feature: perm.feature }
+            });
+
+            if (!feature) continue;
+
+            for (const sub of perm.subFeature) {
+                const subFeature = await models.PermissionsSubFeatures.findOne({
+                    where: { subfeature: sub.name, parent: feature.id }
+                });
+
+                if (!subFeature) continue;
+
+                rolePermissionInserts.push({
+                    role: teamId,
+                    companyId,
+                    permission: feature.id,
+                    subpermission: subFeature.id,
+                    create: sub.create || 0,
+                    view: sub.view || 0,
+                    edit: sub.edit || 0,
+                    delete: sub.delete || 0,
+                    ip_address,
+                    status: 1
+                });
+            }
+        }
+
+        // Bulk insert
+        if (rolePermissionInserts.length > 0) {
+            await models.RolePermissions.bulkCreate(rolePermissionInserts);
+        }
+
+        return res.status(200).json({
+            message: "Team and permissions updated successfully",
+            team: updatedTeamData,
+        });
+
     } catch (error) {
-      return res.status(500).json({
-        message: "Something went wrong, please try again later!",
-        error: error.message || error
-      });
+        return res.status(500).json({
+            message: "Something went wrong, please try again later!",
+            error: error.message || error
+        });
     }
-  }
-  
+}
+
 
 
 
@@ -344,69 +344,88 @@ function getTeamsById(req, res) {
 
 async function getTeams(req, res) {
     try {
+        const { companyId } = req.body;
+
         const teams = await models.Teams.findAll({
-            where: {
-                companyId: req.body.companyId
-            }
+            where: { companyId },
+            raw: true,
         });
 
-        if (!teams || teams.length === 0) {
+        if (!teams.length) {
             return res.status(200).json([]);
         }
 
         const teamIds = teams.map(team => team.id);
 
-        const rolePermissionsData = await models.RolePermissions.findAll({
+        const rolePermissions = await models.RolePermissions.findAll({
             where: {
-                companyId: req.body.companyId,
-                role: {
-                    [Op.in]: teamIds
-                }
-            }
+                companyId,
+                role: { [Op.in]: teamIds },
+            },
+            raw: true,
         });
 
-        // Build permission map per team (role)
-        const permissionMap = {};
-
-        for (const rolePermission of rolePermissionsData) {
-            const [feature] = await models.PermissionsFeatures.findAll({
-                where: { id: rolePermission.permission }
-            });
-
-            const [subfeature] = await models.PermissionsSubFeatures.findAll({
-                where: { id: rolePermission.subpermission }
-            });
-
-            const permissionEntry = {
-                feature: feature ? feature.feature : null,
-                subfeature: subfeature ? subfeature.subfeature : null,
-                create: rolePermission.create,
-                edit: rolePermission.edit,
-                view: Number(rolePermission.view),
-                delete: rolePermission.delete
-            };
-
-            if (!permissionMap[rolePermission.role]) {
-                permissionMap[rolePermission.role] = [];
-            }
-
-            permissionMap[rolePermission.role].push(permissionEntry);
+        if (!rolePermissions.length) {
+            return res.status(200).json(teams.map(t => ({ ...t, permissions: [] })));
         }
 
-        // Append permissions to each team
+        // ✅ Get all unique feature/subfeature IDs in one go
+        const featureIds = [...new Set(rolePermissions.map(rp => rp.permission).filter(Boolean))];
+        const subFeatureIds = [...new Set(rolePermissions.map(rp => rp.subpermission).filter(Boolean))];
+
+        const [features, subFeatures] = await Promise.all([
+            models.PermissionsFeatures.findAll({
+                where: { id: { [Op.in]: featureIds } },
+                attributes: ['id', 'feature'],
+                raw: true,
+            }),
+            models.PermissionsSubFeatures.findAll({
+                where: { id: { [Op.in]: subFeatureIds } },
+                attributes: ['id', 'subfeature'],
+                raw: true,
+            }),
+        ]);
+
+        const featureMap = features.reduce((acc, f) => {
+            acc[f.id] = f.feature;
+            return acc;
+        }, {});
+
+        const subFeatureMap = subFeatures.reduce((acc, s) => {
+            acc[s.id] = s.subfeature;
+            return acc;
+        }, {});
+
+        // ✅ Build permission map efficiently
+        const permissionMap = {};
+        for (const rp of rolePermissions) {
+            if (!permissionMap[rp.role]) permissionMap[rp.role] = [];
+
+            permissionMap[rp.role].push({
+                feature: featureMap[rp.permission] || null,
+                subfeature: subFeatureMap[rp.subpermission] || null,
+                create: rp.create,
+                edit: rp.edit,
+                view: Number(rp.view),
+                delete: rp.delete,
+            });
+        }
+
+        // ✅ Merge permissions with team data
         const enrichedTeams = teams.map(team => ({
-            ...team.dataValues,
-            permissions: permissionMap[team.id] || []
+            ...team,
+            permissions: permissionMap[team.id] || [],
         }));
 
         return res.status(200).json(enrichedTeams);
     } catch (error) {
         console.error("Error fetching teams:", error);
         return res.status(500).json({
-            message: "Something went wrong, please try again later!"
+            message: "Something went wrong, please try again later!",
         });
     }
 }
+
 
 
 

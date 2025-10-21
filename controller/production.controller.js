@@ -549,6 +549,14 @@ async function getProductionById(req, res) {
                 approvalStatus: 'Pending'
             }
         });
+
+        const isFinishedGoodLock = await models.InventoryApproval.findOne({
+            where: {
+                documentType: 'Finished Good',
+                documentNumber: production.id,
+                approvalStatus: 'Pending'
+            }
+        });
         const [salesOrder, productionItem, bom, scrapLogs, rawMaterials, finishedGoods, process, additionalCharges] = await Promise.all([
             models.Documents.findOne({ where: { documentNumber: production?.documentNumber || '' } }),
             models.ProductionItems.findOne({ where: { productionId: production.id } }),
@@ -613,7 +621,8 @@ async function getProductionById(req, res) {
                 process,
                 isMulti,
                 isRawMaterialLock: isRawMaterialLock ? true : false,
-                isScrapMaterialLock: isScrapMaterialLock ? true : false
+                isScrapMaterialLock: isScrapMaterialLock ? true : false,
+                isFinishedGoodLock: isFinishedGoodLock ? true : false
             }
         });
     } catch (error) {
@@ -948,7 +957,6 @@ async function updateProcess(req, res) {
                     hours = hours % 24;
                     const format = (num) => String(num).padStart(2, "0");
                     currentAverageTime = `${format(days)}:${format(hours)}:${format(minutes)}:${format(seconds)}`;
-                    console.log(currentAverageTime);
                 }
                 await models.ProductionSalesProcess.update({ currentaverageCost: (process.currentaverageCost || 0) + totalCost, currentPlannedTime: currentAverageTime }, {
                     where: {
@@ -1283,8 +1291,8 @@ async function saveFinishedGoods(req, res) {
         }
 
         await models.ProductionFinishedGoods.update({
-            passedQuantity: (finishedGoods[0]?.passedQuantity || 0) + passedQty,
-            rejectQuantity: (finishedGoods[0]?.rejectQuantity || 0) + (rejectQty || 0),
+            passedQuantity: (finishedGoods[0]?.passedQuantity || 0) + (settings?.['productionFinishedGood'] == 'manual' ? 0 : passedQty),
+            rejectQuantity: (finishedGoods[0]?.rejectQuantity || 0) + (settings?.['productionFinishedGood'] == 'manual' ? 0 : (rejectQty || 0)),
             cost: (finishedGoods[0]?.total || 0) + total,
             quantityToTest: 0
         }, {
@@ -1372,7 +1380,7 @@ async function saveFinishedGoods(req, res) {
                 await models.BatchItems.bulkCreate(batchItems);
             }
         }
-        return res.status(200).json({ message: 'Finished Goods Saved.' });
+        return res.status(200).json({ message: settings?.['productionFinishedGood'] == 'manual' ? 'Finished Goods Saved and Inventory approval Requested.' : 'Finished Goods Saved.' });
 
     } catch (error) {
         await transaction.rollback();
@@ -2203,8 +2211,8 @@ async function returnRawMaterial(req, res) {
 
         for (const element of data) {
             if (!element.returnQuantity || element.returnQuantity == 0 || isNaN(element.returnQuantity))
-                return;
-            let remainingQuantity = Number(element.returnQuantity) * element.conversionFactor;
+                continue;
+            let remainingQuantity = Number(element.returnQuantity) * (element.conversionFactor || 1);
             const stockTransfer = await models.StockTransfer.findAll({
                 where: {
                     itemId: itemMap[element.itemId]?.id,
@@ -2216,37 +2224,37 @@ async function returnRawMaterial(req, res) {
                 order: [['createdAt', 'ASC']]
             });
 
-            for (const element of stockTransfer) {
+            for (const transfer of stockTransfer) {
                 if (remainingQuantity <= 0) break;
-                const deductQty = Math.min(element.quantity * -1, remainingQuantity);
+                const deductQty = Math.min(transfer.quantity * -1, remainingQuantity);
                 remainingQuantity -= deductQty;
                 await models.StoreItems.create({
-                    storeId: element.fromStoreId,
-                    itemId: element.itemId,
-                    quantity: settings?.['productionScrapMaterial'] == 'manual' ? 0 : deductQty,
+                    storeId: transfer.fromStoreId,
+                    itemId: transfer.itemId,
+                    quantity: settings?.['productionRawMaterial'] == 'manual' ? 0 : deductQty,
                     status: 1,
                     addedBy: Number(userId),
-                    price: element.price,
-                    isRejected: element?.isReject || false,
+                    price: transfer.price,
+                    isRejected: transfer?.isReject || false,
                     approvalId: approval.id,
-                    quantityForApproval: deductQty
+                    quantityForApproval: Number(element.returnQuantity)
                 });
 
                 await models.StockTransfer.create({
                     transferNumber: generateTransferNumber(),
                     fromStoreId: null,
-                    itemId: element.itemId,
-                    quantity: settings?.['productionScrapMaterial'] == 'manual' ? null : deductQty,
-                    toStoreId: element.fromStoreId,
+                    itemId: transfer.itemId,
+                    quantity: settings?.['productionRawMaterial'] == 'manual' ? null : deductQty,
+                    toStoreId: transfer.fromStoreId,
                     transferDate: new Date().toISOString(),
                     transferredBy: Number(userId),
                     companyId: Number(companyId),
-                    price: element.price,
+                    price: transfer.price,
                     productionId: production.productionId,
                     productionNavigationId: production.id,
-                    isRejected: element?.isReject || false,
+                    isRejected: transfer?.isReject || false,
                     approvalId: approval.id,
-                    quantityForApproval: deductQty
+                    quantityForApproval: Number(element.returnQuantity)
                 });
 
             }
@@ -2261,9 +2269,7 @@ async function returnRawMaterial(req, res) {
             }
 
         }
-
-
-        res.status(200).json({ message: 'Raw Material Returned.' });
+        res.status(200).json({ message: settings?.['productionRawMaterial'] != 'manual' ? 'Raw Material Returned.' : 'Raw material return request generated.' });
 
     } catch (error) {
         console.error("Update Table Error:", error);
