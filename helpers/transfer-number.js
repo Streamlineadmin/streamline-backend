@@ -27,7 +27,36 @@ const generateProductionId = () => {
     return result;
 }
 
+const getAgingBucket = (createdAt) => {
+    if (!createdAt) return 'Unknown';
+    const createdDate = new Date(createdAt);
+    const today = new Date();
+    const diffTime = today - createdDate;
+    const ageInDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+
+    if (ageInDays <= 30) return '0–30 days';
+    if (ageInDays <= 60) return '31–60 days';
+    if (ageInDays <= 90) return '61–90 days';
+    if (ageInDays <= 180) return '91–180 days';
+    return '180+ days';
+}
+
+const getAgingBucket90Days = (createdAt) => {
+    if (!createdAt) return 'Unknown';
+
+    const createdDate = new Date(createdAt);
+    const today = new Date();
+    const diffTime = today - createdDate;
+    const ageInDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+
+    if (ageInDays <= 30) return 'Fast Moving';
+    if (ageInDays <= 90) return 'Slow Moving';
+    return 'Non Moving';
+};
+
 module.exports = {
     generateTransferNumber,
-    generateProductionId
+    generateProductionId,
+    getAgingBucket,
+    getAgingBucket90Days
 }

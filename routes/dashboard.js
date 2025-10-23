@@ -13,4 +13,5 @@ router.post("/getDocumentsInvoiceSummary", dashboardController.getDocumentsInvoi
 router.post("/predictNext30DaysTotalValue", dashboardController.predictNext30DaysTotalValue);
 router.post("/getItemSalesSummaryWithPrediction", dashboardController.getItemSalesSummaryWithPrediction);
 router.post("/predictSales", dashboardController.predictSales);
+router.post("/getDashboardData", dashboardController.getDashboardData);
 module.exports = router;
