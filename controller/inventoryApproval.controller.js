@@ -38,8 +38,7 @@ async function getApprovalById(req, res) {
     const storeItemMap = {}, storeItems = [];
 
     for (const element of storeItem) {
-      element.quantity = Math.abs(element.quantity) || 0;
-      element.quantityForApproval = Math.abs(element.quantityForApproval) || 0;
+      element.quantity = Math.abs(element.quantity);
       if (!storeItemMap[element?.itemId]) {
         storeItems.push(element);
         if (approval.documentType != 'Finished Good' &&
@@ -49,8 +48,7 @@ async function getApprovalById(req, res) {
         )
           storeItemMap[element.itemId] = element;
       } else {
-        storeItemMap[element.itemId].quantity += (element.quantity || 0);
-        // storeItemMap[element.itemId].quantityForApproval += Math.abs(element.quantityForApproval) || 0;
+        storeItemMap[element.itemId].quantity += element.qunatity;
       }
     }
 
@@ -119,28 +117,14 @@ async function getApprovalById(req, res) {
 
 async function acceptRejectApproval(req, res) {
   try {
-    const { approvalId, approvedBy, isApproved, items, by } = req.body;
+    const { approvalId, approvedBy, isApproved, items } = req.body;
 
-    let itemsMap = items.reduce((acc, curr) => {
-      acc[Number(curr.itemId)] = Number(curr.quantity || 0);
+    const itemsMap = items.reduce((acc, curr) => {
+      acc[Number(curr.itemId)] = curr.quantity || 0;
       return acc;
     }, {});
 
     const approval = await models.InventoryApproval.findByPk(approvalId);
-
-    const uoms = await models.UOM.findAll({
-      where: {
-        [Op.or]: [
-          { companyId: approval.companyId, status: 1 },
-          { companyId: null, status: 0 }
-        ]
-      },
-      raw: true
-    });
-    const uomMap = uoms.reduce((acc, curr) => {
-      acc[curr.id] = curr.code;
-      return acc;
-    }, {});
 
     await models.InventoryApproval.update(
       {
@@ -381,67 +365,6 @@ async function acceptRejectApproval(req, res) {
         return res.status(200).json({ message: 'Document Status Updated.' });
       }
 
-      if (approval?.documentType == 'Raw Material Return') {
-        const saveitems = await models.Items.findAll({
-          where: {
-            companyId: approval.companyId,
-            id: {
-              [Op.in]: items.map(item => item.itemId)
-            }
-          },
-          raw: true
-        });
-        const saveItemsMap = saveitems.reduce((acc, curr) => {
-          acc[curr.id] = curr;
-          return acc;
-        }, {});
-        const production = await models.Production.findOne({
-          where: {
-            id: approval.documentNumber
-          }
-        });
-        const storeItems = await models.StoreItems.findAll({
-          where: {
-            approvalId: approval.id,
-          },
-          order: [['createdAt', 'ASC']]
-        });
-        for (const element of items) {
-          if (element.quantity) {
-            const rawMaterial = await models.ProductionRawMaterials.findOne({
-              where: {
-                productionId: production.id,
-                itemId: saveItemsMap[element.itemId]?.itemId
-              }
-            });
-            if (rawMaterial) {
-              await rawMaterial.update({ issuedQuantity: rawMaterial.issuedQuantity - itemsMap[element.itemId] })
-            }
-          }
-        }
-        for (const element of storeItems) {
-          if (itemsMap[element.itemId?.toString()] <= 0) break;
-          await element.update({ quantity: Math.min(itemsMap[element.itemId?.toString()], element.quantityForApproval) });
-          itemsMap[element.itemId?.toString()] = itemsMap[element.itemId?.toString()] - element.quantityForApproval;
-        }
-        itemsMap = items.reduce((acc, curr) => {
-          acc[(curr.itemId)] = curr.quantity || 0;
-          return acc;
-        }, {});
-        const stockTransfer = await models.StockTransfer.findAll({
-          where: {
-            approvalId: approval.id,
-          },
-          order: [['createdAt', 'ASC']]
-        });
-        for (const element of stockTransfer) {
-          if (itemsMap[element.itemId?.toString()] <= 0) break;
-          await element.update({ quantity: Math.min(itemsMap[element.itemId?.toString()], element.quantityForApproval) });
-          itemsMap[element.itemId?.toString()] = itemsMap[element.itemId?.toString()] - element.quantityForApproval;
-        }
-        return res.status(200).json({ message: 'Document Status Updated.' });
-      }
-
       if (approval?.documentType == 'Raw Material') {
         const itemsWithId = await models.Items.findAll({
           where: {
@@ -452,7 +375,7 @@ async function acceptRejectApproval(req, res) {
           raw: true
         });
         const itemIdMap = itemsWithId?.reduce((acc, curr) => {
-          acc[curr.id] = curr;
+          acc[curr.id] = curr.itemId;
           return acc;
         }, {});
         const stockTransfers = await models.StockTransfer.findAll({
@@ -506,7 +429,7 @@ async function acceptRejectApproval(req, res) {
           const rawMaterial = await models.ProductionRawMaterials.findOne({
             where: {
               productionId: approval.documentNumber,
-              itemId: itemIdMap[element.itemId]?.itemId
+              itemId: itemIdMap[element.itemId]
             }
           });
           await rawMaterial.update(
@@ -515,11 +438,6 @@ async function acceptRejectApproval(req, res) {
               currentAverage: (rawMaterial.currentAverage || 0) + price
             }
           );
-          await models.ProductionHistory.create({
-            productionId: approval.documentNumber,
-            actionType: 'Raw Material Issued.',
-            summary: `${itemIdMap[element.itemId]?.itemName} - ${itemsMap[element.itemId]} ${uomMap[itemIdMap[element.itemId]?.metricsUnit]} issued by ${by}.`
-          });
         }
         await models.StockTransfer.destroy({
           where: {
@@ -547,17 +465,12 @@ async function acceptRejectApproval(req, res) {
         });
 
         const itemIdMap = itemsWithId?.reduce((acc, curr) => {
-          acc[curr.itemId] = curr;
+          acc[curr.itemId] = curr.id;
           return acc;
         }, {});
         for (const element of productionScrapMaterials) {
-          if (itemsMap[itemIdMap[element.itemId].id]) {
-            await element.update({ producedQuantity: (element?.producedQuantity || 0) + (Number(itemsMap[itemIdMap[element.itemId].id]) || 0) });
-            await models.ProductionHistory.create({
-              productionId: approval.documentNumber,
-              actionType: 'Scrap Material Produced.',
-              summary: `${itemIdMap[element.itemId]?.itemName} - ${uomMap[itemIdMap[element.itemId].metricsUnit]} ${uomMap[element.uom]} added by ${by}.`
-            });
+          if (itemsMap[itemIdMap[element.itemId]]) {
+            await element.update({ producedQuantity: (element?.producedQuantity || 0) + (Number(itemsMap[itemIdMap[element.itemId]]) || 0) });
           }
         }
       }

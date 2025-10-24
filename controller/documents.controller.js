@@ -908,6 +908,22 @@ async function createDocument(req, res) {
       });
       const itemsMap = new Map(existingItems.map(existingItem => [existingItem.itemId, existingItem.id]));
       const storesMap = new Map(stores.map(store => [store.name, store.id]));
+      const settings = await models.Settings.findOne({
+        where: {
+          companyId: Number(companyId)
+        },
+        raw: true
+      });
+      const approval = await models.InventoryApproval.create({
+        approvalId: generateProductionId(),
+        documentType,
+        documentNumber,
+        approvalStatus: settings?.['purchaseDocument'] == 'manual' ? 'Pending' : 'Auto Approved',
+        requestedBy: createdBy,
+        companyId: companyId,
+        status: 1,
+        approvedBy: null
+      });
       if ((documentType === documentTypes.goodsReceive && purchase_order.addStockOn == 'GRN') || (documentType === documentTypes.qualityReport && purchase_order.addStockOn == 'QR')) {
         const settings = await models.Settings.findOne({
           where: {
@@ -1045,6 +1061,22 @@ async function createDocument(req, res) {
       });
       message = settings?.['salesDocument'] == 'manual' ? 'inventory' : ''
       for (const element of items) {
+        const settings = await models.Settings.findOne({
+          where: {
+            companyId: Number(companyId)
+          },
+          raw: true
+        });
+        const approval = await models.InventoryApproval.create({
+          approvalId: generateProductionId(),
+          documentType,
+          documentNumber,
+          approvalStatus: settings?.['salesDocument'] == 'manual' ? 'Pending' : 'Auto Approved',
+          requestedBy: createdBy,
+          companyId: companyId,
+          status: 1,
+          approvedBy: null
+        });
         if (settings?.['salesDocument'] != 'manual') {
           let price = 0;
           let remainingQuantity = (element.quantity * (element?.conversionFactor || 1));
@@ -1364,13 +1396,8 @@ async function createDocument(req, res) {
           },
           raw: true
         });
-        const approvalCount = await models.InventoryApproval.count({
-          where: {
-            companyId
-          }
-        });
         const approval = await models.InventoryApproval.create({
-          approvalId: `INA${approvalCount + 1}`,
+          approvalId: generateProductionId(),
           documentType,
           documentNumber,
           approvalStatus: settings?.['serviceDocument'] == 'manual' ? 'Pending' : 'Auto Approved',
