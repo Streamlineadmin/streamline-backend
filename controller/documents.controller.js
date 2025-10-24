@@ -1965,16 +1965,26 @@ async function getDocuments(req, res) {
               [Op.in]: documentstype
             }
           }),
-          ...(documentNumber ? {
-            documentNumber: {
-              [Op.like]: `%${documentNumber.trim()}%`,
+          ...(Array.isArray(documentNumber) && documentNumber.length
+            ? {
+              [Op.or]: documentNumber
+                .filter(num => num && num.trim() !== "")
+                .map(num => ({
+                  documentNumber: { [Op.like]: `%${num.trim()}%` }
+                })),
             }
-          } : {}),
-          ...(buyerName ? {
-            buyerName: {
-              [Op.like]: `%${buyerName.trim()}%`,
+            : {}),
+          ...(Array.isArray(buyerName) && buyerName.length
+            ? {
+              [Op.or]: buyerName
+                .filter(name => name && name.trim() !== "")
+                .map(name => ({
+                  buyerName: { [Op.like]: `%${name.trim()}%` }
+                })),
             }
-          } : {}),
+            : buyerName
+              ? { buyerName: { [Op.like]: `%${buyerName.trim()}%` } }
+              : {}),
           ...(requestedBy ? { createdBy: requestedBy } : {}),
           ...(approvedBy ? { approvedBy: approvedBy } : {}),
           ...(Array.isArray(dealStatus) && dealStatus.length > 0
@@ -2022,25 +2032,17 @@ async function getDocuments(req, res) {
               }
             ],
           } : {}),
-          ...(search && {
-            [Op.or]: [
-              {
-                documentNumber: {
-                  [Op.like]: `%${search.trim()}%`,
-                },
-              },
-              {
-                documentType: {
-                  [Op.like]: `%${search.trim()}%`,
-                },
-              },
-              {
-                buyerName: {
-                  [Op.like]: `%${search.trim()}%`,
-                },
-              }
-            ],
-          }),
+          ...(Array.isArray(search) && search.length
+            ? {
+              [Op.or]: search
+                .filter(val => val && val.trim() !== "")
+                .flatMap(val => [
+                  { documentNumber: { [Op.like]: `%${val.trim()}%` } },
+                  { documentType: { [Op.like]: `%${val.trim()}%` } },
+                  { buyerName: { [Op.like]: `%${val.trim()}%` } },
+                ]),
+            }
+            : {}),
           ...(labels?.length > 0 && {
             [Op.or]: labels.map(label =>
               where(
