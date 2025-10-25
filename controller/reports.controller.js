@@ -670,7 +670,7 @@ async function getReports(req, res) {
                     attributes: ['id', 'name'],
                 },
             ],
-            order: [['createdAt', 'DESC']],
+            order: [['createdAt', 'ASC']],
             distinct: true,
         });
 

@@ -531,7 +531,7 @@ async function getItemStockTransferHistory(req, res) {
         quantity: {
           [Op.and]: [
             { [Op.ne]: null },
-            // { [Op.ne]: 0 }
+            { [Op.ne]: 0 }
           ]
         }
       },
