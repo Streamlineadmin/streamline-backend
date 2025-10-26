@@ -36,6 +36,7 @@ module.exports = (sequelize, DataTypes) => {
     productionNavigationId: DataTypes.INTEGER,
     approvalId: DataTypes.INTEGER,
     quantityForApproval: DataTypes.FLOAT,
+    toReject: DataTypes.BOOLEAN
   }, {
     sequelize,
     modelName: 'StockTransfer',

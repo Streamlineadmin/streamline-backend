@@ -882,8 +882,10 @@ async function stockReconcilation(req, res) {
             },
             raw: true
         });
+        const itemIdMap = {};
         const existingItemsMap = existingItems.reduce((acc, curr) => {
             acc[curr.id] = curr;
+            itemIdMap[curr.itemId] = curr;
             return acc;
         }, {});
 
@@ -925,16 +927,13 @@ async function stockReconcilation(req, res) {
             approvedBy: null
         });
 
+        const bulkStockTransfers = [], bulkStoreItems = [], itemIds = [], finalStock = {};
+
         for (const item of items) {
             const { 'Item ID': itemId, 'Price/Unit': price } = item;
-            if (item['Final Stock'] === '') continue;
+            if (!item['Final Stock'] && item['Final Stock'] != 0) continue;
             let err = '';
-            const existingItem = await models.Items.findOne({
-                where: {
-                    itemId: itemId,
-                    companyId: Number(req.body.companyId)
-                }
-            });
+            const existingItem = itemIdMap[itemId?.toString()]
             if (!existingItem) {
                 err += 'Item Not Found. ';
             }
@@ -960,13 +959,13 @@ async function stockReconcilation(req, res) {
                         },
                         storeId: Number(req.body.storeId?.toString()?.replaceAll('-reject', '')),
                         isRejected
-                    }
+                    },
+                    raw: true
                 });
 
                 const transferNumber = generateTransferNumber()
 
-                const transfers = [];
-                transfers.push({
+                bulkStockTransfers.push({
                     transferNumber,
                     fromStoreId: null,
                     itemId: existingItem.id,
@@ -980,7 +979,7 @@ async function stockReconcilation(req, res) {
                     isRejected
                 });
                 for (const element of storeItems) {
-                    transfers.push({
+                    bulkStockTransfers.push({
                         transferNumber,
                         fromStoreId: Number(req.body.storeId?.toString()?.replaceAll('-reject', '')),
                         itemId: existingItem.id,
@@ -992,21 +991,11 @@ async function stockReconcilation(req, res) {
                         companyId: Number(req.body.companyId),
                         price: element.price,
                         isRejected: element?.isRejected || false
-                    })
+                    });
+                    bulkStoreItems.push({ ...element, quantity: 0 });
                 }
 
-
-                await models.StoreItems.update({ quantity: 0 }, {
-                    where: {
-                        itemId: existingItem.id,
-                        quantity: {
-                            [Op.gt]: 0
-                        },
-                        storeId: Number(req.body.storeId?.toString()?.replaceAll('-reject', '')),
-                        isRejected
-                    }
-                });
-                await models.StoreItems.create({
+                bulkStoreItems.push({
                     storeId: Number(req.body.storeId?.toString()?.replaceAll('-reject', '')),
                     itemId: existingItem.id,
                     quantity: Number(item['Final Stock'] || 0),
@@ -1015,30 +1004,14 @@ async function stockReconcilation(req, res) {
                     addedBy: Number(userId),
                     price: price,
                     isRejected
-                })
-                await models.StockTransfer.bulkCreate(transfers);
+                });
+
                 continue;
             }
             if (settings?.['stockReconcilation'] != 'manual') {
                 if (Number(item['Final Stock'] || 0) < Number(currentStockMap[itemId?.toString()] || 0)) {
-                    console.log('inside loop');
-                    let remainingQuantity = (currentStockMap[itemId?.toString()] - Number(item['Final Stock']));
-                    const existingStock = await models.StoreItems.findAll({
-                        where: { storeId: Number(req.body.storeId?.toString()?.replaceAll('-reject', '')), itemId: existingItem.id, isRejected },
-                        order: [['createdAt', 'ASC']],
-                    });
-                    for (const stock of existingStock) {
-                        if (remainingQuantity <= 0) break;
-                        if (stock.quantity <= 0) continue;
-                        const deductQty = Math.min(stock.quantity, remainingQuantity);
-                        remainingQuantity -= deductQty;
-
-                        await models.StoreItems.update(
-                            { quantity: (stock.quantity - deductQty) },
-                            { where: { id: stock.id } }
-                        );
-                    }
-
+                    itemIds.push(existingItem.id);
+                    finalStock[existingItem.id] = Number(item['Final Stock'] || 0);
                 }
             }
             const storeItemData = {
@@ -1071,10 +1044,55 @@ async function stockReconcilation(req, res) {
             }
 
             if (Number(item['Final Stock'] || 0) > Number(currentStockMap[itemId?.toString()] || 0)) {
-                await models.StoreItems.create(storeItemData);
+                // await models.StoreItems.create(storeItemData);
+                bulkStoreItems.push(storeItemData);
             }
-            await models.StockTransfer.create(stockTransfer);
+            // await models.StockTransfer.create(stockTransfer);
+            bulkStockTransfers.push(stockTransfer);
         }
+        
+        if (itemIds.length > 0) {
+            const allStocks = await models.StoreItems.findAll({
+                where: {
+                    storeId: Number(req.body.storeId?.toString()?.replaceAll('-reject', '')),
+                    itemId: {
+                        [Op.in]: itemIds
+                    },
+                    isRejected,
+                    quantity: {
+                        [Op.gt]: 0
+                    }
+                },
+                order: [['createdAt', 'ASC']],
+                raw: true
+            });
+            const existingStoreItemsMap = {};
+            for (const element of allStocks) {
+                if (existingStoreItemsMap[element?.storeId]) {
+                    existingStoreItemsMap[element.itemId].push(element);
+                }
+                else {
+                    existingStoreItemsMap[element.itemId] = [element];
+                }
+            }
+            
+            for (const item of itemIds) {
+                let remainingQuantity = (currentStockMap[existingItemsMap[item]?.itemId?.toString()] - finalStock[item]);
+                const existingStock = existingStoreItemsMap[item] || [];
+                
+                for (const stock of existingStock) {
+                    if (remainingQuantity <= 0) break;
+                    if (stock.quantity <= 0) continue;
+                    const deductQty = Math.min(stock.quantity, remainingQuantity);
+                    remainingQuantity -= deductQty;
+                    bulkStoreItems.push({ ...stock, quantity: (stock.quantity - deductQty) });
+                }
+            }
+        }
+        await models.StockTransfer.bulkCreate(bulkStockTransfers);
+        await models.StoreItems.bulkCreate(bulkStoreItems, {
+            updateOnDuplicate: ['quantity']
+        });
         msg = !errorArray.length ? settings?.['stockReconcilation'] != 'manual' ? 'Stocks Reconcile Successfully.' : 'Inventory Approval generated for current request.' : errorArray.length != items.length ? 'Few Items are Not Found. We Download Those Rows for you.' : 'All Items are Not Found. We Download Those Rows for you.'
         return res.status(200).json({ message: msg, invalidData: errorArray });
 
