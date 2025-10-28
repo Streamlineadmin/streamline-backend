@@ -1050,7 +1050,7 @@ async function stockReconcilation(req, res) {
             // await models.StockTransfer.create(stockTransfer);
             bulkStockTransfers.push(stockTransfer);
         }
-        
+
         if (itemIds.length > 0) {
             const allStocks = await models.StoreItems.findAll({
                 where: {
@@ -1075,11 +1075,11 @@ async function stockReconcilation(req, res) {
                     existingStoreItemsMap[element.itemId] = [element];
                 }
             }
-            
+
             for (const item of itemIds) {
                 let remainingQuantity = (currentStockMap[existingItemsMap[item]?.itemId?.toString()] - finalStock[item]);
                 const existingStock = existingStoreItemsMap[item] || [];
-                
+
                 for (const stock of existingStock) {
                     if (remainingQuantity <= 0) break;
                     if (stock.quantity <= 0) continue;
@@ -1206,65 +1206,25 @@ async function bulkStockUpdate(req, res) {
         const { companyId, userId } = req.body;
         const file = req.file;
         const rows = await convertXlsxToJson(file.filename, "bulkStockUpdate");
-        const items = await models.Items.findAll({
-            where: {
-                companyId: Number(companyId)
-            },
-            raw: true
-        });
-        const itemIdMap = {}, itemMap = {}, itemNameMap = {};
-        for (const element of items) {
-            itemMap[element.id] = element;
-            itemIdMap[element.itemId?.toLowerCase()] = element;
-            itemNameMap[element?.itemName?.toLowerCase()?.trim()] = element;
+
+        if (!Array.isArray(rows) || rows.length === 0)
+            return res.status(400).json({ message: "Empty data found." });
+        const [items, stores, settings, approvalCount] = await Promise.all([
+            models.Items.findAll({ where: { companyId: Number(companyId) }, raw: true }),
+            models.Store.findAll({ where: { companyId: Number(companyId) }, raw: true }),
+            models.Settings.findOne({ where: { companyId: Number(companyId) }, raw: true }),
+            models.InventoryApproval.count({ where: { companyId } }),
+        ]);
+        const itemIdMap = {}, itemNameMap = {};
+        for (const item of items) {
+            itemIdMap[item.itemId?.toLowerCase()] = item;
+            itemNameMap[item.itemName?.toLowerCase()?.trim()] = item;
         }
-        const stores = await models.Store.findAll({
-            where: {
-                companyId: Number(companyId)
-            },
-            raw: true
-        });
-        const storeMap = stores.reduce((acc, curr) => {
-            acc[curr.name] = curr;
+
+        const storeMap = stores.reduce((acc, store) => {
+            acc[store.name] = store;
             return acc;
         }, {});
-        let fromItemName = false;
-        if (Object.keys(rows[0])?.includes('Item')) {
-            fromItemName = true;
-        }
-        const storeItems = await models.StoreItems.findAll({
-            where: {
-                storeId: {
-                    [Op.in]: stores.map(store => store.id),
-                },
-                quantity: {
-                    [Op.gt]: 0
-                }
-            },
-            raw: true
-        });
-        const quantityMap = {};
-        for (const element of storeItems) {
-            if (!quantityMap[element.itemId]) quantityMap[element.itemId] = {};
-            if (!quantityMap[element.itemId][element.storeId]) quantityMap[element.itemId][element.storeId] = {};
-            if (element?.isRejected) {
-                quantityMap[element.itemId][element.storeId].rejectedQuantity = (quantityMap[element.itemId][element.storeId].rejectedQuantity || 0) + element.quantity;
-            } else {
-                quantityMap[element.itemId][element.storeId].quantity = (quantityMap[element.itemId][element.storeId].quantity || 0) + element.quantity;
-            }
-        }
-        const errorArray = [], bulkStockTransfer = [], bulkStoreItems = [];
-        const settings = await models.Settings.findOne({
-            where: {
-                companyId: Number(companyId)
-            },
-            raw: true
-        });
-        const approvalCount = await models.InventoryApproval.count({
-            where: {
-                companyId
-            }
-        });
         const approval = await models.InventoryApproval.create({
             approvalId: `INA${approvalCount + 1}`,
             documentType: 'Stock Update',
@@ -1275,134 +1235,155 @@ async function bulkStockUpdate(req, res) {
             status: 1,
             approvedBy: null
         });
-        for (const element of rows) {
+        const storeItems = await models.StoreItems.findAll({
+            where: {
+                storeId: { [Op.in]: stores.map(s => s.id) },
+                quantity: { [Op.gt]: 0 }
+            },
+            raw: true
+        });
+        const quantityMap = storeItems.reduce((acc, item) => {
+            acc[item.itemId] ??= {};
+            acc[item.itemId][item.storeId] ??= { quantity: 0, rejectedQuantity: 0 };
+            if (item.isRejected)
+                acc[item.itemId][item.storeId].rejectedQuantity += item.quantity;
+            else
+                acc[item.itemId][item.storeId].quantity += item.quantity;
+            return acc;
+        }, {});
+        const errorArray = [];
+        const bulkStockTransfers = [];
+        const bulkStoreItems = [];
+        const isManual = settings?.['stockUpdate'] === 'manual';
+
+        const fromItemName = Object.keys(rows[0])?.includes('Item');
+        for (const row of rows) {
             let error = '';
-            if (!element.Quantity) error += 'Quantity is required. ';
-            if (!element.Price && element.Price != 0) error += 'Price is required. ';
-            if (!element.Store) error += 'Store is required. ';
-            const itemName = fromItemName ? element.Item.substring(0, element.Item.lastIndexOf("(")).trim() : element['Item Name/Id'];
-            if (!itemName) error += 'Item is required. ';
-            const selectedItem = itemIdMap[itemName?.toString()?.toLowerCase()] || itemNameMap[itemName?.toLowerCase()]
+            if (!row.Quantity && row.Quantity !== 0) error += 'Quantity is required. ';
+            if (!row.Price && row.Price !== 0) error += 'Price is required. ';
+            if (!row.Store) error += 'Store is required. ';
+            const rawName = fromItemName
+                ? row?.Item?.substring?.(0, row.Item.lastIndexOf("("))?.trim()
+                : row['Item Name/Id'];
+            if (!rawName) error += 'Item is required. ';
+
+            const selectedItem = itemIdMap[rawName?.toLowerCase()] || itemNameMap[rawName?.toLowerCase()];
             if (!selectedItem) error += 'Item not found. ';
-            const isReject = element.Store.includes('(Reject)');
-            const storeName = element.Store.substring(0, element.Store.lastIndexOf("(") - 1);
+            const isRejected = row?.Store?.includes('(Reject)');
+            const storeName = row?.Store?.substring?.(0, row.Store.lastIndexOf("(") - 1);
             const store = storeMap[storeName];
             if (!store) error += 'Store not found. ';
+
             if (error) {
-                errorArray.push({ ...element, Error: error });
+                errorArray.push({ ...row, Error: error });
                 continue;
             }
-            if (element?.Type?.toLowerCase() === 'reduce') {
-                if (!quantityMap?.[selectedItem.id]?.[store.id] || element.Quantity > (isReject ? quantityMap?.[selectedItem.id]?.[store.id]?.rejectedQuantity : quantityMap?.[selectedItem.id]?.[store.id].quantity)) {
-                    error += 'Quantity is not available in Store.';
-                    errorArray.push({ ...element, Error: error });
+            const transferNumber = generateTransferNumber();
+            const isReduce = row?.Type?.toLowerCase() === 'reduce';
+
+            if (isReduce) {
+                const availableQty = isRejected
+                    ? quantityMap?.[selectedItem.id]?.[store.id]?.rejectedQuantity || 0
+                    : quantityMap?.[selectedItem.id]?.[store.id]?.quantity || 0;
+
+                if (row.Quantity > availableQty) {
+                    errorArray.push({ ...row, Error: 'Quantity not available in store.' });
                     continue;
                 }
-                const existingStock = await models.StoreItems.findAll({
-                    where: { storeId: (store.id), itemId: selectedItem.id, isRejected: isReject },
-                    order: [['createdAt', 'ASC']],
-                });
-                let remainingQuantity = element.Quantity;
-                const transferNumber = generateTransferNumber();
-                if (settings?.['stockUpdate'] != 'manual') {
-                    for (const stock of existingStock) {
-                        if (remainingQuantity <= 0) break;
-                        if (stock.quantity <= 0) continue;
-                        const deductQty = Math.min(stock.quantity, remainingQuantity);
-                        remainingQuantity -= deductQty;
-                        await models.StoreItems.update(
-                            { quantity: (stock.quantity - deductQty) },
-                            { where: { id: stock.id } }
-                        );
-                        bulkStockTransfer.push({
-                            fromStoreId: store.id,
-                            transferNumber,
-                            toStoreId: null,
-                            itemId: selectedItem.id,
-                            quantity: -deductQty,
-                            status: 1,
-                            addedBy: userId,
-                            price: element.Price,
-                            isRejected: isReject,
-                            comment: element.Comment,
-                            transferDate: new Date().toISOString(),
-                            transferredBy: Number(userId),
-                            companyId: Number(companyId),
-                            actualPrice: stock.price,
-                            approvalId: approval.id,
-                            quantityForApproval: element.Quantity
-                        })
-                    }
-                } else {
-                    bulkStockTransfer.push({
-                        fromStoreId: store.id,
+
+                if (!isManual) {
+                    // We will bulk deduct below after collecting all reduce requests
+                    bulkStockTransfers.push({
                         transferNumber,
+                        fromStoreId: store.id,
+                        toStoreId: null,
+                        itemId: selectedItem.id,
+                        quantity: -row.Quantity,
+                        price: row.Price,
+                        isRejected,
+                        comment: row.Comment,
+                        transferDate: new Date(),
+                        transferredBy: userId,
+                        companyId,
+                        actualPrice: null,
+                        approvalId: approval.id,
+                        quantityForApproval: row.Quantity
+                    });
+                } else {
+                    bulkStockTransfers.push({
+                        transferNumber,
+                        fromStoreId: store.id,
                         toStoreId: null,
                         itemId: selectedItem.id,
                         quantity: null,
-                        status: 1,
-                        addedBy: userId,
-                        price: element.Price,
-                        isRejected: isReject,
-                        comment: element.Comment,
-                        transferDate: new Date().toISOString(),
-                        transferredBy: Number(userId),
-                        companyId: Number(companyId),
+                        price: row.Price,
+                        isRejected,
+                        comment: row.Comment,
+                        transferDate: new Date(),
+                        transferredBy: userId,
+                        companyId,
                         approvalId: approval.id,
-                        quantityForApproval: -element.Quantity
-                    })
+                        quantityForApproval: -row.Quantity
+                    });
                 }
-            }
-            else {
-                bulkStockTransfer.push({
-                    toStoreId: store.id,
+            } else {
+                bulkStockTransfers.push({
+                    transferNumber,
                     fromStoreId: null,
+                    toStoreId: store.id,
                     itemId: selectedItem.id,
-                    quantity: settings?.['stockUpdate'] == 'manual' ? null : element.Quantity,
-                    status: 1,
-                    addedBy: userId,
-                    price: element.Price,
-                    isRejected: isReject,
-                    comment: element.Comment,
-                    transferDate: new Date().toISOString(),
-                    transferredBy: Number(userId),
-                    companyId: Number(companyId),
+                    quantity: isManual ? null : row.Quantity,
+                    price: row.Price,
+                    isRejected,
+                    comment: row.Comment,
+                    transferDate: new Date(),
+                    transferredBy: userId,
+                    companyId,
                     approvalId: approval.id,
-                    quantityForApproval: element.Quantity
+                    quantityForApproval: row.Quantity
                 });
+
                 bulkStoreItems.push({
                     storeId: store.id,
                     itemId: selectedItem.id,
-                    quantity: settings?.['stockUpdate'] == 'manual' ? 0 : element.Quantity,
-                    status: 1,
+                    quantity: isManual ? 0 : row.Quantity,
                     addedBy: userId,
-                    price: element?.Price,
-                    isRejected: isReject,
+                    price: row.Price,
+                    isRejected,
                     approvalId: approval.id,
-                    quantityForApproval: element.Quantity
-                })
+                    quantityForApproval: row.Quantity,
+                    status: 1
+                });
             }
-
         }
-
-        if (bulkStockTransfer.length) {
-            await models.StockTransfer.bulkCreate(bulkStockTransfer);
-            await models.StoreItems.bulkCreate(bulkStoreItems);
+        if (bulkStockTransfers.length) {
+            await Promise.all([
+                models.StockTransfer.bulkCreate(bulkStockTransfers),
+                bulkStoreItems.length
+                    ? models.StoreItems.bulkCreate(bulkStoreItems, { updateOnDuplicate: ['quantity'] })
+                    : Promise.resolve()
+            ]);
         }
         const msg = !errorArray.length
-            ? settings?.['stockUpdate'] != 'manual' ? 'Bulk Stock updated successfully.' :
-                'Inventory Approval generated for current request.'
+            ? isManual
+                ? 'Inventory Approval generated for current request.'
+                : 'Bulk Stock updated successfully.'
             : errorArray.length !== rows.length
-                ? settings?.['stockUpdate'] != 'manual' ? 'Bulk Stock updated successfully. Some rows contain invalid data. We Download Those Rows for you.' :
-                    'Inventory Approval generated for current request. Some rows contain invalid data. We Download Those Rows for you.'
+                ? (isManual
+                    ? 'Inventory Approval generated for current request. Some rows contain invalid data. We Download Those Rows for you.'
+                    : 'Bulk Stock updated successfully. Some rows contain invalid data. We Download Those Rows for you.')
                 : 'All rows contain invalid data. We Download Those Rows for you.';
 
-        res.status(200).json({ message: msg, invalidData: errorArray });
+        return res.status(200).json({ message: msg, invalidData: errorArray });
     } catch (error) {
-        console.log(error);
-        return res.status(500).json({ message: "Something went wrong, please try again later!", error });
+        console.error(error);
+        return res.status(500).json({
+            message: "Something went wrong, please try again later!",
+            error
+        });
     }
 }
+
 
 module.exports = {
     addItem: addItem,
