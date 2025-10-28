@@ -398,7 +398,9 @@ async function getProductions(req, res) {
         const salesDocuments = await models.Documents.findAll({
             where: {
                 companyId: Number(companyId),
-                documentType: documentTypes.salesOrder,
+                documentType: {
+                    [Op.in]: [documentTypes.salesOrder, 'Service Confirmation Grn']
+                },
                 status: {
                     [Op.notIn]: [0, 2]
                 }
@@ -412,7 +414,8 @@ async function getProductions(req, res) {
                 "createdAt",
                 "status",
                 "requestedBy",
-                "deliveryDate"
+                "deliveryDate",
+                "documentType"
             ],
         });
         const salesDocumentsId = salesDocuments.map(doc => doc.documentNumber);
@@ -438,7 +441,7 @@ async function getProductions(req, res) {
         }, {});
 
         for (const element of salesDocuments) {
-            element.items = itemsMap[element.documentNumber] || [];
+            element.items = (itemsMap[element.documentNumber] || [])?.filter((item) => element.documentType != 'Service Confirmation Grn' || item.type == 'Finished Good');
         }
         const productionsIds = productions.map(prod => prod.id);
         const productionItems = await models.ProductionFinishedGoods.findAll({

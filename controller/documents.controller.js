@@ -1872,7 +1872,8 @@ async function createDocument(req, res) {
           quantity: item.receivedToday || item.quantity,
           userId: Number(createdBy) || null,
           companyId: companyId || null,
-          status: 1
+          status: 1,
+          store
         }));
 
         await models.BOMRawMaterial.bulkCreate(payload);
@@ -1885,6 +1886,7 @@ async function createDocument(req, res) {
           userId: Number(createdBy),
           companyId,
           status: 1,
+          store
         });
       }
     }
