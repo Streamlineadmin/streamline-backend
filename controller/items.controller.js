@@ -976,7 +976,8 @@ async function stockReconcilation(req, res) {
                     comment: '',
                     companyId: Number(req.body.companyId),
                     price: price,
-                    isRejected
+                    isRejected,
+                    comment: 'physical-stock-reconciled'
                 });
                 for (const element of storeItems) {
                     bulkStockTransfers.push({
@@ -990,7 +991,8 @@ async function stockReconcilation(req, res) {
                         comment: '',
                         companyId: Number(req.body.companyId),
                         price: element.price,
-                        isRejected: element?.isRejected || false
+                        isRejected: element?.isRejected || false,
+                        comment: 'physical-stock-reconciled'
                     });
                     bulkStoreItems.push({ ...element, quantity: 0 });
                 }
@@ -1040,7 +1042,8 @@ async function stockReconcilation(req, res) {
                 price: price,
                 isRejected,
                 approvalId: approval.id,
-                quantityForApproval: Number(item['Final Stock'] || 0) - Number(currentStockMap[itemId?.toString()] || 0)
+                quantityForApproval: Number(item['Final Stock'] || 0) - Number(currentStockMap[itemId?.toString()] || 0),
+                comment: 'physical-stock-reconciled'
             }
 
             if (Number(item['Final Stock'] || 0) > Number(currentStockMap[itemId?.toString()] || 0)) {
