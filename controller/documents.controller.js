@@ -1309,7 +1309,9 @@ async function createDocument(req, res) {
               price: element.price / (element.conversionFactor || 1),
               documentNumber: document.documentNumber,
               documentType,
-              actualPrice: stock.price
+              actualPrice: stock.price,
+              approvalId: approval.id,
+              quantityForApproval: (element.quantity * (element?.conversionFactor || 1))
             });
             price += (stock.price * deductQty);
           }
