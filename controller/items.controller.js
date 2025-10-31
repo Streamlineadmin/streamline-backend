@@ -1096,6 +1096,9 @@ async function stockReconcilation(req, res) {
         await models.StoreItems.bulkCreate(bulkStoreItems, {
             updateOnDuplicate: ['quantity']
         });
+        if (!bulkStockTransfers?.length) {
+            await approval.destroy();
+        }
         msg = !errorArray.length ? settings?.['stockReconcilation'] != 'manual' ? 'Stocks Reconcile Successfully.' : 'Inventory Approval generated for current request.' : errorArray.length != items.length ? 'Few Items are Not Found. We Download Those Rows for you.' : 'All Items are Not Found. We Download Those Rows for you.'
         return res.status(200).json({ message: msg, invalidData: errorArray });
 
@@ -1366,6 +1369,9 @@ async function bulkStockUpdate(req, res) {
                     ? models.StoreItems.bulkCreate(bulkStoreItems, { updateOnDuplicate: ['quantity'] })
                     : Promise.resolve()
             ]);
+        }
+        else {
+            await approval.destroy();
         }
         const msg = !errorArray.length
             ? isManual
