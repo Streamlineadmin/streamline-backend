@@ -421,7 +421,8 @@ async function getProductions(req, res) {
         const salesDocumentsId = salesDocuments.map(doc => doc.documentNumber);
         const productions = await models.Production.findAll({
             where: {
-                companyId: Number(companyId)
+                companyId: Number(companyId),
+                bulkProductionId: null
             },
             raw: true
         });
@@ -691,6 +692,7 @@ async function getProductionById(req, res) {
 async function bulkGetProductionsByIds(req, res) {
     try {
         const { productionId } = req.body;
+        const bulkProduction = await models.BulkProduction.findByPk(productionId);
 
         // Validate input
         const childProductions = await models.Production.findAll({
@@ -822,6 +824,7 @@ async function bulkGetProductionsByIds(req, res) {
         // Build the response data
         const productionsData = productions.map(production => {
             return {
+                bulkProduction,
                 salesOrder: salesOrdersByDocNumber[production.documentNumber] || null,
                 production,
                 productionItem: productionItemsByProductionId[production.id] || null,
@@ -836,7 +839,7 @@ async function bulkGetProductionsByIds(req, res) {
 
         res.status(200).json({
             message: 'Bulk Production Data Fetched.',
-            productionsData
+            productionsData,
         });
 
     } catch (error) {
@@ -1457,8 +1460,23 @@ async function saveFinishedGoods(req, res) {
 }
 
 async function updateProductionStatus(req, res) {
-    const { productionId, status, userId, from, to, by } = req.body;
+    const { productionId, status, userId, from, to, by, isBulkProduction } = req.body;
     try {
+        if (isBulkProduction) {
+            await models.BulkProduction.update({ status }, {
+                where: {
+                    id: productionId
+                }
+            });
+            await models.Production.update({
+                status
+            }, {
+                where: {
+                    bulkProductionId: productionId
+                }
+            });
+            return res.status(200).json({ message: 'Production status Updated.' });
+        }
         await models.Production.update({
             status, ...(status == 2 ? { productionStartDate: new Date().toISOString() } : {}),
             ...(status == 4 ? { productionCompletionDate: new Date().toISOString(), completedBy: Number(userId) } : {})
@@ -2362,7 +2380,8 @@ async function startBulkProduction(req, res) {
 
         const parentProduction = await models.BulkProduction.create({
             companyId,
-            productionId: `BulkProduction-${bulkProductionCount + 1}`
+            productionId: `BulkProduction-${bulkProductionCount + 1}`,
+            status: 1
         })
 
         const bulkProduction = productions.map(production => ({
