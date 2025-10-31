@@ -21,5 +21,7 @@ router.post('/updateTable', productionController.updateTable);
 router.post('/removeRows', productionController.removeRows);
 router.post('/viewProductionHistory', productionController.viewProductionHistory);
 router.post('/returnRawMaterial', productionController.returnRawMaterial);
+router.post('/startBulkProduction', productionController.startBulkProduction);
+router.post('/getBulkProductions', productionController.getBulkProductions);
 
 module.exports = router;

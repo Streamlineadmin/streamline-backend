@@ -1,4 +1,4 @@
-const { Op } = require('sequelize');
+const { Op, where } = require('sequelize');
 const { documentTypes } = require('../helpers/document-type');
 const { generateProductionId, generateTransferNumber } = require('../helpers/transfer-number');
 const models = require('../models');
@@ -421,7 +421,8 @@ async function getProductions(req, res) {
         const salesDocumentsId = salesDocuments.map(doc => doc.documentNumber);
         const productions = await models.Production.findAll({
             where: {
-                companyId: Number(companyId)
+                companyId: Number(companyId),
+                bulkProductionId: null
             },
             raw: true
         });
@@ -501,6 +502,60 @@ async function getProductions(req, res) {
     }
 }
 
+async function getBulkProductions(req, res) {
+    try {
+        const { companyId } = req.body;
+        const bulkProductions = await models.BulkProduction.findAll({
+            where: {
+                companyId
+            },
+            raw: true
+        });
+
+        const bulkProductionsMap = bulkProductions.reduce((acc, curr) => {
+            acc[curr.id] = curr;
+            return acc;
+        }, {});
+        const productions = await models.Production.findAll({
+            where: {
+                bulkProductionId: {
+                    [Op.in]: bulkProductions.map(data => data.id)
+                }
+            },
+            raw: true
+        });
+        const productionsMap = productions.reduce((acc, curr) => {
+            acc[curr.id] = curr;
+            return acc;
+        }, {});
+
+        const finishedGoods = await models.ProductionFinishedGoods.findAll({
+            where: {
+                productionId: {
+                    [Op.in]: Object.keys(productionsMap)
+                }
+            },
+            raw: true,
+            order: [['createdAt', 'DESC']]
+        });
+        const arr = []
+
+        for (const element of finishedGoods) {
+            arr.push({
+                ...element,
+                ...productionsMap[element.productionId],
+                ...bulkProductionsMap[productionsMap[element.productionId].bulkProductionId]
+            });
+        }
+
+        return res.status(200).json({ bulkProductions: arr });
+
+
+    } catch (error) {
+        res.status(500).json({ message: 'Something went wrong' });
+        console.log(error);
+    }
+}
 
 async function getProductionAndDescendants(productionId) {
     const result = [];
@@ -636,9 +691,16 @@ async function getProductionById(req, res) {
 
 async function bulkGetProductionsByIds(req, res) {
     try {
-        const { productionIds } = req.body;
+        const { productionId } = req.body;
+        const bulkProduction = await models.BulkProduction.findByPk(productionId);
 
         // Validate input
+        const childProductions = await models.Production.findAll({
+            where: {
+                bulkProductionId: productionId
+            }
+        });
+        const productionIds = childProductions.map(child => child.id);
         if (!Array.isArray(productionIds) || productionIds.length === 0) {
             return res.status(400).json({
                 message: 'productionIds must be a non-empty array'
@@ -762,6 +824,7 @@ async function bulkGetProductionsByIds(req, res) {
         // Build the response data
         const productionsData = productions.map(production => {
             return {
+                bulkProduction,
                 salesOrder: salesOrdersByDocNumber[production.documentNumber] || null,
                 production,
                 productionItem: productionItemsByProductionId[production.id] || null,
@@ -776,7 +839,7 @@ async function bulkGetProductionsByIds(req, res) {
 
         res.status(200).json({
             message: 'Bulk Production Data Fetched.',
-            productionsData
+            productionsData,
         });
 
     } catch (error) {
@@ -995,6 +1058,7 @@ async function updateCost(req, res) {
     try {
         const { additionalChargesData, by } = req.body;
         for (const element of additionalChargesData) {
+            if (!element.todayCost) continue;
             const charges = await models.ProductionAdditionalCharges.findOne({
                 where: {
                     id: element.id
@@ -1060,7 +1124,7 @@ async function updateScrapLogs(req, res) {
             approvedBy: null
         });
         for (const element of scrapLogs) {
-            if (!element.value) continue;
+            if (!element.value || !element.store) continue;
             settings?.['productionScrapMaterial'] != 'manual' &&
                 await models.ProductionScrapMaterials.update({ producedQuantity: (element?.producedQuantity || 0) + element.value }, {
                     where: {
@@ -1396,8 +1460,23 @@ async function saveFinishedGoods(req, res) {
 }
 
 async function updateProductionStatus(req, res) {
-    const { productionId, status, userId, from, to, by } = req.body;
+    const { productionId, status, userId, from, to, by, isBulkProduction } = req.body;
     try {
+        if (isBulkProduction) {
+            await models.BulkProduction.update({ status }, {
+                where: {
+                    id: productionId
+                }
+            });
+            await models.Production.update({
+                status
+            }, {
+                where: {
+                    bulkProductionId: productionId
+                }
+            });
+            return res.status(200).json({ message: 'Production status Updated.' });
+        }
         await models.Production.update({
             status, ...(status == 2 ? { productionStartDate: new Date().toISOString() } : {}),
             ...(status == 4 ? { productionCompletionDate: new Date().toISOString(), completedBy: Number(userId) } : {})
@@ -2283,6 +2362,241 @@ async function returnRawMaterial(req, res) {
     }
 }
 
+async function startBulkProduction(req, res) {
+    try {
+        const { companyId, productions, mto, prefix, nextNumber } = req.body;
+        const settings = await models.Settings.findOne({
+            where: {
+                companyId: Number(companyId)
+            },
+            raw: true
+        });
+
+        const bulkProductionCount = await models.BulkProduction.count({
+            where: {
+                companyId
+            }
+        });
+
+        const parentProduction = await models.BulkProduction.create({
+            companyId,
+            productionId: `BulkProduction-${bulkProductionCount + 1}`,
+            status: 1
+        })
+
+        const bulkProduction = productions.map(production => ({
+            companyId: Number(companyId),
+            productionId: production?.productionId || generateProductionId(),
+            documentNumber: production?.documentNumber,
+            bomId: production.bomId,
+            productionEndDate: production.productionEndDate,
+            assignedTo: production.assignedTo,
+            createdBy: Number(companyId),
+            status: 1,
+            mto: mto ?? 0,
+            isManual: {
+                productionFinishedGood: settings?.['productionFinishedGood'],
+                productionScrapMaterial: settings?.['productionScrapMaterial'],
+                productionRawMaterial: settings?.['productionRawMaterial']
+            },
+            bulkProductionId: parentProduction.id
+        }));
+
+        const bulkProductions = await models.Production.bulkCreate(bulkProduction);
+        const bulkProductionItems = bulkProductions.map((production, index) => ({
+            productionId: production.id,
+            documentNumber: productions[index].documentNumber,
+            itemId: productions[index].itemId,
+            itemName: productions[index].itemName,
+            UOM: productions[index].UOM,
+            quantity: productions[index].quantity,
+            status: 1
+        }));
+        await models.ProductionItems.bulkCreate(bulkProductionItems);
+
+        let index = 0;
+        for (const production of bulkProductions) {
+            const [scrapLogs, rawMaterials, finishedGoods, productionProcess, additionalCharges] = await Promise.all([
+                models.BOMScrapMaterial.findAll({ where: { bomId: production.bomId } }),
+                models.BOMRawMaterial.findAll({ where: { bomId: production.bomId } }),
+                models.BOMFinishedGoods.findAll({ where: { bomId: production.bomId } }),
+                models.BOMProductionProcess.findAll({ where: { bomId: production.bomId } }),
+                models.BOMAdditionalCharges.findAll({ where: { bomId: production.bomId } }),
+            ]);
+
+            const productionProcessId = productionProcess.map(data => data.processId);
+
+            const process = await models.ProductionProcess.findAll({
+                where: {
+                    id: {
+                        [Op.in]: productionProcessId
+                    }
+                }
+            });
+
+            const itemsId = [];
+            scrapLogs.forEach((data) => itemsId.push(data.itemId));
+            rawMaterials.forEach((data) => itemsId.push(data.itemId));
+            finishedGoods.forEach((data) => itemsId.push(data.itemId));
+
+            const items = await models.Items.findAll({
+                where: {
+                    itemId: {
+                        [Op.in]: itemsId
+                    },
+                    companyId: Number(companyId)
+                },
+                raw: true
+            });
+            const itemsMap = items?.reduce((acc, curr) => {
+                acc[curr.itemId] = curr;
+                return acc;
+            }, {});
+            const ids = items?.map(item => item.id);
+            const alternateUnits = await models.AlternateUnits.findAll({
+                where: {
+                    itemId: {
+                        [Op.in]: ids
+                    }
+                }, raw: true
+            });
+
+            const bulkRawMaterial = rawMaterials?.filter(data => !data.parentId).map((data) => {
+                const quantity = (data.quantity) / finishedGoods[0]?.quantity;
+                let conversionFactor = 1;
+                if (data.uom != itemsMap[data.itemId]?.metricsUnit) {
+                    for (const element of alternateUnits) {
+                        if (element.itemId == itemsMap[data.itemId]?.id && element.alternateUnits == data.uom) {
+                            conversionFactor = element.conversionfactor;
+                            break;
+                        }
+                    }
+                }
+                return {
+                    productionId: production.id,
+                    itemId: data.itemId,
+                    itemName: data.itemName,
+                    store: data.store,
+                    uom: data.uom,
+                    quantity: productions[index].quantity * quantity,
+                    conversionFactor,
+                    status: 1
+                }
+            });
+
+            const bulkAdditionalCharges = additionalCharges?.filter(data => data.chargesName).map((data) => {
+                const price = (data.amount) / finishedGoods[0]?.quantity;
+                return {
+                    productionId: production.id,
+                    chargesName: data.chargesName,
+                    amount: productions[index].quantity * price,
+                    status: 1
+                }
+            });
+
+            const bulkScrapMaterial = scrapLogs?.filter(data => data?.itemName).map((data) => {
+                const quantity = (data.quantity) / finishedGoods[0]?.quantity;
+                let conversionFactor = 1;
+                if (data.uom != itemsMap[data.itemId]?.metricsUnit) {
+                    for (const element of alternateUnits) {
+                        if (element.itemId == itemsMap[data.itemId]?.id && element.alternateUnits == data.uom) {
+                            conversionFactor = element.conversionfactor;
+                            break;
+                        }
+                    }
+                }
+                return {
+                    productionId: production.id,
+                    itemId: data.itemId,
+                    itemName: data.itemName,
+                    uom: data.uom,
+                    quantity: productions[index].quantity * quantity,
+                    store: data.store,
+                    costAllocationPercent: data.costAllocationPercent,
+                    conversionFactor,
+                    status: 1
+                }
+            });
+
+            const bulkFinishedGoods = finishedGoods.map((data) => {
+                let conversionFactor = 1;
+                if (data.uom != itemsMap[data.itemId]?.metricsUnit) {
+                    for (const element of alternateUnits) {
+                        if (element.itemId == itemsMap[data.itemId]?.id && element.alternateUnits == data.uom) {
+                            conversionFactor = element.conversionfactor;
+                            break;
+                        }
+                    }
+                }
+                return {
+                    productionId: production.id,
+                    itemId: data.itemId,
+                    itemName: data.itemName,
+                    uom: data.uom,
+                    quantity: productions[index].quantity,
+                    store: data.store,
+                    costAllocationPercent: data.costAllocationPercent,
+                    conversionFactor,
+                    status: 1
+                }
+            });
+
+            const bulkProcess = process.map((data) => {
+
+                const [days, hours, minutes, seconds] = !data?.plannedTime ? [0, 0, 0, 0] : data?.plannedTime?.split(":")?.map(Number);
+                const totalMinutes = (((days * 24) + hours) * 60) + minutes;
+                const miniute = (productions[index]?.quantity) * (totalMinutes / finishedGoods[0]?.quantity);
+                const totalSeconds = miniute * 60;
+
+                const day = Math.floor(totalSeconds / (24 * 3600));
+                const remainingAfterDays = totalSeconds % (24 * 3600);
+
+                const hour = Math.floor(remainingAfterDays / 3600);
+                const minute = Math.floor((remainingAfterDays % 3600) / 60);
+                const second = Math.floor(remainingAfterDays % 60) || 0;
+
+                const timeString = `${String(day).padStart(2, '0')}:${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:${String(second).padStart(2, '0')}`;
+
+                return {
+                    productionId: production.id,
+                    cost: (miniute / data.cost) * 60,
+                    plannedTime: timeString,
+                    description: data.description,
+                    processName: data.processName,
+                    status: 1,
+                    perHourCost: (data?.cost / totalMinutes) * 60
+                }
+            });
+
+            await Promise.all([
+                models.ProductionSalesProcess.bulkCreate(bulkProcess),
+                models.ProductionRawMaterials.bulkCreate(bulkRawMaterial),
+                models.ProductionScrapMaterials.bulkCreate(bulkScrapMaterial),
+                models.ProductionFinishedGoods.bulkCreate(bulkFinishedGoods),
+                models.ProductionAdditionalCharges.bulkCreate(bulkAdditionalCharges),
+            ]);
+            index++;
+        }
+        if (prefix && nextNumber) {
+            await models.DocumentSeries.update(
+                { nextNumber: nextNumber + 1 },
+                {
+                    where: {
+                        companyId: Number(companyId),
+                        DocType: 'Production',
+                        prefix
+                    }
+                }
+            );
+        }
+
+        res.status(201).json({ message: 'Production Created Successfully.', data: parentProduction });
+    } catch (error) {
+        res.status(500).json({ message: 'Something went wrong' });
+        console.log(error);
+    }
+}
+
 module.exports = {
     startProduction: startProduction,
     getProductions: getProductions,
@@ -2302,5 +2616,7 @@ module.exports = {
     updateTable: updateTable,
     removeRows: removeRows,
     viewProductionHistory: viewProductionHistory,
-    returnRawMaterial: returnRawMaterial
+    returnRawMaterial: returnRawMaterial,
+    startBulkProduction: startBulkProduction,
+    getBulkProductions: getBulkProductions
 }
