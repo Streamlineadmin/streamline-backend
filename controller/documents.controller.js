@@ -2,6 +2,9 @@ const { Op, fn, col, where, cast } = require('sequelize');
 const models = require('../models');
 const { documentTypes, purchaseDocuments, salesDocuments, serviceDocuments, serviceConfirmationDocuments } = require('../helpers/document-type');
 const { generateTransferNumber, generateProductionId } = require('../helpers/transfer-number');
+const { getTodayDateInIST, gstStateCodes } = require('../helpers/helper');
+const { isValidJSON } = require('../helpers/add-level');
+const axios = require('axios');
 
 async function createDocument(req, res) {
   try {
@@ -1499,11 +1502,11 @@ async function createDocument(req, res) {
       });
     }
 
-    if (status && documentType === "Service Challan" && ServiceConfirmationNumber) {
+    if (status && documentType === "Service Challan" && serviceOrderNumber) {
       const production = await models.Production.findOne({
         where: {
           companyId: Number(companyId),
-          serviceOrderNumber: ServiceConfirmationNumber
+          serviceOrderNumber: serviceOrderNumber
         },
         raw: true
       });
@@ -1534,7 +1537,7 @@ async function createDocument(req, res) {
 
     }
 
-    if (status && (documentType === 'Service Grn' || documentType === 'Service Qr') && ServiceConfirmationNumber) {
+    if (status && (documentType === 'Service Grn' || documentType === 'Service Qr') && serviceOrderNumber) {
       const serviceChallan = await models.Documents.findOne({
         where: {
           companyId,
@@ -1545,7 +1548,7 @@ async function createDocument(req, res) {
       const production = await models.Production.findOne({
         where: {
           companyId: Number(companyId),
-          serviceOrderNumber: ServiceConfirmationNumber
+          serviceOrderNumber: serviceOrderNumber
         },
         raw: true
       });
@@ -1699,7 +1702,8 @@ async function createDocument(req, res) {
             companyId,
             isRejected: element?.toReject || false,
             approvalId: approval.id,
-            quantityForApproval: remainingQuantity
+            quantityForApproval: remainingQuantity,
+            toReject: element?.toReject || false
           });
         }
       }
@@ -3741,6 +3745,185 @@ async function approveDocument(req, res) {
   }
 }
 
+async function createEInvoice(req, res) {
+  try {
+    const { document, userName, password } = req.body;
+    const authResponse = await axios.get(
+      "https://apisandbox.whitebooks.in/einvoice/authenticate",
+      {
+        params: { email: process.env.EMAIL },
+        headers: {
+          "client_id": process.env.LOCAL_CLIENT_ID,
+          "client_secret": process.env.LOCAL_CLIENT_SECRET,
+          "gstin": document?.supplierGSTNumber,
+          "username": userName,
+          "password": password,
+          "ip_address": "192.68.45.37",
+        },
+      }
+    );
+
+    console.log(authResponse?.data)
+    const authToken = authResponse?.data?.data?.AuthToken;
+    if (!authToken) {
+      return res.status(400).json({
+        message: "Failed to generate Auth Token",
+        errors: authResponse?.data?.data || authResponse?.data
+      });
+    }
+
+    const supplierAddress = isValidJSON(document?.supplierBillingAddress);
+    const buyerAddress = isValidJSON(document?.buyerDeliveryAddress);
+
+    const isIgst = document?.supplyState !== supplierAddress?.state;
+
+    // Compute totals from items
+    let AssVal = 0,
+      CgstVal = 0,
+      SgstVal = 0,
+      IgstVal = 0,
+      TotInvVal = 0;
+
+    const items = document.items?.map((item, index) => {
+      const qty = Number(item?.quantity || 1);
+      const price = Number(item?.price || 100);
+      const taxRate = Number(item?.tax || 18);
+      const totalBeforeTax = qty * price;
+      const totalTax = (totalBeforeTax * taxRate) / 100;
+      const cgst = isIgst ? 0 : totalTax / 2;
+      const sgst = isIgst ? 0 : totalTax / 2;
+      const igst = isIgst ? totalTax : 0;
+      const totalAfterTax = totalBeforeTax + totalTax;
+
+      AssVal += totalBeforeTax;
+      CgstVal += cgst;
+      SgstVal += sgst;
+      IgstVal += igst;
+      TotInvVal += totalAfterTax;
+
+      return {
+        SlNo: (index + 1).toString(),
+        IsServc: "N",
+        PrdDesc: item?.itemName || " ",
+        HsnCd: item?.HSN,
+        Qty: qty,
+        Unit: "KGS",
+        UnitPrice: price,
+        TotAmt: totalBeforeTax,
+        AssAmt: totalBeforeTax,
+        GstRt: taxRate,
+        SgstAmt: sgst,
+        CgstAmt: cgst,
+        IgstAmt: igst,
+        TotItemVal: totalAfterTax,
+      };
+    });
+
+    // STEP 3: Build E-Invoice Payload
+    const eInvoice = {
+      Version: "1.1",
+      TranDtls: {
+        TaxSch: "GST",
+        SupTyp: "B2B"
+      },
+      DocDtls: {
+        Typ: "INV",
+        No: document?.documentNumber,
+        Dt: getTodayDateInIST()
+      },
+      SellerDtls: {
+        Gstin: document?.supplierGSTNumber,
+        LglNm: document?.supplierName,
+        TrdNm: document?.supplierName,
+        Addr1: supplierAddress?.addressLineOne || ' ',
+        Addr2: supplierAddress?.city || ' ',
+        Loc: supplierAddress?.state || ' ',
+        Pin: supplierAddress?.pincode + '' || ' ',
+        Stcd: document?.supplierGSTNumber?.slice(0, 2),
+        Ph: document?.supplierContactNo,
+        Em: document?.supplierEmail
+      },
+      BuyerDtls: {
+        Gstin: document?.buyerGSTNumber,
+        LglNm: document?.buyerName,
+        TrdNm: document?.buyerName,
+        Pos: gstStateCodes?.[document?.supplyState] || '23',
+        Addr1: buyerAddress?.addressLineOne || ' ',
+        Addr2: buyerAddress?.city || ' ',
+        Loc: buyerAddress?.state || ' ',
+        Pin: buyerAddress?.pincode + '' || ' ',
+        Stcd: document?.buyerGSTNumber?.slice(0, 2),
+        Ph: document?.buyerContactNumber,
+        Em: document?.buyerEmail
+      },
+
+      ItemList: items,
+      ValDtls: {
+        AssVal: Number(AssVal),
+        CgstVal: Number(CgstVal),
+        SgstVal: Number(SgstVal),
+        IgstVal: Number(IgstVal),
+        TotInvVal: Number(TotInvVal)
+      }
+    };
+
+    // STEP 4: Generate E-Invoice
+    const response = await axios.post(
+      "https://apisandbox.whitebooks.in/einvoice/type/GENERATE/version/V1_03",
+      eInvoice,
+      {
+        params: { email: process.env.EMAIL },
+        headers: {
+          "Content-Type": "application/json",
+          "client_id": process.env.LOCAL_CLIENT_ID,
+          "client_secret": process.env.LOCAL_CLIENT_SECRET,
+          "gstin": document?.supplierGSTNumber,
+          "username": userName,
+          "password": password,
+          "auth-token": authToken,
+          "ip_address": "192.68.45.37",
+        },
+      }
+    );
+
+    console.log(response?.data, "EINVOICE RESPONSE");
+
+    // STEP 5: Extract IRN + QR
+    const irnNumber = response?.data?.data?.Irn || null;
+    const qrCode = response?.data?.data?.SignedQRCode || null;
+
+    if (!irnNumber) {
+      return res.status(400).send({
+        message: "E-Invoice generation failed.",
+        errors: response?.data?.data || response?.data,
+      });
+    }
+
+    // STEP 6: Save in DB
+    const existingDocument = await models.Documents.findOne({
+      where: {
+        companyId: document.companyId,
+        documentNumber: document.documentNumber,
+      },
+    });
+
+    if (existingDocument) {
+      await existingDocument.update({ irnNumber, qrCode });
+    }
+
+    return res.status(200).json({
+      message: "E-Invoice Created Successfully.",
+    });
+  } catch (error) {
+    console.error("E-Invoice Error:", error.response?.data || error.message);
+    return res.status(500).json({
+      message: "Internal Server Error",
+      error: error.response?.data || error.message,
+    });
+  }
+}
+
+
 module.exports = {
   getDocuments,
   getDocumentById,
@@ -3753,5 +3936,6 @@ module.exports = {
   getSalesDocumentItems,
   editDocument,
   getServiceChallanItems,
-  approveDocument
+  approveDocument,
+  createEInvoice
 };

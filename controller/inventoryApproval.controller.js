@@ -245,7 +245,7 @@ async function acceptRejectApproval(req, res) {
                 comment: element.comment,
                 companyId: element.companyId,
                 price: stock.price,
-                isRejected: element?.isRejected || false,
+                isRejected: element?.toReject || false,
                 approvalId: approval.id,
                 quantityForApproval: element.quantityForApproval
               });
@@ -260,7 +260,7 @@ async function acceptRejectApproval(req, res) {
                 comment: element.comment,
                 companyId: element.companyId,
                 price: stock.price,
-                isRejected: element?.isRejected ? false : true,
+                isRejected: element?.isRejected || false,
                 approvalId: approval.id,
                 quantityForApproval: element.quantityForApproval
               });
@@ -278,7 +278,7 @@ async function acceptRejectApproval(req, res) {
                 comment: element.comment,
                 companyId: element.companyId,
                 price: stock.price,
-                isRejected: element?.isRejected || false,
+                isRejected: element?.toReject || false,
                 approvalId: approval.id,
                 quantityForApproval: element.quantityForApproval
               });
@@ -290,7 +290,7 @@ async function acceptRejectApproval(req, res) {
               status: 1,
               addedBy: element.transferredBy,
               price: stock.price,
-              isRejected: element?.isRejected || false,
+              isRejected: element?.toReject || false,
               approvalId: approval.id,
               quantityForApproval: deductQty
             });

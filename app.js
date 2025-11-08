@@ -50,6 +50,7 @@ const settingsRoutes = require("./routes/settings");
 const documentApprovalRoutes = require("./routes/documentApproval");
 const labelsRoute = require("./routes/labels");
 const inventoryApprovalRoutes = require("./routes/inventoryApproval");
+const eInvoiceRoutes = require("./routes/eInvoiceCredentials");
 const app = express();
 
 // Apply body-parser middleware to handle JSON request bodies
@@ -119,5 +120,6 @@ app.use("/settings", settingsRoutes);
 app.use("/documentApproval", documentApprovalRoutes);
 app.use("/labels", labelsRoute);
 app.use("/inventoryApproval", inventoryApprovalRoutes);
+app.use("/eInvoice", eInvoiceRoutes);
 
 module.exports = app;

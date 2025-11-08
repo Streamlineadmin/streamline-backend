@@ -1,5 +1,6 @@
 const { json } = require('body-parser');
 const models = require('../models');
+const axios = require('axios');
 const convertXlsxToJson = require('../helpers/bulk-upload');
 
 
@@ -33,6 +34,7 @@ function addBuyerSupplier(req, res) {
                 state: elem.state,
                 ip_address: req.body.ip_address,
                 status: elem.status,
+                gstNumber: elem?.gstNumber
             }
             models.BuyerSupplierAddress.create(addressData);
         })
@@ -89,6 +91,7 @@ async function editBuyerSupplier(req, res) {
                         state: address.state,
                         ip_address,
                         status: address.status,
+                        gstNumber: address?.gstNumber
                     });
 
                     existingAddressMap.delete(address.id);
@@ -104,6 +107,7 @@ async function editBuyerSupplier(req, res) {
                         state: address.state,
                         ip_address,
                         status: address.status || 1,
+                        gstNumber: address?.gstNumber
                     });
                 }
             }
@@ -236,7 +240,7 @@ async function bulkUploadBuyerSuppliers(req, res) {
             where: {
                 companyId: Number(companyId)
             },
-            raw:true
+            raw: true
         });
 
         const existingBuyerSupplierMap = existingBuyerSupplier?.reduce((acc, curr) => {
@@ -374,11 +378,54 @@ async function bulkUploadBuyerSuppliers(req, res) {
     }
 }
 
+async function getCompanyDetailsByGstNumber(req, res) {
+    const { gstNumber } = req.body;
+
+    try {
+        if (!gstNumber) {
+            return res.status(400).json({ message: "GST number is required" });
+        }
+
+        const response = await axios.get("https://api.whitebooks.in/public/search", {
+            params: {
+                email: "apisales@whitebooks.in",
+                gstin: gstNumber,
+            },
+            headers: {
+                "Content-Type": "application/json",
+                client_id: process.env.CLIENT_ID,
+                client_secret: process.env.CLIENT_SECRET
+            },
+        });
+
+        if (!response?.data?.error) {
+            return res.status(200).json({
+                success: true,
+                ...response?.data,
+                message: 'Data Fetched'
+            });
+        } else {
+            return res.status(400).json({
+                success: false,
+                error: response?.data?.error?.message
+            });
+        }
+    } catch (error) {
+        console.error("Error fetching company details:", error.message);
+        return res.status(500).json({
+            success: false,
+            message: "Something went wrong, please try again later!",
+            error: error.response?.data || error.message,
+        });
+    }
+}
+
 module.exports = {
     addBuyerSupplier: addBuyerSupplier,
     getBuyerSupplier: getBuyerSupplier,
     deleteBuyerSupplier: deleteBuyerSupplier,
     bulkDeleteBuyerSupplier: bulkDeleteBuyerSupplier,
     editBuyerSupplier: editBuyerSupplier,
-    bulkUploadBuyerSuppliers: bulkUploadBuyerSuppliers
+    bulkUploadBuyerSuppliers: bulkUploadBuyerSuppliers,
+    getCompanyDetailsByGstNumber: getCompanyDetailsByGstNumber
 }

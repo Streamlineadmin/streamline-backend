@@ -91,8 +91,28 @@ function editUOM(req, res) {
 }
 
 
-function deleteUOM(req, res) {
-    const uomId = req.body.uomId;  // Assuming the team ID is passed as a URL parameter
+async function deleteUOM(req, res) {
+    const uomId = req.body.uomId;
+    const uom = await models.UOM.findByPk(req.body.uomId);
+    if (!uom) {
+        return res.status(200).json({
+            message: "UOM not found"
+        });
+    }
+
+    if (uom.companyId) {
+        const items = await models.Items.count({
+            where: {
+                companyId: uom.companyId,
+                metricsUnit: uom.id
+            }
+        });
+        if (items > 0) {
+            return res.status(200).json({
+                message: "UOM Reference is Present in Items, You can not delete this UOM."
+            });
+        }
+    }
 
     models.UOM.destroy({ where: { id: uomId } })
         .then(result => {
@@ -123,25 +143,20 @@ function getUOMs(req, res) {
             ]
         }
     })
-    .then(result => {
-        if (!result || result.length === 0) {
-            return res.status(200).json([]);
-        }
-        res.status(200).json(result);
-    })
-    .catch(error => {
-        console.error("Error fetching UOMs:", error);
-        res.status(500).json({
-            message: "Something went wrong, please try again later!",
-            error: error.message
+        .then(result => {
+            if (!result || result.length === 0) {
+                return res.status(200).json([]);
+            }
+            res.status(200).json(result);
+        })
+        .catch(error => {
+            console.error("Error fetching UOMs:", error);
+            res.status(500).json({
+                message: "Something went wrong, please try again later!",
+                error: error.message
+            });
         });
-    });
 }
-
-
-
-
-
 
 module.exports = {
     addUOM: addUOM,

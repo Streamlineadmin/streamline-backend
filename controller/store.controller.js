@@ -329,18 +329,19 @@ async function stockTransfer(req, res) {
         companyId
       }
     });
+    const inventoryHandling = stockData?.[0]?.addReduce ? settings?.['stockUpdate'] : settings?.['stockTransfer'];
     const approval = await models.InventoryApproval.create({
       approvalId: `INA${approvalCount + 1}`,
       documentType: useFIFO ? 'Stock Update' : 'Stock Transfer',
       documentNumber: '',
-      approvalStatus: settings?.['stockUpdate'] == 'manual' ? 'Pending' : 'Auto Approved',
+      approvalStatus: inventoryHandling == 'manual' ? 'Pending' : 'Auto Approved',
       requestedBy: userId,
       companyId: companyId,
       status: 1,
       approvedBy: null
     });
 
-    const inventoryHandling = stockData?.[0]?.addReduce ? settings?.['stockUpdate'] : settings?.['stockTransfer'];
+    
     for (const element of stockData) {
       let price = 0;
       let remainingQuantity = element.quantity * (element?.conversionFactor || 1);
@@ -425,7 +426,8 @@ async function stockTransfer(req, res) {
                   price: stock.price,
                   isRejected: element?.toReject || false,
                   approvalId: approval.id,
-                  quantityForApproval: deductQty
+                  quantityForApproval: deductQty,
+                  toReject: element?.toReject || false
                 });
               }
 
@@ -451,7 +453,6 @@ async function stockTransfer(req, res) {
           }
         }
         else {
-          console.log('I am here called');
           await models.StockTransfer.create({
             transferNumber,
             fromStoreId: !addReduce ? element?.fromStore : addReduce == 2 ? element?.toStore : (element?.fromStore || null),
@@ -465,7 +466,8 @@ async function stockTransfer(req, res) {
             price: 0,
             isRejected: element?.isReject || false,
             approvalId: approval.id,
-            quantityForApproval: -remainingQuantity
+            quantityForApproval: -remainingQuantity,
+            toReject: element?.toReject || false
           });
         }
       }
