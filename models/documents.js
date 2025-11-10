@@ -182,7 +182,8 @@ module.exports = (sequelize, DataTypes) => {
     serviceOrderNumber: DataTypes.STRING,
     serviceOrderDate: DataTypes.STRING,
     irnNumber: DataTypes.STRING,
-    qrCode: DataTypes.TEXT
+    qrCode: DataTypes.TEXT,
+    ewayBillCreated: DataTypes.BOOLEAN
   }, {
     sequelize,
     modelName: 'Documents',

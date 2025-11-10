@@ -16,5 +16,6 @@ router.post('/editDocument', documentsController.editDocument);
 router.post('/getServiceChallanItems', documentsController.getServiceChallanItems);
 router.post('/approveDocument', documentsController.approveDocument);
 router.post('/createEInvoice', documentsController.createEInvoice);
+router.post('/createEWayBill', documentsController.createEWayBill);
 
 module.exports = router;
