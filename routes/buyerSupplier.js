@@ -10,5 +10,6 @@ router.post('/bulkDeleteBuyerSupplier', buyerSupplierController.bulkDeleteBuyerS
 router.post('/editBuyerSupplier', buyerSupplierController.editBuyerSupplier);
 router.post('/', buyerSupplierController.getBuyerSupplier);
 router.post('/addBulkCompany', upload.single('file'), buyerSupplierController.bulkUploadBuyerSuppliers);
+router.post('/getCompanyDetailsByGstNumber', buyerSupplierController.getCompanyDetailsByGstNumber);
 
 module.exports = router;

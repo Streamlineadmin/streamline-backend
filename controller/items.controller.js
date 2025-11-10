@@ -250,7 +250,31 @@ async function editItem(req, res) {
 }
 
 async function deleteItem(req, res) {
-    const itemId = req.body.itemId;  // Assuming the team ID is passed as a URL parameter
+    const itemId = req.body.itemId;
+    const item = await models.Items.findByPk(req.body.itemId);
+    const finishedGoodCount = await models.BOMFinishedGoods.count({
+        where: {
+            companyId: item.companyId,
+            itemId: item.itemId
+        }
+    });
+    const rawMaterialCount = await models.BOMRawMaterial.count({
+        where: {
+            companyId: item.companyId,
+            itemId: item.itemId
+        }
+    });
+    const scrapCount = await models.BOMScrapMaterial.count({
+        where: {
+            companyId: item.companyId,
+            itemId: item.itemId
+        }
+    });
+    if (scrapCount || finishedGoodCount || rawMaterialCount) {
+        return res.status(200).json({
+            message: "You can not delete Item, It is present in Bom."
+        });
+    }
     models.Items.destroy({ where: { id: itemId } })
         .then(async (result) => {
             if (result) {
@@ -560,6 +584,8 @@ async function addBulkItem(req, res) {
             raw: true
         });
 
+        // const hsnRegex = /^(?:\d{4}|\d{6}|\d{8})$/;
+
         for (const item of data) {
             const { '* Item ID': itemId, '* Item Name': itemName, '* Item Type': itemType, '* Metrics Unit': metricsUnit } = item;
             if (existingItemMap.has(itemId?.toString())) {
@@ -606,6 +632,10 @@ async function addBulkItem(req, res) {
             if (itemsMap?.[itemId]) {
                 err += 'Same ItemId found in sheet. ';
             }
+
+            // if (item['HSN'] && !hsnRegex.test(item['HSN'])) {
+            //     err += 'HSN is not Valid.'
+            // }
 
             itemsMap[itemId] = 1;
 

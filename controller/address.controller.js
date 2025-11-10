@@ -1,7 +1,7 @@
 const models = require("../models");
 
 async function addAddress(req, res) {
-  const { addressType, companyId, ip_address, addressLineOne, addressLineTwo, pinCode, city, state, country } = req.body;
+  const { addressType, companyId, ip_address, addressLineOne, addressLineTwo, pinCode, city, state, country, gstNumber } = req.body;
 
   // Define the common data for both addresses
   const baseAddress = {
@@ -13,6 +13,7 @@ async function addAddress(req, res) {
     city,
     state,
     country,
+    gstNumber
   };
 
   // Prepare an array for storing the promises of address creation
@@ -67,7 +68,8 @@ function editAddress(req, res) {
     state: req.body.state,
     country: req.body.country,
     addressType: req.body.addressType,
-    status: req.body.status || 1,
+    status: req.body.status ?? 1,
+    gstNumber: req.body?.gstNumber
   };
 
   models.Addresses.update(updatedStoreData, { where: { id: addressId } })

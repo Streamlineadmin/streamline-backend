@@ -15,5 +15,6 @@ router.post('/getSalesDocumentItems', documentsController.getSalesDocumentItems)
 router.post('/editDocument', documentsController.editDocument);
 router.post('/getServiceChallanItems', documentsController.getServiceChallanItems);
 router.post('/approveDocument', documentsController.approveDocument);
+router.post('/createEInvoice', documentsController.createEInvoice);
 
 module.exports = router;

@@ -180,7 +180,9 @@ module.exports = (sequelize, DataTypes) => {
     approvedBy: DataTypes.INTEGER,
     labels: DataTypes.JSON,
     serviceOrderNumber: DataTypes.STRING,
-    serviceOrderDate: DataTypes.STRING
+    serviceOrderDate: DataTypes.STRING,
+    irnNumber: DataTypes.STRING,
+    qrCode: DataTypes.TEXT
   }, {
     sequelize,
     modelName: 'Documents',
