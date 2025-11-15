@@ -97,11 +97,25 @@ const formatToIstDate = (date) => {
   return istDate.toISOString().slice(0, 10).split("-").reverse().join("-");
 }
 
+function getIndianTime(dateInput) {
+  const date = new Date(dateInput);
+  const options = {
+    timeZone: 'Asia/Kolkata',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: true
+  };
+
+  return new Intl.DateTimeFormat('en-IN', options).format(date);
+}
+
 module.exports = {
   buildRawMaterialTreeWithLevel,
   isValidJSON,
   buildMultiLevelProductionTree,
   istToUtc,
   getAllDatesInRange,
-  formatToIstDate
+  formatToIstDate,
+  getIndianTime
 }

@@ -639,10 +639,6 @@ async function addBulkItem(req, res) {
 
             itemsMap[itemId] = 1;
 
-            if (itemId?.toString()?.length > 11) {
-                err += 'Item ID must be lesser than or equal to 11 characters.'
-            }
-
             let storeName = '', storeType = '';
             if (item?.Store) {
                 const storeStr = item.Store;

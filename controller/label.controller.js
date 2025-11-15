@@ -52,8 +52,27 @@ async function assignLabels(req, res) {
     }
 }
 
+async function removeLabel(req, res) {
+    try {
+        const { documentId, labels } = req.body;
+        await models.Documents.update({ labels: labels }, {
+            where: {
+                id: documentId
+            }
+        });
+
+        res.status(200).json({ message: 'Label Removed Successfully.' });
+    } catch (error) {
+        console.log(error);
+        res.status(500).json({
+            message: 'Internal Server Error.'
+        });
+    }
+}
+
 module.exports = {
     addLabel,
     getLabels,
-    assignLabels
+    assignLabels,
+    removeLabel
 }

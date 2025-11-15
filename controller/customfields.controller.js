@@ -110,10 +110,29 @@ async function editPermissions(req, res) {
   }
 }
 
+async function editCustomField(req, res) {
+  try {
+    const { data } = req.body;
+
+    await models.CustomFields.update({ ...data }, {
+      where: {
+        id: data.id
+      }
+    });
+
+    return res.status(200).json({
+      message: "CustomField Updated successfully."
+    });
+  } catch (error) {
+    console.error("Error in Fetching Custom Field.", error);
+    return res.status(500).json({ message: "Server error" });
+  }
+}
 
 module.exports = {
   addCustomfields: addCustomfields,
   getCustomfields: getCustomfields,
   deleteCustomfields: deleteCustomfields,
-  editPermissions
+  editPermissions,
+  editCustomField
 };

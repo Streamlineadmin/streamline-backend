@@ -7,5 +7,6 @@ router.post("/addCustomFields", customfieldController.addCustomfields);
 router.post("/getCustomFields", customfieldController.getCustomfields);
 router.post("/deleteCustomFields", customfieldController.deleteCustomfields);
 router.post("/editPermissions", customfieldController.editPermissions);
+router.post("/editCustomField", customfieldController.editCustomField);
 
 module.exports = router;
