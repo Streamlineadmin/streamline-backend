@@ -3938,6 +3938,18 @@ async function approveDocument(req, res) {
 async function createEInvoice(req, res) {
   try {
     const { document, userName, password } = req.body;
+    const uoms = await models.UOM.findAll({
+      where: {
+        [Op.or]: [
+          { companyId: document.companyId, status: 1 },
+          { companyId: null, status: 0 }
+        ]
+      }
+    });
+    const uomMap = uoms.reduce((acc, curr) => {
+      acc[curr.name] = curr.code;
+      return acc;
+    }, {});
     const authResponse = await axios.get(
       "https://apisandbox.whitebooks.in/einvoice/authenticate",
       {
@@ -3953,7 +3965,6 @@ async function createEInvoice(req, res) {
       }
     );
 
-    console.log(authResponse?.data)
     const authToken = authResponse?.data?.data?.AuthToken;
     if (!authToken) {
       return res.status(400).json({
@@ -3997,7 +4008,7 @@ async function createEInvoice(req, res) {
         PrdDesc: item?.itemName || " ",
         HsnCd: item?.HSN,
         Qty: qty,
-        Unit: "KGS",
+        Unit: uomMap[item.UOM],
         UnitPrice: price,
         TotAmt: totalBeforeTax,
         AssAmt: totalBeforeTax,
@@ -4113,6 +4124,155 @@ async function createEInvoice(req, res) {
   }
 }
 
+const createEWayBill = async (req, res) => {
+  const { document, formData } = req.body;
+  try {
+    const uoms = await models.UOM.findAll({
+      where: {
+        [Op.or]: [
+          { companyId: document.companyId, status: 1 },
+          { companyId: null, status: 0 }
+        ]
+      }
+    });
+    const uomMap = uoms.reduce((acc, curr) => {
+      acc[curr.name] = curr.code;
+      return acc;
+    }, {});
+    const supplierAddress = isValidJSON(document?.supplierBillingAddress);
+    const buyerAddress = isValidJSON(document?.buyerDeliveryAddress);
+    const isIgst = document?.supplyState !== supplierAddress?.state;
+
+    // Compute totals from items
+    let AssVal = 0,
+      CgstVal = 0,
+      SgstVal = 0,
+      IgstVal = 0,
+      TotInvVal = 0;
+
+    const items = document.items?.map((item, index) => {
+      const qty = Number(item?.quantity || 1);
+      const price = Number(item?.price || 100);
+      const taxRate = Number(item?.tax || 0);
+      const totalBeforeTax = qty * price;
+      const totalTax = (totalBeforeTax * taxRate) / 100;
+      const cgst = isIgst ? 0 : totalTax / 2;
+      const sgst = isIgst ? 0 : totalTax / 2;
+      const igst = isIgst ? totalTax : 0;
+      const totalAfterTax = totalBeforeTax + totalTax;
+
+      AssVal += totalBeforeTax;
+      CgstVal += cgst;
+      SgstVal += sgst;
+      IgstVal += igst;
+      TotInvVal += totalAfterTax;
+
+      return {
+        productName: item?.itemName,
+        productDesc: item?.itemName,
+        hsnCode: item?.HSN,
+        quantity: item?.quantity,
+        qtyUnit: uomMap[item?.UOM],
+        taxableAmount: totalBeforeTax,
+        sgstRate: isIgst ? 0 : taxRate / 2,
+        cgstRate: isIgst ? 0 : taxRate / 2,
+        igstRate: isIgst ? taxRate : 0
+      }
+    });
+    const eWayBillPayload = {
+      supplyType: formData?.supplyType,
+      subSupplyType: formData?.subSupplyType,
+      subSupplyDesc: " ",
+      docType: "CHL",
+      docNo: document.documentNumber,
+      docDate: getTodayDateInIST(),
+      fromGstin: document?.supplierGSTNumber,
+      fromTrdName: document?.supplierName,
+      fromAddr1: supplierAddress?.addressLineOne || ' ',
+      fromAddr2: supplierAddress?.city || ' ',
+      actFromStateCode: Number(gstStateCodes[supplierAddress?.state]),
+      fromPincode: Number(supplierAddress?.pincode),
+      fromStateCode: Number(gstStateCodes[supplierAddress?.state]),
+      toGstin: document?.buyerGSTNumber,
+      toTrdName: document?.buyerName,
+      toAddr1: buyerAddress?.addressLineOne,
+      toAddr2: buyerAddress?.city,
+      toPlace: buyerAddress?.state,
+      toPincode: Number(buyerAddress?.pincode),
+      actToStateCode: Number(gstStateCodes[buyerAddress?.state]),
+      toStateCode: Number(gstStateCodes[buyerAddress?.state]),
+      transactionType: formData?.transactionType,
+      dispatchFromGSTIN: document?.supplierGSTNumber,
+      dispatchFromTradeName: document?.supplierName,
+      shipToGSTIN: document?.buyerGSTNumber,
+      shipToTradeName: document?.buyerName,
+      totalValue: AssVal,
+      cgstValue: CgstVal,
+      sgstValue: SgstVal,
+      igstValue: IgstVal,
+      totInvValue: TotInvVal,
+      transMode: formData?.transportMode,
+      transDistance: "67",
+      transporterName: formData?.transporterName,
+      transporterId: formData?.transporterId,
+      transDocNo: formData?.transportDocNo,
+      transDocDate: formData?.transporterDocDate,
+      vehicleNo: formData?.vehicleNo,
+      vehicleType: formData?.vehicleType,
+      itemList: items,
+    };
+
+
+    const response = await axios.post(
+      "https://api.mastergst.com/ewaybillapi/v1.03/ewayapi/genewaybill",
+      eWayBillPayload,
+      {
+        headers: {
+          "Content-Type": "application/json",
+          "client_id": process.env.LOCAL_CLIENT_ID,
+          "client_secret": process.env.LOCAL_CLIENT_SECRET,
+          "gstin": document?.supplierGSTNumber,
+          "ip_address": "192.68.45.45"
+        },
+        params: {
+          email: process.env.EMAIL,
+        },
+      }
+    );
+
+    console.log(response,'resresresresres')
+    if (response.data?.status_cd == '0') {
+      return res.status(400).send({
+        message: "E-Invoice generation failed.",
+        errors: response?.data?.data || response?.data,
+      });
+    }
+
+    const existingDocument = await models.Documents.findOne({
+      where: {
+        companyId: document.companyId,
+        documentNumber: document.documentNumber,
+      },
+    });
+
+    if (existingDocument) {
+      await existingDocument.update({ ewayBillCreated: true });
+    }
+
+    return res.status(200).json({
+      message: "E-Way Bill Created Successfully.",
+    });
+
+  } catch (error) {
+    console.log(error);
+    console.error(error.response?.data || error.message);
+    return res.status(500).json({
+      message: "Internal Server Error",
+      error: error.response?.data || error.message,
+    });
+  }
+}
+
 
 module.exports = {
   getDocuments,
@@ -4127,5 +4287,6 @@ module.exports = {
   editDocument,
   getServiceChallanItems,
   approveDocument,
-  createEInvoice
+  createEInvoice,
+  createEWayBill
 };
