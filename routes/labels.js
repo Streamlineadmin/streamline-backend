@@ -6,6 +6,7 @@ const labelController = require("../controller/label.controller");
 router.post("/addLabel", labelController.addLabel);
 router.post("/getLabels", labelController.getLabels);
 router.post("/assignLabels", labelController.assignLabels);
+router.post("/removeLabel", labelController.removeLabel);
 
 
 module.exports = router;

@@ -1,4 +1,4 @@
-const { isValidJSON, istToUtc, getAllDatesInRange, formatToIstDate } = require('../helpers/add-level');
+const { isValidJSON, istToUtc, getAllDatesInRange, formatToIstDate, getIndianTime } = require('../helpers/add-level');
 const { documentTypes } = require('../helpers/document-type');
 const models = require('../models');
 const { Op } = require('sequelize');
@@ -11,11 +11,13 @@ async function getReports(req, res) {
             let startDate = null, endDate = null;
 
             if (dateRange?.length === 2) {
-                startDate = new Date(new Date(dateRange[0]).getTime() - (5.5 * 60 * 60 * 1000));
-
+                const date = new Date(dateRange[0]);
+                date.setHours(0, 0, 0, 0);
+                const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+                startDate = new Date(date.getTime() - IST_OFFSET_MS);
                 const endDateRaw = new Date(dateRange[1]);
                 endDateRaw.setHours(23, 59, 59, 999);
-                endDate = new Date(endDateRaw.getTime() - (5.5 * 60 * 60 * 1000));
+                endDate = new Date(endDateRaw.getTime());
             } else if (quickRange) {
                 const nowIst = new Date(new Date().getTime() + 5.5 * 60 * 60 * 1000);
                 const startIst = new Date(nowIst);
@@ -175,7 +177,7 @@ async function getReports(req, res) {
                     }
                 },
                 raw: true,
-               
+
             });
 
             const rawMaterials = await models.ProductionRawMaterials.findAll({
@@ -343,6 +345,206 @@ async function getReports(req, res) {
             }
             return res.status(200).json({ data, total: data.length });
         }
+        if (documentType === "Inventory Approval report") {
+            const { fromStore, toStore, dateRange, status } = req.body;
+            let startDate = null, endDate = null;
+
+            if (dateRange?.length === 2) {
+                const date = new Date(dateRange[0]);
+                date.setHours(0, 0, 0, 0);
+                const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+                startDate = new Date(date.getTime() - IST_OFFSET_MS);
+                const endDateRaw = new Date(dateRange[1]);
+                endDateRaw.setHours(23, 59, 59, 999);
+                endDate = new Date(endDateRaw.getTime());
+            }
+            const stockTransfers = await models.StockTransfer.findAll({
+                where: {
+                    companyId: Number(companyId),
+                    ...(fromStore?.length ? {
+                        fromStoreId: {
+                            [Op.in]: fromStore
+                        }
+                    } : {}),
+                    ...(toStore?.length ? {
+                        toStoreId: {
+                            [Op.in]: toStore
+                        }
+                    } : {}),
+                },
+                raw: true,
+                attributes: ['approvalId', 'quantity', 'quantityForApproval', 'id',
+                    'itemId', 'isRejected', 'fromStoreId', 'toStoreId'],
+                order: [['createdAt', 'DESC']],
+            });
+            const uoms = await models.UOM.findAll({
+                where: {
+                    [Op.or]: [
+                        { companyId: req.body.companyId, status: 1 },
+                        { companyId: null, status: 0 }
+                    ]
+                },
+                raw: true,
+                attributes: ['id', 'name']
+            });
+            const uomMap = uoms.reduce((acc, curr) => {
+                acc[curr.id] = curr.name;
+                return acc;
+            }, {});
+            const categories = await models.Categories.findAll({
+                where: {
+                    companyId: Number(companyId),
+                },
+                raw: true,
+                attributes: ['id', 'name']
+            });
+            const categoryMap = categories.reduce((acc, curr) => {
+                acc[curr.id] = curr.name;
+                return acc;
+            }, {});
+            const items = await models.Items.findAll({
+                where: {
+                    companyId: Number(companyId)
+                },
+                raw: true
+            });
+            const itemsMap = items.reduce((acc, curr) => {
+                acc[curr.id] = curr;
+                return acc;
+            }, {});
+            const startUtc = startDate ? istToUtc(startDate) : null;
+            const endUtc = startDate ? istToUtc(endDate) : null;
+            const approvals = await models.InventoryApproval.findAll({
+                where: {
+                    id: {
+                        [Op.in]: stockTransfers.map(data => data.approvalId),
+                    },
+                    ...(status?.length ? {
+                        approvalStatus: {
+                            [Op.in]: status
+                        }
+                    } : {}),
+                    ...(dateRange?.length == 2 ? {
+                        createdAt: { [Op.between]: [startUtc, endUtc] },
+                    } : {})
+                },
+                raw: true
+            });
+            const users = await models.Users.findAll({
+                where: {
+                    companyId: Number(companyId)
+                },
+                raw: true,
+                attributes: ['id', 'name']
+            });
+            const userMap = users.reduce((acc, curr) => {
+                acc[curr.id] = curr.name;
+                return acc;
+            }, {});
+
+            const stores = await models.Store.findAll({
+                where: {
+                    companyId: Number(companyId)
+                },
+                raw: true,
+                attributes: ['id', 'name']
+            });
+            const storeMap = stores.reduce((acc, curr) => {
+                acc[curr.id] = curr.name;
+                return acc;
+            }, {})
+            const validDocumentType = ['Delivery Challan', 'Invoice', 'Sales Return',
+                'Purchase Return', 'Quality Report', 'Goods Received Note', 'Service Challan',
+                'Service Grn', 'Service Qr', 'Service Confirmation Challan', 'Service Confirmation Grn',
+                'Service Service Confirmation Qr'
+            ];
+            const approvalMap = {};
+            approvals.forEach(data => {
+                const documentNumber = validDocumentType.includes(data?.documentType) ? data?.documentNumber : '';
+
+                approvalMap[data.id] = {
+                    data: {
+                        ...data,
+                        number: documentNumber,
+                        requestedBy: userMap?.[data?.requestedBy],
+                        approvedBy: userMap?.[data?.approvedBy] || '',
+                        requestedDate: formatToIstDate(data?.createdAt),
+                        requestedTime: getIndianTime(data?.createdAt),
+                        approvedDate: data?.approvalDate ? formatToIstDate(data?.approvalDate) : '',
+                        approvedTime: data?.approvalDate ? getIndianTime(data?.approvalDate) : '',
+                        inStock: {},
+                    },
+                    reject: {}
+                };
+            });
+
+            for (const element of stockTransfers) {
+                if (!approvalMap[element.approvalId]) continue;
+                const key = element?.isRejected ? 'reject' : 'inStock';
+
+                // If approvalId missing → create a base object
+                if (!approvalMap[element.approvalId]) {
+                    approvalMap[element.approvalId] = { inStock: {}, reject: {} };
+                }
+
+                // If key missing → create object
+                if (!approvalMap[element.approvalId][key]) {
+                    approvalMap[element.approvalId][key] = {};
+                }
+
+                // If item missing → create entry
+                if (!approvalMap[element.approvalId][key][element.itemId]) {
+                    approvalMap[element.approvalId][key][element.itemId] = {
+                        ...element,
+                        items: itemsMap?.[element?.itemId]?.itemId,
+                        itemName: itemsMap?.[element?.itemId]?.itemName,
+                        category: categoryMap?.[itemsMap?.[element?.itemId]?.category],
+                        subCategory: categoryMap?.[itemsMap?.[element?.itemId]?.subCategory],
+                        microCategory: categoryMap?.[itemsMap?.[element?.itemId]?.microCategory],
+                        uom: uomMap?.[itemsMap?.[element?.itemId]?.metricsUnit],
+                        fromStore: storeMap?.[element?.fromStoreId],
+                        toStore: storeMap?.[element?.toStoreId]
+                    };
+                } else {
+                    approvalMap[element.approvalId][key][element.itemId].quantity += element.quantity;
+                }
+            }
+
+
+            const formattedResult = [];
+            for (const approvalId in approvalMap) {
+                const approval = approvalMap[approvalId];
+
+                // inStock items
+                for (const itemId in approval.inStock) {
+                    const item = approval.inStock[itemId];
+
+                    formattedResult.push({
+                        ...approval.data,
+                        ...item,
+                        approvalId: approval?.data?.approvalId,
+                        documentNumber: item.id
+                    });
+                }
+
+                // rejected items
+                for (const itemId in approval.reject) {
+                    const item = approval.reject[itemId];
+
+                    formattedResult.push({
+                        ...approval.data,
+                        ...item,
+                        approvalId: approval?.data?.approvalId,
+                        documentNumber: item.id
+                    });
+                }
+            }
+
+            return res.status(200).json({
+                data: formattedResult,
+                total: formattedResult?.length
+            });
+        }
         if (documentType === 'Store wise item stock') {
             const stores = await models.Store.findAll({
                 where: {
@@ -470,11 +672,13 @@ async function getReports(req, res) {
             let startDate, endDate;
 
             if (dateRange.length === 2) {
-                startDate = new Date(new Date(dateRange[0]).getTime() - (5.5 * 60 * 60 * 1000));
-
+                const date = new Date(dateRange[0]);
+                date.setHours(0, 0, 0, 0);
+                const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+                startDate = new Date(date.getTime() - IST_OFFSET_MS);
                 const endDateRaw = new Date(dateRange[1]);
-                endDateRaw.setHours(23, 59, 59, 999); // move to end of day
-                endDate = new Date(endDateRaw.getTime() - (5.5 * 60 * 60 * 1000));
+                endDateRaw.setHours(23, 59, 59, 999);
+                endDate = new Date(endDateRaw.getTime());
             }
             const whereCondition = {
                 companyId: Number(companyId),
@@ -582,11 +786,13 @@ async function getReports(req, res) {
             let startDate, endDate;
 
             if (dateRange?.length === 2) {
-                startDate = new Date(new Date(dateRange[0]).getTime() - (5.5 * 60 * 60 * 1000));
-
+                const date = new Date(dateRange[0]);
+                date.setHours(0, 0, 0, 0);
+                const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+                startDate = new Date(date.getTime() - IST_OFFSET_MS);
                 const endDateRaw = new Date(dateRange[1]);
-                endDateRaw.setHours(23, 59, 59, 999); // move to end of day
-                endDate = new Date(endDateRaw.getTime() - (5.5 * 60 * 60 * 1000));
+                endDateRaw.setHours(23, 59, 59, 999);
+                endDate = new Date(endDateRaw.getTime());
             }
             const whereCondition = {
                 companyId: Number(companyId),
@@ -717,7 +923,7 @@ async function getReports(req, res) {
             }
         }
         let uniqueItems = Array.from(uniqueItemsMap.values());
-        let salesItemsMap = {}, deliveryChallanItemsMap = {}, prToPoMap = {}, creditNoteMap = {}, debitNoteMap = {}, creditNoteNumber = {}, debitNoteNumber = {};
+        let salesItemsMap = {}, salesReturnItemsMap = {}, deliveryChallanItemsMap = {}, prToPoMap = {}, creditNoteMap = {}, debitNoteMap = {}, creditNoteNumber = {}, debitNoteNumber = {};
         const pendingItemsMap = {};
         if (documentType === documentTypes.invoice || documentType === documentTypes.deliveryChallan || documentType === documentTypes.proformaInvoice) {
             const salesOrder = await models.Documents.findAll({
@@ -743,6 +949,37 @@ async function getReports(req, res) {
                 acc[curr.documentNumber][curr.itemId] = curr.quantity;
                 return acc;
             }, {});
+
+            if (documentTypes.invoice == documentType) {
+                const salesReturn = await models.Documents.findAll({
+                    where: {
+                        companyId: Number(companyId),
+                        invoiceNumber: {
+                            [Op.in]: documents?.rows?.filter(doc => doc?.documentNumber)?.map(doc => doc.documentNumber)
+                        },
+                    },
+                    raw: true
+                });
+                const docmap = salesReturn?.reduce((acc, curr) => {
+                    acc[curr.documentNumber] = curr.invoiceNumber;
+                    return acc;
+                }, {})
+                const salesReturnItems = await models.DocumentItems.findAll({
+                    where: {
+                        companyId: Number(companyId),
+                        documentNumber: {
+                            [Op.in]: salesReturn?.map(doc => doc.documentNumber)
+                        }
+                    },
+                    raw: true
+                });
+                salesReturnItemsMap = salesReturnItems?.reduce((acc, curr) => {
+                    if (!acc[docmap[curr.documentNumber]]) acc[docmap[curr.documentNumber]] = {};
+                    acc[docmap[curr.documentNumber]][curr.itemId] = curr.quantity;
+                    return acc;
+                }, {});
+                console.log('iammap', salesReturnItemsMap)
+            }
         }
 
         if (documentType === documentTypes.creditNote || documentType === documentTypes.debitNote ||
@@ -909,7 +1146,7 @@ async function getReports(req, res) {
                 if (!salesItemsMap[purchaseOrderToGrnMap[element.documentNumber]]) {
                     salesItemsMap[purchaseOrderToGrnMap[element.documentNumber]] = {};
                 }
-                salesItemsMap[purchaseOrderToGrnMap[element.documentNumber]][element.itemId] = (salesItemsMap[purchaseOrderToGrnMap[element.documentNumber]][element.itemId] || 0) + element.quantity;
+                salesItemsMap[purchaseOrderToGrnMap[element.documentNumber]][element.itemId] = (salesItemsMap[purchaseOrderToGrnMap[element.documentNumber]][element.itemId] || 0) + element.receivedToday;
             }
 
             for (const element of purchaseInvoiceItems) {
@@ -1083,16 +1320,45 @@ async function getReports(req, res) {
             }, {});
         }
 
+        if (documentType === documentTypes.purchaseReturn || documentType === documentTypes.goodsReceive || documentType === documentTypes.qualityReport) {
+            const purchaseOrders = await models.Documents.findAll({
+                where: {
+                    companyId: Number(companyId),
+                    documentType: 'Purchase Order',
+                    documentNumber: {
+                        [Op.in]: documents?.rows?.filter(doc => doc?.purchaseOrderNumber)?.map(doc => doc.purchaseOrderNumber)
+                    }
+                },
+                raw: true
+            });
+            const purchaseOrdersItems = await models.DocumentItems.findAll({
+                where: {
+                    companyId: Number(companyId),
+                    documentNumber: {
+                        [Op.in]: purchaseOrders?.map(doc => doc.documentNumber)
+                    }
+                },
+                raw: true
+            });
+
+            salesItemsMap = purchaseOrdersItems?.reduce((acc, curr) => {
+                if (!acc[curr.documentNumber]) acc[curr.documentNumber] = {};
+                acc[curr.documentNumber][curr.itemId] = curr.quantity;
+                return acc;
+            }, {});
+        }
+
         const formattedResult = (documents?.rows || documents)?.map(document => {
             let itemToSend = uniqueItems.filter(item => item.documentNumber === document.documentNumber);
             if (documentType === documentTypes.invoice) itemToSend = itemToSend?.map(item => {
                 const salesItemsCount = salesItemsMap?.[document?.orderConfirmationNumber]?.[item.itemId];
+                const salesReturnCount = salesReturnItemsMap?.[document?.documentNumber]?.[item.itemId];
                 const existingQuantity = pendingItemsMap?.[document?.orderConfirmationNumber]?.[item.itemId] || 0 + item?.quantity;
                 if (!pendingItemsMap?.[document?.orderConfirmationNumber]) {
                     pendingItemsMap[document?.orderConfirmationNumber] = {};
                 }
                 pendingItemsMap[document?.orderConfirmationNumber][item.itemId] = (pendingItemsMap[document?.orderConfirmationNumber][item.itemId] || 0) + item.quantity;
-                return ({ ...item, salesItemsCount, pendingQuantity: Math.max(salesItemsCount - existingQuantity, 0) });
+                return ({ ...item, salesItemsCount, salesReturnCount, pendingQuantity: Math.max(salesItemsCount - existingQuantity, 0) });
             })
             if (documentType === documentTypes.creditNote || documentType === documentTypes.debitNote ||
                 documentType === documentTypes.purchaseCreditNote || documentType === documentTypes.purchaseDebitNote
@@ -1137,6 +1403,10 @@ async function getReports(req, res) {
                 }
                 pendingItemsMap[document?.purchaseOrderNumber][item.itemId] = (pendingItemsMap[document?.purchaseOrderNumber][item.itemId] || 0) + item.quantity;
                 return ({ ...item, purchaseOrderItemsCount, pendingQuantity: Math.max(purchaseOrderItemsCount - existingQuantity, 0) });
+            })
+            if (documentType === documentTypes.purchaseReturn || documentType === documentTypes.goodsReceive || documentType === documentTypes.qualityReport) itemToSend = itemToSend?.map(item => {
+                const poQuantity = salesItemsMap?.[document?.purchaseOrderNumber]?.[item.itemId];
+                return ({ ...item, poQuantity });
             })
             return ({
                 ...{

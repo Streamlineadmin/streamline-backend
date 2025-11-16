@@ -1018,6 +1018,86 @@ async function createDocument(req, res) {
 
     }
 
+    if (status && (documentType == documentTypes.salesReturn)) {
+      const settings = await models.Settings.findOne({
+        where: {
+          companyId: Number(companyId)
+        },
+        raw: true
+      });
+      const approvalCount = await models.InventoryApproval.count({
+        where: {
+          companyId
+        }
+      });
+      const approval = await models.InventoryApproval.create({
+        approvalId: `INA${approvalCount + 1}`,
+        documentType,
+        documentNumber,
+        approvalStatus: settings?.['salesDocument'] == 'manual' ? 'Pending' : 'Auto Approved',
+        requestedBy: createdBy,
+        companyId: companyId,
+        status: 1,
+        approvedBy: null
+      });
+      message = settings?.['salesDocument'] == 'manual' ? 'inventory' : '';
+      const existingItems = await models.Items.findAll({
+        where: {
+          companyId: Number(companyId),
+          itemId: {
+            [Op.in]: items.map(item => item.itemId)
+          }
+        },
+        raw: true
+      });
+      const stores = await models.Store.findAll({
+        where: {
+          companyId: Number(companyId)
+        },
+        raw: true
+      });
+      const itemsMap = new Map(existingItems.map(existingItem => [existingItem.itemId, existingItem.id]));
+      const storesMap = new Map(stores.map(store => [store.name, store.id]));
+      await Promise.all([models.StoreItems.bulkCreate(items?.filter(item => item?.quantity).map(item => {
+        const itemId = itemsMap.get(item.itemId) || null;
+        const storeId = storesMap.get(store) || null;
+        return {
+          storeId,
+          itemId,
+          quantity: settings?.['salesDocument'] == 'manual' ? 0 : ((item?.quantity * (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1))) || 0),
+          status: 1,
+          addedBy: createdBy,
+          price: item?.price / (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1)),
+          documentNumber: document.documentNumber,
+          approvalId: approval.id,
+          quantityForApproval: (item?.quantity * (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1))) || 0
+        }
+      })
+      ),
+      models.StockTransfer.bulkCreate(items?.filter(item => item?.quantity).map(item => {
+        const itemId = itemsMap.get(item.itemId) || null;
+        const storeId = storesMap.get(store) || null;
+        return {
+          transferNumber: item?.transferNumber,
+          fromStoreId: null,
+          itemId,
+          quantity: settings?.['salesDocument'] == 'manual' ? 0 : ((item?.quantity * (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1))) || 0),
+          toStoreId: storeId,
+          transferDate: new Date().toISOString(),
+          transferredBy: createdBy,
+          comment: '',
+          companyId,
+          price: item?.price / (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1)),
+          documentNumber: document.documentNumber,
+          documentType,
+          approvalId: approval.id,
+          quantityForApproval: (item?.quantity * (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1))) || 0
+        }
+      })),
+      ]
+      );
+    }
+
     if (status && ((documentType === documentTypes.invoice && reduceStockOnIV === "true") || (documentType === documentTypes.deliveryChallan && reduceStockOnDC === "true"))) {
       const storeId = await models.Store.findOne({
         where: {
@@ -1049,6 +1129,107 @@ async function createDocument(req, res) {
       message = settings?.['salesDocument'] == 'manual' ? 'inventory' : ''
       for (const element of items) {
         if (settings?.['salesDocument'] != 'manual') {
+          let price = 0;
+          let remainingQuantity = (element.quantity * (element?.conversionFactor || 1));
+          const item = await models.Items.findOne({
+            where: {
+              itemId: element.itemId,
+              companyId
+            }
+          });
+          const existingStock = await models.StoreItems.findAll({
+            where: { storeId: storeId.id, itemId: item.id },
+            order: [['createdAt', 'ASC']],
+          });
+          for (const stock of existingStock) {
+            if (remainingQuantity <= 0) break;
+            if (stock.quantity <= 0) continue;
+            const deductQty = Math.min(stock.quantity, remainingQuantity);
+            remainingQuantity -= deductQty;
+
+            await models.StoreItems.update(
+              { quantity: (stock.quantity - deductQty) },
+              { where: { id: stock.id } }
+            );
+            await models.StockTransfer.create({
+              transferNumber: element.transferNumber,
+              fromStoreId: storeId.id || null,
+              itemId: item.id,
+              quantity: deductQty * -1,
+              toStoreId: null,
+              transferDate: new Date().toISOString(),
+              transferredBy: createdBy,
+              comment: '',
+              companyId,
+              price: element.price / (element.conversionFactor || 1),
+              documentNumber: document.documentNumber,
+              documentType,
+              actualPrice: stock.price,
+              approvalId: approval.id,
+              quantityForApproval: element.quantity
+            });
+            price += (stock.price * deductQty);
+          }
+        }
+        else {
+          const item = await models.Items.findOne({
+            where: {
+              itemId: element.itemId,
+              companyId
+            }
+          });
+          await models.StockTransfer.create({
+            transferNumber: element.transferNumber,
+            fromStoreId: storeId.id || null,
+            itemId: item.id,
+            quantity: null,
+            toStoreId: null,
+            transferDate: new Date().toISOString(),
+            transferredBy: createdBy,
+            comment: '',
+            companyId,
+            price: element.price / (element.conversionFactor || 1),
+            documentNumber: document.documentNumber,
+            documentType,
+            actualPrice: element.price / (element.conversionFactor || 1),
+            approvalId: approval.id,
+            quantityForApproval: element.quantity * (element?.conversionFactor || 1)
+          });
+        }
+      }
+    }
+
+    if (status && documentType == documentTypes.purchaseReturn) {
+      const storeId = await models.Store.findOne({
+        where: {
+          name: store,
+          companyId
+        }
+      });
+      const settings = await models.Settings.findOne({
+        where: {
+          companyId: Number(companyId)
+        },
+        raw: true
+      });
+      const approvalCount = await models.InventoryApproval.count({
+        where: {
+          companyId
+        }
+      });
+      const approval = await models.InventoryApproval.create({
+        approvalId: `INA${approvalCount + 1}`,
+        documentType,
+        documentNumber,
+        approvalStatus: settings?.['purchaseDocument'] == 'manual' ? 'Pending' : 'Auto Approved',
+        requestedBy: createdBy,
+        companyId: companyId,
+        status: 1,
+        approvedBy: null
+      });
+      message = settings?.['purchaseDocument'] == 'manual' ? 'inventory' : ''
+      for (const element of items) {
+        if (settings?.['purchaseDocument'] != 'manual') {
           let price = 0;
           let remainingQuantity = (element.quantity * (element?.conversionFactor || 1));
           const item = await models.Items.findOne({
@@ -1908,7 +2089,7 @@ async function createDocument(req, res) {
 async function getDocuments(req, res) {
   try {
 
-    const { companyId, documentNumber, buyerName, counts, createdBy, approvedBy, requestedBy, currentPage, labels, pageSize, documentType = '', search = '', dealStatus, docTypeFilter, dateRange } = req.body;
+    const { companyId, documentNumber, buyerName, field, counts, createdBy, approvedBy, requestedBy, currentPage, labels, pageSize, documentType = '', search = '', dealStatus, docTypeFilter, dateRange } = req.body;
 
     const offset = ((currentPage || 1) - 1) * (pageSize || 10);
     let documentstype = [];
@@ -2051,11 +2232,20 @@ async function getDocuments(req, res) {
                 ]),
             }
             : {}),
+
           ...(labels?.length > 0 && {
             [Op.or]: labels.map(label =>
               where(
                 fn("LOWER", cast(col("labels"), "text")),
                 { [Op.like]: `%${label?.toLowerCase()}%` }
+              )
+            ),
+          }),
+          ...(field?.length > 0 && {
+            [Op.or]: field.map(data =>
+              where(
+                fn("LOWER", cast(col("customFields"), "text")),
+                { [Op.like]: `%${data?.toLowerCase()}%` }
               )
             ),
           }),
