@@ -2516,6 +2516,86 @@ async function getDocumentById(req, res) {
   }
 }
 
+async function fetchCurrentDoc(req, res) {
+  try {
+    const { documentNumber, companyId } = req.body;
+
+    const document = await models.Documents.findOne({
+      where: { documentNumber, companyId },
+      include: [{ model: models.LogisticDetails, as: 'logisticDetails' }],
+      raw: true,
+      nest: true
+    });
+
+    if (!document) {
+      return res.status(404).json({ message: "Document not found" });
+    }
+
+    const [items, additionalCharges, bankDetails, termsCondition, attachments, documentComments] = await Promise.all([
+      models.DocumentItems.findAll({ where: { documentNumber, companyId }, raw: true }),
+      models.DocumentAdditionalCharges.findAll({ where: { documentNumber, companyId }, raw: true }),
+      models.DocumentBankDetails.findOne({ where: { documentNumber, companyId }, raw: true }),
+      models.CompanyTermsCondition.findOne({ where: { companyId, documentNumber }, raw: true }),
+      models.DocumentAttachments.findAll({ where: { documentNumber, companyId }, raw: true }),
+      models.DocumentComments.findAll({ where: { documentId: document.id }, raw: true }),
+    ]);
+
+    const response = {
+      ...document,
+      items,
+      additionalCharges,
+      bankDetails: bankDetails || {},
+      termsCondition: termsCondition
+        ? JSON.parse(termsCondition.termsCondition)
+        : [],
+      attachments: attachments.map(att => att.attachmentName),
+      logisticDetails: document.logisticDetails || null,
+      documentComments,
+    };
+
+    if (document.documentType === documentTypes.goodsReceive || document.documentType === documentTypes.qualityReport) {
+      const batchItems = await models.BatchItems.findAll({
+        where: {
+          companyId,
+          documentNumber: document.documentNumber
+        },
+        raw: true
+      });
+      const batchMap = batchItems.reduce((acc, current) => {
+        if (acc[current.item]) {
+          const obj = acc[current.item];
+          acc[current.item] = [...obj, current];
+        }
+        else {
+          acc[current.item] = [current];
+        }
+        return acc;
+      }, {});
+      const itemsId = batchItems.map(batch => batch.item);
+      const items = await models.Items.findAll({
+        where: {
+          id: {
+            [Op.in]: itemsId
+          }
+        },
+        attributes: ['id', 'itemName', 'itemId'],
+        raw: true
+      });
+      const batches = {};
+      for (const item of items) {
+        batches[item.itemId] = batchMap[item.id];
+      }
+      response.batches = batches;
+    }
+
+    return res.status(200).json(response);
+
+  } catch (error) {
+    console.error("Error fetching document:", error);
+    return res.status(500).json({ message: "Something went wrong, please try again later!" });
+  }
+}
+
 async function discardDocument(req, res) {
   const { documentId, companyId } = req.body;
   let linkedDocument = null;
@@ -4288,5 +4368,6 @@ module.exports = {
   getServiceChallanItems,
   approveDocument,
   createEInvoice,
-  createEWayBill
+  createEWayBill,
+  fetchCurrentDoc
 };
