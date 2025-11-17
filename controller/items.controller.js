@@ -20,21 +20,13 @@ async function addItem(req, res) {
                 companyId,
                 [models.Sequelize.Op.or]: [
                     { itemId },
-                    { itemName }
+                    // { itemName }
                 ]
             }
         });
 
         if (itemResult) {
-            let message = "";
-            if (itemResult.itemId === itemId && itemResult.itemName === itemName) {
-                message = "Both Item ID and Item name already exist!";
-            } else if (itemResult.itemId === itemId) {
-                message = "Item ID already exists!";
-            } else {
-                message = "Item name already exists!";
-            }
-            return res.status(409).json({ message });
+            return res.status(409).json({ message: "Item ID already exists!" });
         }
 
         // ✅ Prepare item data
@@ -173,13 +165,7 @@ async function editItem(req, res) {
         });
 
         if (existingItem) {
-            let message = existingItem.itemId === itemId && existingItem.itemName === itemName
-                ? "Both Item ID and Item name already exist for another item!"
-                : existingItem.itemId === itemId
-                    ? "Item ID already exists for another item!"
-                    : "Item name already exists for another item!";
-
-            return res.status(409).json({ message });
+            return res.status(409).json({ message: "Item ID already exists for another item!" });
         }
 
         // Transaction ensures atomic update
