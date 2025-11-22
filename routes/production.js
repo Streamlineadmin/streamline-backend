@@ -23,5 +23,7 @@ router.post('/viewProductionHistory', productionController.viewProductionHistory
 router.post('/returnRawMaterial', productionController.returnRawMaterial);
 router.post('/startBulkProduction', productionController.startBulkProduction);
 router.post('/getBulkProductions', productionController.getBulkProductions);
+router.post('/remainingProduction', productionController.remainingProduction);
+router.post('/discardProduction', productionController.discardProduction);
 
 module.exports = router;

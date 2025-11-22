@@ -26,7 +26,8 @@ module.exports = (sequelize, DataTypes) => {
         status: DataTypes.INTEGER,
         conversionFactor: DataTypes.FLOAT,
         batchesAssigned: DataTypes.FLOAT,
-        addDuringProduction: DataTypes.BOOLEAN
+        addDuringProduction: DataTypes.BOOLEAN,
+        alternateFor: DataTypes.STRING
     }, {
         sequelize,
         modelName: 'ProductionRawMaterials',

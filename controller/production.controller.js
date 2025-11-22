@@ -155,7 +155,8 @@ async function startProduction(req, res) {
                             uom: data.uom,
                             quantity: productions[index]?.quantity * quantity,
                             conversionFactor,
-                            status: 1
+                            status: 1,
+                            alternateFor: data.alternateFor || null
                         }
                     });
 
@@ -189,7 +190,8 @@ async function startProduction(req, res) {
                             store: data.store,
                             costAllocationPercent: data.costAllocationPercent,
                             conversionFactor,
-                            status: 1
+                            status: 1,
+                            alternateFor: data.alternateFor || null
                         }
                     });
 
@@ -275,7 +277,8 @@ async function startProduction(req, res) {
                     uom: data.uom,
                     quantity: productions[index].quantity * quantity,
                     conversionFactor,
-                    status: 1
+                    status: 1,
+                    alternateFor: data.alternateFor || null
                 }
             });
 
@@ -309,7 +312,8 @@ async function startProduction(req, res) {
                     store: data.store,
                     costAllocationPercent: data.costAllocationPercent,
                     conversionFactor,
-                    status: 1
+                    status: 1,
+                    alternateFor: data.alternateFor || null
                 }
             });
 
@@ -422,7 +426,10 @@ async function getProductions(req, res) {
         const productions = await models.Production.findAll({
             where: {
                 companyId: Number(companyId),
-                bulkProductionId: null
+                bulkProductionId: null,
+                status: {
+                    [Op.ne]: 0
+                }
             },
             raw: true
         });
@@ -460,6 +467,9 @@ async function getProductions(req, res) {
         for (const element of productions) {
             if (productionItemsMap[element.id]) {
                 element.productionItem = productionItemsMap[element.id];
+                if (element.documentNumber) {
+                    element.productionItem.customFields = itemsMap?.[element.documentNumber]?.[element?.productionItem?.itemId]?.customFields;
+                }
             }
         }
         const productionMap = productions.reduce((acc, current) => {
@@ -520,6 +530,9 @@ async function getBulkProductions(req, res) {
             where: {
                 bulkProductionId: {
                     [Op.in]: bulkProductions.map(data => data.id)
+                },
+                status: {
+                    [Op.ne]: 0
                 }
             },
             raw: true
@@ -619,8 +632,8 @@ async function getProductionById(req, res) {
             models.Documents.findOne({ where: { documentNumber: production?.documentNumber || '' } }),
             models.ProductionItems.findOne({ where: { productionId: production.id } }),
             models.BOMDetails.findOne({ where: { id: production.bomId } }),
-            models.ProductionScrapMaterials.findAll({ where: { productionId: production.id } }),
-            models.ProductionRawMaterials.findAll({ where: { productionId: production.id } }),
+            models.ProductionScrapMaterials.findAll({ where: { productionId: production.id }, raw: true }),
+            models.ProductionRawMaterials.findAll({ where: { productionId: production.id }, raw: true }),
             models.ProductionFinishedGoods.findAll({ where: { productionId: production.id } }),
             models.ProductionSalesProcess.findAll({ where: { productionId: production.id } }),
             models.ProductionAdditionalCharges.findAll({ where: { productionId: production.id } }),
@@ -665,6 +678,46 @@ async function getProductionById(req, res) {
             customFields = documentItem?.customFields || {}
         }
 
+        const alternateMap = {};
+        const alternateScrapMap = {};
+        rawMaterials.forEach(item => {
+            if (item.alternateFor) {
+                if (!alternateMap[item.alternateFor]) {
+                    alternateMap[item.alternateFor] = [];
+                }
+                alternateMap[item.alternateFor].push(item);
+            }
+        });
+
+        scrapLogs.forEach(item => {
+            if (item.alternateFor) {
+                if (!alternateScrapMap[item.alternateFor]) {
+                    alternateScrapMap[item.alternateFor] = [];
+                }
+                alternateScrapMap[item.alternateFor].push(item);
+            }
+        });
+
+        const newScrap = scrapLogs.filter(item => !item.alternateFor).map(item => {
+            if (alternateScrapMap[item.itemId]) {
+                item.alternates = [{ ...item }, ...(alternateScrapMap[item.itemId])];
+            }
+            else {
+                item.alternates = [{ ...item }];
+            }
+            return item;
+        });
+
+        const newRaw = rawMaterials.filter(item => !item.alternateFor).map(item => {
+            if (alternateMap[item.itemId]) {
+                item.alternates = [{ ...item }, ...(alternateMap[item.itemId])];
+            }
+            else {
+                item.alternates = [{ ...item }];
+            }
+            return item;
+        });
+
         res.status(200).json({
             message: 'Production Data Fetched.',
             productionData: {
@@ -672,8 +725,8 @@ async function getProductionById(req, res) {
                 production,
                 productionItem,
                 bom,
-                scrapLogs,
-                rawMaterials,
+                scrapLogs: newScrap,
+                rawMaterials: newRaw,
                 finishedGoods: [{ ...finishedGoods[0]?.toJSON(), customFields }],
                 additionalCharges,
                 process,
@@ -2597,6 +2650,102 @@ async function startBulkProduction(req, res) {
     }
 }
 
+async function remainingProduction(req, res) {
+    try {
+        const { companyId } = req.body;
+        const productions = await models.Production.findAll({
+            where: {
+                companyId: Number(companyId),
+                documentNumber: {
+                    [Op.ne]: null
+                },
+                status: {
+                    [Op.ne]: 0
+                }
+            }
+        });
+        const docMap = {};
+        const finishedGoods = await models.ProductionFinishedGoods.findAll({
+            where: {
+                productionId: {
+                    [Op.in]: productions.map(prod => {
+                        docMap[prod.id] = prod.documentNumber;
+                        return prod.id;
+                    })
+                }
+            }
+        });
+        const finishedGoodsMap = finishedGoods.reduce((acc, curr) => {
+            if (!acc[docMap[curr.productionId]]) {
+                acc[docMap[curr.productionId]] = {};
+            }
+            acc[docMap[curr.productionId]][curr.itemId] = (acc[docMap[curr.productionId]]?.[curr.itemId] || 0) + curr.quantity;
+            return acc;
+        }, {});
+
+        const documents = await models.Documents.findAll({
+            where: {
+                documentNumber: {
+                    [Op.in]: Object.values(docMap)
+                },
+                companyId: Number(companyId)
+            },
+            attributes: ['id', 'documentNumber', 'requestedBy', 'deliveryDate'],
+            raw: true
+        });
+        const documentMap = documents.reduce((acc, curr) => {
+            acc[curr.documentNumber] = curr;
+            return acc;
+        }, {});
+        const items = await models.DocumentItems.findAll({
+            where: {
+                documentNumber: {
+                    [Op.in]: Object.values(docMap)
+                }
+            },
+            raw: true
+        });
+        const result = items.filter(item => {
+            if (finishedGoodsMap?.[item.documentNumber]?.[item.itemId] >= item.quantity) {
+                return false;
+            }
+            item.quantity = item.quantity - (finishedGoodsMap?.[item.documentNumber]?.[item.itemId] || 0);
+            item.requestedBy = documentMap?.[item.documentNumber]?.requestedBy;
+            item.deliveryDate = documentMap?.[item.documentNumber]?.deliveryDate;
+            item.id = item.id + Math.random().toString(36).substring(2, 15);
+            return true;
+        });
+        return res.status(200).json({ remainingProduction: result });
+    } catch (error) {
+        console.error('remainingProduction error:', error);
+        return res.status(500).json({ message: 'Something went wrong', error: error.message || error });
+    }
+}
+
+async function discardProduction(req, res) {
+    try {
+        const { id } = req.body;
+        await models.Production.update(
+            { status: 0 },
+            {
+                where: {
+                    [Op.or]: [
+                        { id: id },
+                        { bulkProductionId: id }
+                    ]
+                }
+            }
+        );
+        return res.status(200).json({ message: 'Production Discarded.' });
+    } catch (error) {
+        console.error("Issue Error:", error);
+        return res.status(500).json({
+            message: "Failed to Discard Production",
+            error: error.message,
+        });
+    }
+}
+
 module.exports = {
     startProduction: startProduction,
     getProductions: getProductions,
@@ -2618,5 +2767,7 @@ module.exports = {
     viewProductionHistory: viewProductionHistory,
     returnRawMaterial: returnRawMaterial,
     startBulkProduction: startBulkProduction,
-    getBulkProductions: getBulkProductions
+    getBulkProductions: getBulkProductions,
+    remainingProduction: remainingProduction,
+    discardProduction: discardProduction
 }

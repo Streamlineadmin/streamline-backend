@@ -11,13 +11,13 @@ async function getReports(req, res) {
             let startDate = null, endDate = null;
 
             if (dateRange?.length === 2) {
-                const date = new Date(dateRange[0]);
-                date.setHours(0, 0, 0, 0);
-                const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
-                startDate = new Date(date.getTime() - IST_OFFSET_MS);
-                const endDateRaw = new Date(dateRange[1]);
-                endDateRaw.setHours(23, 59, 59, 999);
-                endDate = new Date(endDateRaw.getTime());
+                const IST_OFFSET = 5.5 * 60 * 60 * 1000;
+                const startIst = new Date(new Date(dateRange[0]).getTime() + IST_OFFSET);
+                const endIst = new Date(new Date(dateRange[1]).getTime() + IST_OFFSET);
+                startIst.setHours(0, 0, 0, 0);
+                endIst.setHours(23, 59, 59, 999);
+                startDate = new Date(startIst.getTime() - IST_OFFSET);
+                endDate = new Date(endIst.getTime() - IST_OFFSET);
             } else if (quickRange) {
                 const nowIst = new Date(new Date().getTime() + 5.5 * 60 * 60 * 1000);
                 const startIst = new Date(nowIst);
@@ -350,13 +350,13 @@ async function getReports(req, res) {
             let startDate = null, endDate = null;
 
             if (dateRange?.length === 2) {
-                const date = new Date(dateRange[0]);
-                date.setHours(0, 0, 0, 0);
-                const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
-                startDate = new Date(date.getTime() - IST_OFFSET_MS);
-                const endDateRaw = new Date(dateRange[1]);
-                endDateRaw.setHours(23, 59, 59, 999);
-                endDate = new Date(endDateRaw.getTime());
+                const IST_OFFSET = 5.5 * 60 * 60 * 1000;
+                const startIst = new Date(new Date(dateRange[0]).getTime() + IST_OFFSET);
+                const endIst = new Date(new Date(dateRange[1]).getTime() + IST_OFFSET);
+                startIst.setHours(0, 0, 0, 0);
+                endIst.setHours(23, 59, 59, 999);
+                startDate = new Date(startIst.getTime() - IST_OFFSET);
+                endDate = new Date(endIst.getTime() - IST_OFFSET);
             }
             const stockTransfers = await models.StockTransfer.findAll({
                 where: {
@@ -671,14 +671,14 @@ async function getReports(req, res) {
 
             let startDate, endDate;
 
-            if (dateRange.length === 2) {
-                const date = new Date(dateRange[0]);
-                date.setHours(0, 0, 0, 0);
-                const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
-                startDate = new Date(date.getTime() - IST_OFFSET_MS);
-                const endDateRaw = new Date(dateRange[1]);
-                endDateRaw.setHours(23, 59, 59, 999);
-                endDate = new Date(endDateRaw.getTime());
+            if (dateRange?.length === 2) {
+                const IST_OFFSET = 5.5 * 60 * 60 * 1000;
+                const startIst = new Date(new Date(dateRange[0]).getTime() + IST_OFFSET);
+                const endIst = new Date(new Date(dateRange[1]).getTime() + IST_OFFSET);
+                startIst.setHours(0, 0, 0, 0);
+                endIst.setHours(23, 59, 59, 999);
+                startDate = new Date(startIst.getTime() - IST_OFFSET);
+                endDate = new Date(endIst.getTime() - IST_OFFSET);
             }
             const whereCondition = {
                 companyId: Number(companyId),
@@ -786,13 +786,13 @@ async function getReports(req, res) {
             let startDate, endDate;
 
             if (dateRange?.length === 2) {
-                const date = new Date(dateRange[0]);
-                date.setHours(0, 0, 0, 0);
-                const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
-                startDate = new Date(date.getTime() - IST_OFFSET_MS);
-                const endDateRaw = new Date(dateRange[1]);
-                endDateRaw.setHours(23, 59, 59, 999);
-                endDate = new Date(endDateRaw.getTime());
+                const IST_OFFSET = 5.5 * 60 * 60 * 1000;
+                const startIst = new Date(new Date(dateRange[0]).getTime() + IST_OFFSET);
+                const endIst = new Date(new Date(dateRange[1]).getTime() + IST_OFFSET);
+                startIst.setHours(0, 0, 0, 0);
+                endIst.setHours(23, 59, 59, 999);
+                startDate = new Date(startIst.getTime() - IST_OFFSET);
+                endDate = new Date(endIst.getTime() - IST_OFFSET);
             }
             const whereCondition = {
                 companyId: Number(companyId),

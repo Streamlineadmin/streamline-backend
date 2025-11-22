@@ -32,6 +32,7 @@ async function createBOMScrapMaterials(req, res) {
       status: item.status,
       createdAt: new Date(),
       updatedAt: new Date(),
+      alternateFor: item.alternateFor
     }));
 
     const createdItems = await models.BOMScrapMaterial.bulkCreate(payload);
