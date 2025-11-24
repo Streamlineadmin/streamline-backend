@@ -1709,8 +1709,8 @@ async function createDocument(req, res) {
         for (const element of productionRawMaterial) {
           if (itemsMap[element.itemId]) {
             await element.update({
-              consumedQuantity: (element.consumedQuantity || 0) + itemsMap[element.itemId],
-              averagePrice: itemsMap[element.itemId] * itemsPriceMap[element.itemId]
+              consumedQuantity: (element.consumedQuantity || 0) + Number(itemsMap[element.itemId]),
+              averagePrice: (element?.averagePrice || 0) + (Number(itemsMap[element.itemId]) * itemsPriceMap[element.itemId])
             });
           }
         }
@@ -1742,15 +1742,14 @@ async function createDocument(req, res) {
         for (const element of finishedGoods) {
           if (documentType === 'Service Grn') {
             element.update({
-              producedQuantity: items[0].receivedToday,
-              passedQuantity: serviceChallan.addStockOn === 'GRN' ? items[0].receivedToday : 0,
-              rejectQuantity: 0
+              producedQuantity: (element.producedQuantity || 0) + items[0].receivedToday,
+              passedQuantity: (element.passedQuantity || 0) + Number(serviceChallan.addStockOn === 'GRN' ? items[0].receivedToday : 0),
             });
           } else {
             element.update({
-              producedQuantity: (items[0].receivedToday || 0) + (items[0].pendingQuantity || 0),
-              passedQuantity: items[0].receivedToday,
-              rejectQuantity: items[0].pendingQuantity
+              // producedQuantity: (element?.producedQuantity || 0) + Number(items[0].receivedToday || 0),
+              passedQuantity: (element?.passedQuantity || 0) + Number(items[0].receivedToday),
+              rejectQuantity: (element?.rejectQuantity || 0) + Number(items[0].pendingQuantity)
             });
           }
         }
@@ -2978,6 +2977,14 @@ async function discardDocument(req, res) {
       await models.Documents.update({ status: 1 }, {
         where: {
           documentNumber: document.grn_number
+        }
+      });
+    }
+    if (document.documentType === "Service Order") {
+      await models.Production.update({ serviceOrderNumber: null }, {
+        where: {
+          serviceOrderNumber: document.documentNumber,
+          companyId
         }
       });
     }
@@ -4320,7 +4327,6 @@ const createEWayBill = async (req, res) => {
       }
     );
 
-    console.log(response,'resresresresres')
     if (response.data?.status_cd == '0') {
       return res.status(400).send({
         message: "E-Invoice generation failed.",
