@@ -2,6 +2,7 @@ const express = require("express");
 const bodyParser = require("body-parser");
 const path = require("path");
 const cors = require("cors");
+const models = require('./models');
 
 const authenticationRoute = require("./routes/authentication");
 const fileRoute = require("./routes/file");
@@ -51,6 +52,7 @@ const documentApprovalRoutes = require("./routes/documentApproval");
 const labelsRoute = require("./routes/labels");
 const inventoryApprovalRoutes = require("./routes/inventoryApproval");
 const eInvoiceRoutes = require("./routes/eInvoiceCredentials");
+const { mode } = require("simple-statistics");
 const app = express();
 
 // Apply body-parser middleware to handle JSON request bodies
@@ -70,6 +72,30 @@ app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "/index.html"));
   //res.send("Welcome to EaseMargin APIs !");
 });
+
+app.post("/migrate", async (req, res) => {
+  try {
+    const buyerSupplier = await models.BuyerSupplier.findAll({
+    });
+
+    var i=0;
+
+    for (const element of buyerSupplier) {
+      console.log(i++);
+      await element.update({ pocDetails: [{ name: element.name, email: element.email, phone: element.phone }] });
+    }
+
+    return res.status(200).json({
+      message: "Migration completed successfully",
+    });
+  } catch (error) {
+    console.log(error);
+    return res.status(500).json({
+      message: "Something went wrong, please try again later!",
+      error: error.message || error,
+    });
+  }
+})
 // Serve files from the 'uploads' folder
 app.use("/uploads", express.static("uploads"), fileRoute);
 
@@ -121,5 +147,6 @@ app.use("/documentApproval", documentApprovalRoutes);
 app.use("/labels", labelsRoute);
 app.use("/inventoryApproval", inventoryApprovalRoutes);
 app.use("/eInvoice", eInvoiceRoutes);
+
 
 module.exports = app;
