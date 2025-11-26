@@ -22,6 +22,7 @@ async function createBOMRawMaterials(req, res) {
       status: item.status,
       createdAt: new Date(),
       updatedAt: new Date(),
+      alternateFor: item.alternateFor || null
     }));
 
     const createdItems = await models.BOMRawMaterial.bulkCreate(payload);

@@ -18,7 +18,8 @@ function addBuyerSupplier(req, res) {
         GSTType: req.body.gstType,
         ip_address: req.body.ip_address,
         status: req.body.status,
-        customerType: req.body?.customerType || "company"
+        customerType: req.body?.customerType || "company",
+        pocDetails: req.body?.pocDetails || []
     }
 
     models.BuyerSupplier.create(buyerSupplierData).then(result => {
@@ -70,6 +71,7 @@ async function editBuyerSupplier(req, res) {
             GSTNumber: gstNumber,
             GSTType: gstType,
             ip_address,
+            pocDetails: req.body?.pocDetails || []
         });
 
         if (addresses && addresses.length > 0) {
@@ -192,7 +194,8 @@ async function getBuyerSupplier(req, res) {
     try {
         const companyId = req.body.companyId;
         const buyerSuppliers = await models.BuyerSupplier.findAll({
-            where: { companyId }
+            where: { companyId },
+            order: [['createdAt', 'DESC']]
         });
 
         if (!buyerSuppliers || buyerSuppliers.length === 0) {
@@ -323,6 +326,7 @@ async function bulkUploadBuyerSuppliers(req, res) {
                 GSTType: gstType?.trim() ? gstType == 'Regular' ? 1 : 2 : '',
                 status: 1,
                 customerType: "company",
+                pocDetails: personName?.trim() ? [{ name: personName?.trim(), email: personEmail?.trim(), phone: phone || "" }] : [],
             });
 
             addressPayload.push({

@@ -261,21 +261,42 @@ async function getBOMById(req, res) {
       });
     }
 
-    const rawMaterials = bom.rawMaterials;
-    const treeWithLevel = buildRawMaterialTreeWithLevel(rawMaterials);
-    // const obj = {};
-    // for (const element of rawMaterials) {
-    //   if (element.parentId) {
-    //     if (obj[element.parentId]) obj[element.parentId].push(element);
-    //     else obj[element.parentId] = [element];
-    //   }
-    // }
-    // for (const element of rawMaterials) {
-    //   if (obj[element.id]) element.children = obj[element.id];
-    // }
+    const rawMaterials = bom.rawMaterials.map(r => r.get({ plain: true }));
+    const scrapMaterials = bom.scrapMaterials.map(s => s.get({ plain: true }));
+    const alternateMap = {}, alternateScrapMap = {};
+    rawMaterials.forEach(item => {
+      if (item.alternateFor) {
+        if (!alternateMap[item.alternateFor]) {
+          alternateMap[item.alternateFor] = [];
+        }
+        alternateMap[item.alternateFor].push(item);
+      }
+    });
+    scrapMaterials.forEach(item => {
+      if (item.alternateFor) {
+        if (!alternateScrapMap[item.alternateFor]) {
+          alternateScrapMap[item.alternateFor] = [];
+        }
+        alternateScrapMap[item.alternateFor].push(item);
+      }
+    });
+    const newScrap = scrapMaterials.filter(item => !item.alternateFor).map(item => {
+      if (alternateScrapMap[item.itemId]) {
+        item.alternates = alternateScrapMap[item.itemId];
+      }
+      return item;
+    });
+    const newRaw = rawMaterials.filter(item => !item.alternateFor).map(item => {
+      if (alternateMap[item.itemId]) {
+        item.alternates = alternateMap[item.itemId];
+      }
+      return item;
+    });
+    const treeWithLevel = buildRawMaterialTreeWithLevel(newRaw);
 
     const plainBOM = bom.get({ plain: true });
     plainBOM.rawMaterials = treeWithLevel;
+    plainBOM.scrapMaterials = newScrap;
 
     return res.status(200).json({
       message: "BOM details retrieved successfully.",

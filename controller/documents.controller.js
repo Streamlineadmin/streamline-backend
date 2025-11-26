@@ -113,7 +113,8 @@ async function createDocument(req, res) {
       bomName = '',
       finishedGood = {},
       serviceOrderNumber = '',
-      serviceOrderDate = ''
+      serviceOrderDate = '',
+      contactPerson = ''
     } = req.body;
 
     let message = '';
@@ -136,6 +137,7 @@ async function createDocument(req, res) {
       documentType,
       documentNumber,
       buyerName,
+      contactPerson,
       documentTo,
       buyerBillingAddress,
       advancePayment,
@@ -236,6 +238,7 @@ async function createDocument(req, res) {
 
     if (isDraft) document.update({
       documentType,
+      contactPerson,
       documentNumber,
       buyerName,
       documentTo,
@@ -332,13 +335,27 @@ async function createDocument(req, res) {
     });
 
     if (documentType != documentTypes.purchaseInvoice) {
-      const documentSeries = await models.DocumentSeries.findOne({
-        where: {
-          id: seriesId
+      if (seriesId) {
+        const documentSeries = await models.DocumentSeries.findOne({
+          where: {
+            id: seriesId
+          }
+        });
+        if (documentSeries) {
+          await documentSeries.update({ nextNumber: documentSeries.nextNumber + 1 });
         }
-      });
-      if (documentSeries) {
-        await documentSeries.update({ nextNumber: documentSeries.nextNumber + 1 });
+      }
+      else {
+        const defaultSeries = await models.DocumentSeries.findOne({
+          where: {
+            companyId: Number(companyId),
+            DocType: documentType,
+            default: 1
+          }
+        });
+        if (defaultSeries) {
+          await defaultSeries.update({ nextNumber: defaultSeries.nextNumber + 1 });
+        }
       }
     }
 
