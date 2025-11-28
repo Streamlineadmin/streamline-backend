@@ -419,7 +419,8 @@ async function getProductions(req, res) {
                 "status",
                 "requestedBy",
                 "deliveryDate",
-                "documentType"
+                "documentType",
+                "purchaseOrderNumber"
             ],
         });
         const salesDocumentsId = salesDocuments.map(doc => doc.documentNumber);
@@ -474,25 +475,33 @@ async function getProductions(req, res) {
         }
         const productionMap = productions.reduce((acc, current) => {
             if (acc[current.documentNumber]) {
-                acc[current.documentNumber][current?.productionItem?.itemId] = current;
+                if (acc[current.documentNumber][current?.productionItem?.itemId]) {
+                    acc[current.documentNumber][current?.productionItem?.itemId].push(current);
+                }
+                else
+                    acc[current.documentNumber][current?.productionItem?.itemId] = [current];
             }
             else {
                 acc[current?.documentNumber] = {};
-                acc[current?.documentNumber][current?.productionItem?.itemId] = current;
+                acc[current?.documentNumber][current?.productionItem?.itemId] = [current];
             }
             return acc;
         }, {});
-        const items = [];
+
         for (const salesDocument of salesDocuments) {
+            const items = [];
             for (const item of salesDocument.items) {
                 if (productionMap[salesDocument.documentNumber] && productionMap[salesDocument.documentNumber][item.itemId]) {
-                    item.production = productionMap[salesDocument.documentNumber][item.itemId];
+                    for (const element of productionMap[salesDocument.documentNumber][item.itemId]) {
+                        items.push({ ...item, production: element });
+                    }
                 }
                 else {
                     item.production = {};
+                    items.push(item);
                 }
-                items.push(item);
             }
+            salesDocument.items = items;
         }
         const manualProductions = [];
         for (const element of productions) {
@@ -503,7 +512,7 @@ async function getProductions(req, res) {
             }
         }
 
-        return res.status(200).json({ salesDocuments: [...manualProductions, ...salesDocuments,] });
+        return res.status(200).json({ salesDocuments: [...manualProductions, ...salesDocuments] });
 
 
     } catch (error) {
@@ -1621,7 +1630,12 @@ async function materialPlanning(req, res) {
 
         // Fetch all BOM finished goods for itemIds
         const bomFinishedGoods = await models.BOMFinishedGoods.findAll({
-            where: { itemId: itemIds },
+            where: {
+                itemId: {
+                    [Op.in]: itemIds
+                },
+                companyId: Number(companyId)
+            },
             raw: true,
         });
 
@@ -1659,7 +1673,6 @@ async function materialPlanning(req, res) {
             const finishedBom = latestBomFinishedGoods[finishedItemId];
             const rawMaterials = bomRawMaterialsMap[finishedItemId] || [];
             const requiredQty = requiredItemsMap[finishedItemId];
-
             for (const material of rawMaterials) {
                 const qtyPerUnit = material.quantity / finishedBom.quantity;
                 requiredRawMaterials[material.itemId] = (requiredRawMaterials[material.itemId] || 0) + (requiredQty * qtyPerUnit);
@@ -1773,7 +1786,7 @@ async function materialPlanning(req, res) {
                 };
             } else {
                 // Merge logic for duplicate itemId
-                mergedMap[itemId].requiredQty += requiredRawMaterials[itemId] || 0;
+                // mergedMap[itemId].requiredQty += requiredRawMaterials[itemId] || 0;
             }
         });
 

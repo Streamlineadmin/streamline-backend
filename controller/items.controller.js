@@ -1,3 +1,4 @@
+const { isValidJSON } = require('../helpers/add-level');
 const convertXlsxToJson = require('../helpers/bulk-upload');
 const { generateTransferNumber, generateProductionId } = require('../helpers/transfer-number');
 const models = require('../models');
@@ -5,6 +6,10 @@ const { Op } = require("sequelize");
 
 async function addItem(req, res) {
     const { itemId, itemName, itemType, metricsUnit, companyId, useCustomSeries, userId } = req.body;
+    let imageUrl = null;
+    if (req.file) {
+        imageUrl = `${req.protocol}://${req.get('host')}/uploads/${req?.file?.filename}`
+    }
 
     try {
         // ✅ Mandatory field check
@@ -48,7 +53,8 @@ async function addItem(req, res) {
             description: req.body.description,
             companyId,
             status: 1,
-            customFields: req.body.customField
+            customFields: isValidJSON(req.body.customField) || {},
+            imageUrl
         };
 
         // ✅ Create item
@@ -152,7 +158,12 @@ async function addItem(req, res) {
 }
 
 async function editItem(req, res) {
-    const { id, itemId, itemName, companyId, alternateUnits } = req.body;
+    const { id, itemId, itemName, companyId } = req.body;
+    const alternateUnits = isValidJSON(req.body.alternateUnits);
+    let imageUrl = null;
+    if (req.file) {
+        imageUrl = `${req.protocol}://${req.get('host')}/uploads/${req?.file?.filename}`
+    }
 
     try {
         // Check if itemId or itemName already exists for another item in the same company
@@ -190,7 +201,8 @@ async function editItem(req, res) {
                     minStock: req.body.minStock,
                     maxStock: req.body.maxStock,
                     description: req.body.description,
-                    customFields: req.body.customField,
+                    customFields: isValidJSON(req.body.customField) || {},
+                    ...(imageUrl ? { imageUrl } : {})
                 },
                 { where: { id }, transaction }
             );

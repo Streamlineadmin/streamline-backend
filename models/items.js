@@ -36,7 +36,8 @@ module.exports = (sequelize, DataTypes) => {
     customFields: {
       type: DataTypes.JSON,
       defaultValue: []
-    }
+    },
+    imageUrl: DataTypes.STRING
   }, {
     sequelize,
     modelName: 'Items',
