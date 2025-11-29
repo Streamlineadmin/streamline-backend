@@ -112,6 +112,7 @@ async function updateBOMScrapMaterial(req, res) {
             costAllocationPercent: item.costAllocation,
             status: item.status,
             updatedAt: new Date(),
+            alternateFor: item.alternateFor
           },
           { where: { id: item.id } }
         )
@@ -133,6 +134,7 @@ async function updateBOMScrapMaterial(req, res) {
         userId,
         createdAt: new Date(),
         updatedAt: new Date(),
+        alternateFor: item.alternateFor
       }));
 
       await models.BOMScrapMaterial.bulkCreate(payload);

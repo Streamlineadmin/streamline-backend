@@ -103,6 +103,7 @@ async function updateBOMRawMaterial(req, res) {
             costAllocation: item.costAllocation,
             status,
             updatedAt: new Date(),
+            alternateFor: item.alternateFor
           },
           { where: { id: item.id } }
         )
@@ -123,6 +124,7 @@ async function updateBOMRawMaterial(req, res) {
         status,
         createdAt: new Date(),
         updatedAt: new Date(),
+        alternateFor: item.alternateFor
       }));
 
       await models.BOMRawMaterial.bulkCreate(payload);
