@@ -350,7 +350,14 @@ async function acceptRejectApproval(req, res) {
           await finishedGood.update({
             passedQuantity: (finishedGood?.passedQuantity || 0) + ((items[0]?.quantity || 0) / (finishedGood?.conversionFactor || 1)),
             rejectQuantity: (finishedGood?.rejectQuantity || 0) + ((items[1]?.quantity || 0) / (finishedGood?.conversionFactor || 1)),
-          })
+          });
+          if (finishedGood.quantity <= finishedGood.passedQuantity) {
+            await models.Production.update({ status: 4 }, {
+              where: {
+                id: finishedGood.productionId
+              }
+            });
+          }
         }
         const storeItems = await models.StoreItems.findAll({
           where: {

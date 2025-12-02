@@ -4,8 +4,8 @@ const itemController = require('../controller/items.controller');
 const { upload } = require('../helpers/file-uploader');
 
 const router = express.Router();
-router.post('/addItem', upload.single('imageUrl'), itemController.addItem);
-router.post('/editItem', upload.single('imageUrl'), itemController.editItem);
+router.post('/addItem', upload.array('imageUrl'), itemController.addItem);
+router.post('/editItem', upload.array('imageUrl'), itemController.editItem);
 router.post('/deleteItem', itemController.deleteItem);
 router.post('/', itemController.getItems);
 router.post('/deleteItems', itemController.deleteItems);

@@ -935,6 +935,7 @@ async function issueRawMaterial(req, res) {
         if (!production) {
             return res.status(404).json({ message: 'Production not found.' });
         }
+        await production.update({ status: 2 });
         const settings = isValidJSON(production?.isManual) || {}
         const approvalCount = await models.InventoryApproval.count({
             where: {
@@ -1056,6 +1057,11 @@ async function issueRawMaterial(req, res) {
 async function updateProcess(req, res) {
     try {
         const { processData, by } = req.body;
+        await models.Production.update({ status: 2 }, {
+            where: {
+                id: processData?.[0]?.productionId
+            }
+        });
         for (const element of processData) {
             if ((element.currentTime && element.amount)) {
                 const process = await models.ProductionSalesProcess.findOne({ where: { id: element.id } });
@@ -1119,6 +1125,11 @@ async function updateProcess(req, res) {
 async function updateCost(req, res) {
     try {
         const { additionalChargesData, by } = req.body;
+        await models.Production.update({ status: 2 }, {
+            where: {
+                id: additionalChargesData[0]?.productionId
+            }
+        });
         for (const element of additionalChargesData) {
             if (!element.todayCost) continue;
             const charges = await models.ProductionAdditionalCharges.findOne({
@@ -1169,6 +1180,7 @@ async function updateScrapLogs(req, res) {
                 id: scrapLogs[0]?.productionId
             }
         });
+        await production.update({ status: 2 })
         const settings = isValidJSON(production?.isManual) || {}
         const approvalCount = await models.InventoryApproval.count({
             where: {
@@ -1187,6 +1199,12 @@ async function updateScrapLogs(req, res) {
         });
         for (const element of scrapLogs) {
             if (!element.value || !element.store) continue;
+            const rawMaterial = await models.ProductionRawMaterials.findOne({
+                where: {
+                    itemId: element.itemId,
+                    productionId: element.productionId
+                }
+            });
             settings?.['productionScrapMaterial'] != 'manual' &&
                 await models.ProductionScrapMaterials.update({ producedQuantity: (element?.producedQuantity || 0) + element.value }, {
                     where: {
@@ -1219,7 +1237,7 @@ async function updateScrapLogs(req, res) {
                 quantity: settings?.['productionScrapMaterial'] == 'manual' ? 0 : (element.value * (element?.conversionFactor || 1)),
                 status: 1,
                 addedBy: Number(companyId),
-                price: 0,
+                price: !rawMaterial ? (item?.price || 0) : 0,
                 isRejected: element?.isReject || false,
                 approvalId: approval.id,
                 quantityForApproval: element.value * (element?.conversionFactor || 1)
@@ -1234,7 +1252,7 @@ async function updateScrapLogs(req, res) {
                 transferDate: new Date().toISOString(),
                 transferredBy: Number(companyId),
                 companyId: Number(companyId),
-                price: 0,
+                price: !rawMaterial ? (item?.price || 0) : 0,
                 productionId: production.productionId,
                 productionNavigationId: production.id,
                 isRejected: element?.isReject || false,
@@ -1269,7 +1287,8 @@ async function saveFinishedGoods(req, res) {
             companyId,
             batchData,
             userId,
-            by
+            by,
+            rejectQuantityCostPerUnit
         } = req.body;
 
         const uoms = await models.UOM.findAll({
@@ -1395,7 +1414,7 @@ async function saveFinishedGoods(req, res) {
                 quantity: settings?.['productionFinishedGood'] == 'manual' ? 0 : (rejectQty * (finishedGoods[0]?.conversionFactor || 1)),
                 status: 1,
                 addedBy: companyId,
-                price: 0,
+                price: rejectQuantityCostPerUnit || 0,
                 isRejected: true,
                 approvalId: approval.id,
                 quantityForApproval: rejectQty * (finishedGoods[0]?.conversionFactor || 1)
@@ -1410,7 +1429,7 @@ async function saveFinishedGoods(req, res) {
                 transferDate: new Date().toISOString(),
                 transferredBy: companyId,
                 companyId,
-                price: 0,
+                price: rejectQuantityCostPerUnit || 0,
                 isRejected: true,
                 productionId: production.productionId,
                 productionNavigationId: production.id,
@@ -1482,6 +1501,11 @@ async function saveFinishedGoods(req, res) {
         }
 
         await transaction.commit();
+
+        const goods = await models.ProductionFinishedGoods.findByPk(finishedGoods[0].id);
+        if (goods && goods.quantity <= goods.passedQuantity) {
+            await production.update({ status: 4 });
+        }
 
         if (batchData && Array.isArray(batchData) && batchData?.length) {
             const batchItems = [];

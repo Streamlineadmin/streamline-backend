@@ -822,7 +822,8 @@ async function createDocument(req, res) {
             ServiceID: item?.ServiceID,
             ServiceName: item?.ServiceName,
             additionalDetails: item?.additionalDetails,
-            customFields: item?.customFields
+            customFields: item?.customFields,
+            imageUrl: item?.imageUrl
           })
         })
       ),
@@ -1700,6 +1701,35 @@ async function createDocument(req, res) {
       });
     }
 
+    if (status && documentType === "Service Order") {
+      const production = await models.Production.findOne({
+        where: {
+          companyId: Number(companyId),
+          serviceOrderNumber: documentNumber
+        },
+        raw: true
+      });
+
+      if (production) {
+        let cost = items?.reduce((acc, curr) => {
+          acc += Number(curr?.totalAfterTax || 0)
+          return acc;
+        }, 0);
+
+        if (Array.isArray(additionalCharges)) {
+          for (const element of additionalCharges) {
+            cost += Number(element.total || 0);
+          }
+        }
+        const finishedGood = await models.ProductionFinishedGoods.findOne({
+          where: {
+            productionId: production.id
+          }
+        });
+        await finishedGood.update({ cost: ((finishedGood.cost || 0) + cost) });
+      }
+    }
+
     if (status && documentType === "Service Challan" && serviceOrderNumber) {
       const production = await models.Production.findOne({
         where: {
@@ -1709,15 +1739,23 @@ async function createDocument(req, res) {
         raw: true
       });
       if (production) {
-
         const itemsMap = items?.reduce((acc, curr) => {
           acc[curr.itemId] = curr.quantity;
           return acc;
         }, {});
+        let cost = 0;
         const itemsPriceMap = items?.reduce((acc, curr) => {
           acc[curr.itemId] = curr.price;
+          cost += Number(curr?.totalAfterTax || 0)
           return acc;
         }, {});
+
+        if (Array.isArray(additionalCharges)) {
+          for (const element of additionalCharges) {
+            cost += Number(element.total || 0);
+          }
+        }
+
         const productionRawMaterial = await models.ProductionRawMaterials.findAll({
           where: {
             productionId: production.id
@@ -1731,6 +1769,12 @@ async function createDocument(req, res) {
             });
           }
         }
+        const finishedGood = await models.ProductionFinishedGoods.findOne({
+          where: {
+            productionId: production.id
+          }
+        });
+        await finishedGood.update({ cost: ((finishedGood.cost || 0) + cost) });
       }
 
     }
@@ -1768,6 +1812,9 @@ async function createDocument(req, res) {
               passedQuantity: (element?.passedQuantity || 0) + Number(items[0].receivedToday),
               rejectQuantity: (element?.rejectQuantity || 0) + Number(items[0].pendingQuantity)
             });
+          }
+          if (element.passedQuantity >= element.quantity) {
+            await production.update({ status: 4 });
           }
         }
       }
@@ -3539,7 +3586,8 @@ async function editDocument(req, res) {
             ServiceID: item?.ServiceID,
             ServiceName: item?.ServiceName,
             additionalDetails: item?.additionalDetails,
-            customFields: item?.customFields
+            customFields: item?.customFields,
+            imageUrl: item?.imageUrl
           })
         })
       ),
