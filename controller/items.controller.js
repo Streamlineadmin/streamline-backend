@@ -5,13 +5,23 @@ const models = require('../models');
 const { Op } = require("sequelize");
 
 async function addItem(req, res) {
-    const { itemId, itemName, itemType, metricsUnit, companyId, useCustomSeries, userId } = req.body;
-    let imageUrl = null;
-    if (req.file) {
-        imageUrl = `${req.protocol}://${req.get('host')}/uploads/${req?.file?.filename}`
-    }
-
+    const { itemId, itemName, itemType, metricsUnit, companyId, useCustomSeries, userId, imageObj } = req.body;
     try {
+        let imageUrl = null;
+        let temp = isValidJSON(imageObj) || [];
+        const customFields = isValidJSON(req.body.customField);
+        if (req.files) {
+            let i = 0;
+            for (const element of temp) {
+                if (element == "imageUrl") {
+                    imageUrl = `${req.protocol}://${req.get('host')}/uploads/${req?.files[i]?.filename}`
+                }
+                else {
+                    customFields[element] = `${req.protocol}://${req.get('host')}/uploads/${req?.files[i]?.filename}`
+                }
+                i++;
+            }
+        }
         // ✅ Mandatory field check
         if (!itemId || !itemName || !itemType || !metricsUnit) {
             return res.status(400).json({
@@ -53,7 +63,7 @@ async function addItem(req, res) {
             description: req.body.description,
             companyId,
             status: 1,
-            customFields: isValidJSON(req.body.customField) || {},
+            customFields: customFields || {},
             imageUrl
         };
 
@@ -112,21 +122,16 @@ async function addItem(req, res) {
         }
 
         // ✅ Update ItemSeries if custom series is used
-        if (useCustomSeries && itemId) {
-            const prefixMatch = itemId.match(/^[A-Za-z\-]+/);
-            const prefix = prefixMatch ? prefixMatch[0] : null;
-
-            if (prefix) {
-                await models.ItemSeries.increment(
-                    { nextNumber: 1 },
-                    {
-                        where: {
-                            prefix,
-                            companyId
-                        }
+        if (useCustomSeries) {
+            await models.ItemSeries.increment(
+                { nextNumber: 1 },
+                {
+                    where: {
+                        default: 1,
+                        companyId
                     }
-                );
-            }
+                }
+            );
         }
 
         // ✅ Add to StoreItems
@@ -150,6 +155,7 @@ async function addItem(req, res) {
         });
 
     } catch (error) {
+        console.log(error)
         return res.status(500).json({
             message: "Something went wrong, please try again later!",
             error
@@ -158,14 +164,24 @@ async function addItem(req, res) {
 }
 
 async function editItem(req, res) {
-    const { id, itemId, itemName, companyId } = req.body;
-    const alternateUnits = isValidJSON(req.body.alternateUnits);
-    let imageUrl = null;
-    if (req.file) {
-        imageUrl = `${req.protocol}://${req.get('host')}/uploads/${req?.file?.filename}`
-    }
-
+    const { id, itemId, itemName, companyId, imageObj, removeImage } = req.body;
     try {
+        const alternateUnits = isValidJSON(req.body.alternateUnits);
+        let imageUrl = null;
+        let temp = isValidJSON(imageObj) || [];
+        const customFields = isValidJSON(req.body.customField);
+        if (req.files) {
+            let i = 0;
+            for (const element of temp) {
+                if (element == "imageUrl") {
+                    imageUrl = `${req.protocol}://${req.get('host')}/uploads/${req?.files[i]?.filename}`
+                }
+                else {
+                    customFields[element] = `${req.protocol}://${req.get('host')}/uploads/${req?.files[i]?.filename}`
+                }
+                i++;
+            }
+        }
         // Check if itemId or itemName already exists for another item in the same company
         const existingItem = await models.Items.findOne({
             where: {
@@ -201,8 +217,9 @@ async function editItem(req, res) {
                     minStock: req.body.minStock,
                     maxStock: req.body.maxStock,
                     description: req.body.description,
-                    customFields: isValidJSON(req.body.customField) || {},
-                    ...(imageUrl ? { imageUrl } : {})
+                    customFields: customFields || {},
+                    ...(imageUrl ? { imageUrl } : {}),
+                    ...(removeImage ? { imageUrl: "" } : {}),
                 },
                 { where: { id }, transaction }
             );

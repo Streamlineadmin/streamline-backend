@@ -48,7 +48,8 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.JSON,
       defaultValue: []
     },
-    type: DataTypes.STRING
+    type: DataTypes.STRING,
+    imageUrl: DataTypes.STRING
   }, {
     sequelize,
     modelName: 'DocumentItems',
