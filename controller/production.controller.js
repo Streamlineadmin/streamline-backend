@@ -45,7 +45,7 @@ async function startProduction(req, res) {
         for (const production of bulkProductions) {
             const [scrapLogs, rawMaterials, finishedGoods, productionProcess, additionalCharges] = await Promise.all([
                 models.BOMScrapMaterial.findAll({ where: { bomId: production.bomId } }),
-                models.BOMRawMaterial.findAll({ where: { bomId: production.bomId } }),
+                models.BOMRawMaterial.findAll({ where: { bomId: production.bomId }, order: [["createdAt", "ASC"]] }),
                 models.BOMFinishedGoods.findAll({ where: { bomId: production.bomId } }),
                 models.BOMProductionProcess.findAll({ where: { bomId: production.bomId } }),
                 models.BOMAdditionalCharges.findAll({ where: { bomId: production.bomId } }),
@@ -88,16 +88,31 @@ async function startProduction(req, res) {
                 }, raw: true
             });
 
+            const idToElementMap = {};
             const parentProductionId = {}, parentProductionKey = {}, currentChildCount = {};
             const childs = rawMaterials?.reduce((acc, curr) => {
+                idToElementMap[curr.id] = curr;
                 if (curr.parentId) {
                     if (acc[curr.parentId]) acc[curr.parentId].push(curr);
                     else acc[curr.parentId] = [curr];
                 }
                 return acc;
             }, {});
+            // const parentToChildMap = rawMaterials.reduce((acc, curr) => {
+            //     if (curr.parentId) {
+            //         acc[curr.id] = idToElementMap[curr.parentId];
+            //     }
+            //     return acc;
+            // }, {});
+
+            const quantMap = {};
+
 
             for (const element of rawMaterials) {
+                if (!element.parentId) {
+                    quantMap[element.id] = (element.quantity / finishedGoods[0].quantity) * productions[index].quantity
+                }
+                console.log(quantMap,"quantmap")
                 if (childs[element.id]) {
                     currentChildCount[element.parentId] = (currentChildCount[element.parentId] || 0) + 1;
                     const prod = await models.Production.create({
@@ -125,7 +140,7 @@ async function startProduction(req, res) {
                         models.BOMAdditionalCharges.findAll({ where: { bomId: element.finishedGoodBomId } }),
                     ]);
 
-                    const finishedGoodsQuantity = (element.quantity / finishedGoods[0].quantity) * productions[index].quantity;
+                    const finishedGoodsQuantity = quantMap[element.id];
                     const productionProcessId = productionProcess.map(data => data.processId);
                     const process = await models.ProductionProcess.findAll({
                         where: {
@@ -147,13 +162,14 @@ async function startProduction(req, res) {
                         //         }
                         //     }
                         // }
+                        quantMap[data.id] = quantMap[data.parentId] * quantity;
                         return {
                             productionId: prod.id,
                             itemId: data.itemId,
                             itemName: data.itemName,
                             store: data.store,
                             uom: data.uom,
-                            quantity: productions[index]?.quantity * quantity,
+                            quantity: quantMap[data.parentId] * quantity,
                             conversionFactor,
                             status: 1,
                             alternateFor: data.alternateFor || null
