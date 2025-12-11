@@ -823,7 +823,8 @@ async function createDocument(req, res) {
             ServiceName: item?.ServiceName,
             additionalDetails: item?.additionalDetails,
             customFields: item?.customFields,
-            imageUrl: item?.imageUrl
+            imageUrl: item?.imageUrl,
+            category: item?.category
           })
         })
       ),
@@ -2031,7 +2032,8 @@ async function createDocument(req, res) {
         price: finishedGood?.price,
         totalBeforeTax: finishedGood?.totalBeforeTax,
         totalTax: finishedGood?.totalTax,
-        totalAfterTax: finishedGood?.totalAfterTax
+        totalAfterTax: finishedGood?.totalAfterTax,
+        category: finishedGood?.category
       });
       if (addStockOn === 'GRN' || documentType === 'Service Confirmation Qr') {
         const settings = await models.Settings.findOne({
@@ -3651,7 +3653,8 @@ async function editDocument(req, res) {
             ServiceName: item?.ServiceName,
             additionalDetails: item?.additionalDetails,
             customFields: item?.customFields,
-            imageUrl: item?.imageUrl
+            imageUrl: item?.imageUrl,
+            category: item?.category
           })
         })
       ),

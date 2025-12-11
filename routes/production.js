@@ -25,5 +25,6 @@ router.post('/startBulkProduction', productionController.startBulkProduction);
 router.post('/getBulkProductions', productionController.getBulkProductions);
 router.post('/remainingProduction', productionController.remainingProduction);
 router.post('/discardProduction', productionController.discardProduction);
+router.post('/bulkIssue', productionController.bulkIssue);
 
 module.exports = router;

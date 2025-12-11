@@ -2,7 +2,7 @@ const { Op, where } = require('sequelize');
 const { documentTypes } = require('../helpers/document-type');
 const { generateProductionId, generateTransferNumber } = require('../helpers/transfer-number');
 const models = require('../models');
-const { buildMultiLevelProductionTree, isValidJSON } = require('../helpers/add-level');
+const { buildMultiLevelProductionTree, isValidJSON, secondsToTime, timeToSeconds } = require('../helpers/add-level');
 const e = require('express');
 
 async function startProduction(req, res) {
@@ -112,7 +112,7 @@ async function startProduction(req, res) {
                 if (!element.parentId) {
                     quantMap[element.id] = (element.quantity / finishedGoods[0].quantity) * productions[index].quantity
                 }
-                console.log(quantMap,"quantmap")
+                console.log(quantMap, "quantmap")
                 if (childs[element.id]) {
                     currentChildCount[element.parentId] = (currentChildCount[element.parentId] || 0) + 1;
                     const prod = await models.Production.create({
@@ -2799,6 +2799,282 @@ async function discardProduction(req, res) {
     }
 }
 
+async function bulkIssue(req, res) {
+    try {
+        const { productionId, quantity, companyId, userId } = req.body;
+        let totalPrice = 0;
+        const production = await models.Production.findByPk(productionId);
+        const [finishedGoods, rawMaterials, scraps, processes, charges] = await Promise.all([
+            models.ProductionFinishedGoods.findAll({ where: { productionId } }),
+            models.ProductionRawMaterials.findAll({ where: { productionId } }),
+            models.ProductionScrapMaterials.findAll({ where: { productionId } }),
+            models.ProductionSalesProcess.findAll({ where: { productionId } }),
+            models.ProductionAdditionalCharges.findAll({ where: { productionId } }),
+        ]);
+        for (const element of charges) {
+            const unit = element.amount / finishedGoods[0].quantity;
+            await element.update({ totalCost: (element.totalCost || 0) + (unit * quantity) });
+            totalPrice += unit * quantity;
+        }
+        for (const element of processes) {
+            const [dd, hh, mm, ss] = element?.plannedTime?.split(":").map(Number);
+            const unit = (((dd || 0) * 86400 + (hh || 0) * 3600 + (mm || 0) * 60 + (ss || 0)) / finishedGoods[0].quantity) * quantity;
+            const cost = (unit / 3600) * element.perHourCost;
+            totalPrice += cost;
+            const current = timeToSeconds(element.totalPlannedTime);
+            const result = secondsToTime(unit + current);
+            await element.update({ totalPlannedTime: result, averageCost: (element.averageCost || 0) + cost, processCompleteOn: (element.processCompleteOn || 0) + quantity });
+        }
+        for (const element of scraps) {
+            const settings = isValidJSON(element?.isManual) || {};
+            const approvalCount = await models.InventoryApproval.count({
+                where: {
+                    companyId
+                }
+            });
+            const approval = await models.InventoryApproval.create({
+                approvalId: `INA${approvalCount + 1}`,
+                documentType: 'Scrap Material',
+                documentNumber: production.id,
+                approvalStatus: settings?.['productionScrapMaterial'] == 'manual' ? 'Pending' : 'Auto Approved',
+                requestedBy: userId,
+                companyId: companyId,
+                status: 1,
+                approvedBy: null
+            });
+            const unit = element.quantity / finishedGoods[0].quantity;
+            if (!element.store) continue;
+            const rawMaterial = await models.ProductionRawMaterials.findOne({
+                where: {
+                    itemId: element.itemId,
+                    productionId: element.productionId
+                }
+            });
+            settings?.['productionScrapMaterial'] != 'manual' &&
+                await models.ProductionScrapMaterials.update({ producedQuantity: (element?.producedQuantity || 0) + (unit * quantity) }, {
+                    where: {
+                        id: element.id
+                    }
+                });
+
+            const store = await models.Store.findOne({
+                where: {
+                    companyId: Number(companyId),
+                    name: element.store?.replaceAll("-fromrejectstore", "")
+                }
+            });
+
+            const item = await models.Items.findOne({
+                where: {
+                    companyId: Number(companyId),
+                    itemId: element.itemId
+                }
+            });
+
+            await models.StoreItems.create({
+                storeId: store.id,
+                itemId: item.id,
+                quantity: settings?.['productionScrapMaterial'] == 'manual' ? 0 : ((unit * quantity) * (element?.conversionFactor || 1)),
+                status: 1,
+                addedBy: Number(companyId),
+                price: !rawMaterial ? (item?.price || 0) : 0,
+                isRejected: element?.isReject || false,
+                approvalId: approval.id,
+                quantityForApproval: (unit * quantity) * (element?.conversionFactor || 1)
+            });
+
+            await models.StockTransfer.create({
+                transferNumber: generateTransferNumber(),
+                fromStoreId: null,
+                itemId: item.id,
+                quantity: settings?.['productionScrapMaterial'] == 'manual' ? null : ((unit * quantity) * (element?.conversionFactor || 1)),
+                toStoreId: store.id,
+                transferDate: new Date().toISOString(),
+                transferredBy: Number(companyId),
+                companyId: Number(companyId),
+                price: !rawMaterial ? (item?.price || 0) : 0,
+                productionId: production.productionId,
+                productionNavigationId: production.id,
+                isRejected: element?.isReject || false,
+                approvalId: approval.id,
+                quantityForApproval: (unit * quantity) * (element?.conversionFactor || 1)
+            });
+
+        }
+
+        const [stores, items] = await Promise.all([
+            models.Store.findAll({ where: { companyId: Number(companyId) } }),
+            models.Items.findAll({
+                where: {
+                    companyId,
+                    itemId: {
+                        [Op.in]: rawMaterials.map(data => data.itemId)
+                    }
+                }
+            })
+        ]);
+        const storeMap = new Map(stores.map(store => [store.name, store]));
+        const itemMap = new Map(items.map(item => [item.itemId, item]));
+        for (const element of rawMaterials) {
+            const unit = element.quantity / finishedGoods[0].quantity;
+            if (!element.store) continue;
+            const settings = isValidJSON(production?.isManual) || {}
+            const approvalCount = await models.InventoryApproval.count({
+                where: {
+                    companyId
+                }
+            });
+            const approval = await models.InventoryApproval.create({
+                approvalId: `INA${approvalCount + 1}`,
+                documentType: 'Raw Material',
+                documentNumber: production.id,
+                approvalStatus: settings?.['productionRawMaterial'] == 'manual' ? 'Pending' : 'Auto Approved',
+                requestedBy: userId,
+                companyId: companyId,
+                status: 1,
+                approvedBy: null
+            });
+
+            const stockTransferPayloads = [];
+            const storeName = element.store?.replaceAll("-fromrejectstore", "");
+            const store = storeMap.get(storeName);
+            const item = itemMap.get(element.itemId);
+            if (!store || !item) continue;
+            const isRejected = element?.isReject || false;
+            if (settings?.['productionRawMaterial'] != 'manual') {
+                const existingStock = await models.StoreItems.findAll({
+                    where: {
+                        storeId: store.id,
+                        itemId: item.id,
+                        isRejected
+                    },
+                    order: [['createdAt', 'ASC']]
+                });
+                let price = 0;
+                let remainingQuantity = (unit * quantity) * (element?.conversionFactor || 1);
+                for (const stock of existingStock) {
+                    if (remainingQuantity <= 0) break;
+                    if (stock.quantity <= 0) continue;
+                    const deductQty = Math.min(stock.quantity, remainingQuantity);
+                    remainingQuantity -= deductQty;
+                    await stock.update({ quantity: stock.quantity - deductQty });
+                    stockTransferPayloads.push({
+                        transferNumber: generateTransferNumber(),
+                        fromStoreId: store.id,
+                        itemId: item.id,
+                        quantity: -deductQty,
+                        toStoreId: null,
+                        transferDate: new Date().toISOString(),
+                        transferredBy: userId,
+                        companyId,
+                        price: stock.price,
+                        productionId: production.productionId,
+                        productionNavigationId: production.id,
+                        isRejected,
+                        approvalId: approval.id,
+                        quantityForApproval: deductQty
+                    });
+
+                    price += stock.price * deductQty;
+                }
+                totalPrice += price;
+                await models.ProductionRawMaterials.update(
+                    {
+                        consumedQuantity: Number((element.consumedQuantity || 0)) + Number(((unit * quantity) || 0)),
+                        averagePrice: (element.averagePrice || 0) + price
+                    },
+                    {
+                        where: { id: element.id }
+                    }
+                );
+
+            }
+            else {
+                stockTransferPayloads.push({
+                    transferNumber: generateTransferNumber(),
+                    fromStoreId: store.id,
+                    itemId: item.id,
+                    quantity: null,
+                    toStoreId: null,
+                    transferDate: new Date().toISOString(),
+                    transferredBy: userId,
+                    companyId,
+                    price: 0,
+                    productionId: production.productionId,
+                    productionNavigationId: production.id,
+                    isRejected,
+                    approvalId: approval.id,
+                    quantityForApproval: element.issuedToday * (element?.conversionFactor || 1)
+                });
+            }
+
+            if (stockTransferPayloads.length > 0) {
+                await models.StockTransfer.bulkCreate(stockTransferPayloads);
+            }
+        }
+        for (const element of finishedGoods) {
+            if (!element.store) continue;
+            const settings = isValidJSON(production?.isManual) || {}
+            const approvalCount = await models.InventoryApproval.count({
+                where: {
+                    companyId
+                }
+            });
+            const approval = await models.InventoryApproval.create({
+                approvalId: `INA${approvalCount + 1}`,
+                documentType: 'Finished Good',
+                documentNumber: production.id,
+                approvalStatus: settings?.['productionFinishedGood'] == 'manual' ? 'Pending' : 'Auto Approved',
+                requestedBy: userId,
+                companyId: companyId,
+                status: 1,
+                approvedBy: null
+            });
+
+            await element.update({ producedQuantity: (element.producedQuantity || 0) + quantity, passedQuantity: (element.passedQuantity || 0) + quantity, cost: (element.cost || 0) + totalPrice });
+            const item = await models.Items.findOne({ where: { companyId: Number(companyId), itemId: element.itemId } });
+            const stores = storeMap.get(element.store);
+            const costPerUnit = totalPrice / quantity;
+
+            await models.StoreItems.create({
+                storeId: stores.id,
+                itemId: item.id,
+                quantity: settings?.['productionFinishedGood'] == 'manual' ? 0 : (quantity * (finishedGoods[0]?.conversionFactor || 1)),
+                status: 1,
+                addedBy: companyId,
+                price: costPerUnit,
+                approvalId: approval.id,
+                quantityForApproval: quantity * (finishedGoods[0]?.conversionFactor || 1)
+            });
+
+            await models.StockTransfer.create({
+                transferNumber: generateTransferNumber(),
+                fromStoreId: null,
+                itemId: item.id,
+                quantity: settings?.['productionFinishedGood'] == 'manual' ? null : (quantity * (finishedGoods[0]?.conversionFactor || 1)),
+                toStoreId: stores.id,
+                transferDate: new Date().toISOString(),
+                transferredBy: companyId,
+                companyId,
+                price: costPerUnit,
+                productionId: production.productionId,
+                productionNavigationId: production.id,
+                approvalId: approval.id,
+                quantityForApproval: quantity * (finishedGoods[0]?.conversionFactor || 1)
+            });
+        }
+
+        res.status(200).json({
+            message: 'Bulk Issue Successfully.'
+        });
+    } catch (error) {
+        console.log(error);
+        res.status(500).json({
+            message: "Internal Server Error"
+        });
+    }
+}
+
 module.exports = {
     startProduction: startProduction,
     getProductions: getProductions,
@@ -2822,5 +3098,6 @@ module.exports = {
     startBulkProduction: startBulkProduction,
     getBulkProductions: getBulkProductions,
     remainingProduction: remainingProduction,
-    discardProduction: discardProduction
+    discardProduction: discardProduction,
+    bulkIssue: bulkIssue
 }

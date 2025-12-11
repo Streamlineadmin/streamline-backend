@@ -49,7 +49,8 @@ module.exports = (sequelize, DataTypes) => {
       defaultValue: []
     },
     type: DataTypes.STRING,
-    imageUrl: DataTypes.STRING
+    imageUrl: DataTypes.STRING,
+    category: DataTypes.INTEGER
   }, {
     sequelize,
     modelName: 'DocumentItems',
