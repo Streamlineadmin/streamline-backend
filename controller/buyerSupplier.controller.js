@@ -260,7 +260,6 @@ async function bulkUploadBuyerSuppliers(req, res) {
         const errorData = [];
         const requiredFields = [
             "* Company Name",
-            "* Company Email",
             "* Company Type",
             "* Address",
             "* Address Type",
@@ -283,7 +282,7 @@ async function bulkUploadBuyerSuppliers(req, res) {
                 "Person Email": personEmail,
                 "Phone": phone,
                 "* Company Name": companyName,
-                "* Company Email": companyEmail,
+                "Company Email": companyEmail,
                 "* Company Type": companyType,
                 "GST Number": gstNumber,
                 "GST Type": gstType,
