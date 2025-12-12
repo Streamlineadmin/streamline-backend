@@ -215,7 +215,11 @@ async function getReports(req, res) {
                     ...element,
                     ...productionMap[element.productionId],
                     uom: uomMap[element.uom],
+                    category: categorysMap[itemsMap[element.itemId]?.category],
+                    subCategory: categorysMap[itemsMap[element.itemId]?.subCategory],
+                    microCategory: categorysMap[itemsMap[element.itemId]?.microCategory],
                     producedQuantity: element?.producedQuantity || 0,
+                    pendingQuantity: Math.max(element.quantity - (element.producedQuantity || 0), 0),
                     perUnitCost: ((element.cost || 0) / (element?.passedQuantity || 1))?.toFixed?.(2) || 0,
                     rejectQuantity: element?.rejectQuantity || 0,
                     assignedTo: userMap[productionMap[element.productionId]?.assignedTo],
@@ -340,7 +344,8 @@ async function getReports(req, res) {
                     subCategory: categorysMap[itemsMap[finishedGoodsMap[element.productionId]?.itemId]?.subCategory],
                     microCategory: categorysMap[itemsMap[element.itemId]?.microCategory],
                     documentNumber: element.id,
-                    salesOrderNumber: productionMap[element.productionId]?.documentNumber
+                    salesOrderNumber: productionMap[element.productionId]?.documentNumber,
+                    pendingQuantity: Math.max(finishedGoodsMap[element.productionId]?.quantity - (element.processCompleteOn || 0), 0)
                 });
             }
             return res.status(200).json({ data, total: data.length });
@@ -918,6 +923,7 @@ async function getReports(req, res) {
         const uniqueItemsMap = new Map();
         for (const item of items) {
             const key = `${item.documentNumber}_${item.itemId}`;
+            item.customFields = isValidJSON(item.customFields);
             if (!uniqueItemsMap.has(key)) {
                 uniqueItemsMap.set(key, item);
             }

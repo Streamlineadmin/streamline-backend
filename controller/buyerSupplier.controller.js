@@ -247,7 +247,7 @@ async function bulkUploadBuyerSuppliers(req, res) {
         });
 
         const existingBuyerSupplierMap = existingBuyerSupplier?.reduce((acc, curr) => {
-            acc[curr?.companyName] = 1;
+            acc[curr?.companyName?.toLowerCase?.()] = 1;
             return acc;
         }, {});
 
@@ -294,19 +294,19 @@ async function bulkUploadBuyerSuppliers(req, res) {
                 "* State": state,
             } = row;
 
-            if (existingBuyerSupplierMap[companyName]) {
+            if (existingBuyerSupplierMap[companyName?.toLowerCase?.()]) {
                 row["Error"] = 'Company Name Already Exist.'
                 errorData.push(row);
                 continue;
             }
 
-            if (sheetDataBuyerSupplierMap?.[companyName]) {
+            if (sheetDataBuyerSupplierMap?.[companyName?.toLowerCase?.()]) {
                 row["Error"] = 'Company Name Already Exist in Sheet.'
                 errorData.push(row);
                 continue;
             }
 
-            sheetDataBuyerSupplierMap[companyName] = 1;
+            sheetDataBuyerSupplierMap[companyName?.toLowerCase?.()] = 1;
 
             if (missingFields.length > 0) {
                 row["Error"] = `Missing required fields: ${missingFields.join(", ")}`;

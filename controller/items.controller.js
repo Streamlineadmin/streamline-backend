@@ -450,6 +450,7 @@ async function getItems(req, res) {
         const items = await models.Items.findAll({
             where: { companyId },
             raw: true,
+            order: [['createdAt','DESC']]
         });
 
         if (!items || items.length === 0) {

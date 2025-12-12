@@ -32,7 +32,8 @@ module.exports = (sequelize, DataTypes) => {
     visibleOn: {
       type: DataTypes.JSON,
       defaultValue: []
-    }
+    },
+    category: DataTypes.INTEGER
   }, {
     sequelize,
     modelName: 'CustomFields',

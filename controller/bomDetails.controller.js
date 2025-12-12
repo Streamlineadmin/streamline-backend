@@ -124,27 +124,27 @@ async function updateBOMDetails(req, res) {
     }
 
     // Check for duplicate BOM name within company, excluding current bomId
-    const duplicateName = await models.BOMDetails.findOne({
-      where: {
-        bomName,
-        companyId,
-        bomId: { [models.Sequelize.Op.ne]: bomId },
-      },
-      transaction: t,
-    });
+    // const duplicateName = await models.BOMDetails.findOne({
+    //   where: {
+    //     bomName,
+    //     companyId,
+    //     bomId: { [models.Sequelize.Op.ne]: bomId },
+    //   },
+    //   transaction: t,
+    // });
 
-    if (duplicateName) {
-      await t.rollback();
-      return res
-        .status(409)
-        .json({ message: "BOM name already exists for this company!" });
-    }
+    // if (duplicateName) {
+    //   await t.rollback();
+    //   return res
+    //     .status(409)
+    //     .json({ message: "BOM name already exists for this company!" });
+    // }
 
     // Update BOM
     await models.BOMDetails.update(
       {
         bomName,
-        status,
+        // status,
         bomDescription,
         companyId,
         userId,

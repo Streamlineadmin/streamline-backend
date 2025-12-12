@@ -14,7 +14,8 @@ async function addCustomfields(req, res) {
         documentType,
         options,
         showByDefault,
-        level
+        level,
+        category
       } = req.body;
 
     if (!fieldName || !type || !documentType) {
@@ -31,7 +32,8 @@ async function addCustomfields(req, res) {
       required: required || false,
       options: isValidJSON(options) || [],
       showByDefault: showByDefault || false,
-      level: level || ''
+      level: level || '',
+      category
     });
 
     return res.status(201).json({
@@ -116,7 +118,6 @@ async function editPermissions(req, res) {
 async function editCustomField(req, res) {
   try {
     const data = req.body;
-    console.log(data)
 
     await models.CustomFields.update({
       ...data,

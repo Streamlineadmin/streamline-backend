@@ -51,15 +51,17 @@ function editItemSeries(req, res) {
   const prefix = req.body.series;
   const number = req.body.number;
   const companyId = req.body.companyId;
+  const nextNumber = req.body.nextNumber;
 
   const updatedItemSeriesData = {
     seriesName,
     prefix,
-    number,
+    // number,
     companyId,
     status: req.body.status || 1,
     ip_address: req.body.ip_address,
     userId: req.body.userId,
+    nextNumber
   };
 
   models.ItemSeries.findOne({

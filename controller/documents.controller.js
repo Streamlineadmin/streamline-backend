@@ -823,7 +823,8 @@ async function createDocument(req, res) {
             ServiceName: item?.ServiceName,
             additionalDetails: item?.additionalDetails,
             customFields: item?.customFields,
-            imageUrl: item?.imageUrl
+            imageUrl: item?.imageUrl,
+            category: item?.category
           })
         })
       ),
@@ -951,7 +952,56 @@ async function createDocument(req, res) {
           status: 1,
           approvedBy: null
         });
-        message = settings?.['purchaseDocument'] == 'manual' ? 'inventory' : ''
+        message = settings?.['purchaseDocument'] == 'manual' ? 'inventory' : '';
+        const purchaseItems = await models.DocumentItems.findAll({
+          where: {
+            companyId: Number(companyId),
+            documentNumber: purchaseOrderNumber
+          }
+        });
+        const total = purchaseItems?.reduce((acc, curr) => {
+          acc += Number(curr.totalBeforeTax);
+          return acc;
+        }, 0);
+        const purchaseAdditionalCharges = await models.DocumentAdditionalCharges.findAll({
+          where: {
+            documentNumber: purchaseOrderNumber,
+            companyId: Number(companyId)
+          }
+        });
+
+        const additionalCost = purchaseAdditionalCharges?.reduce((acc, curr) => {
+          acc += Number(curr.total);
+          return acc;
+        }, 0) || 0;
+
+        const priceMap = purchaseItems?.reduce((acc, curr) => {
+          const percent = (Number(curr.totalBeforeTax) / total) * 100;
+          acc[curr.itemId] = ((Number(curr.totalAfterTax)) + ((percent * additionalCost) / 100)) / curr.quantity;
+          return acc;
+        }, {});
+
+        const purchaseInvoice = await models.Documents.findOne({
+          where: {
+            purchaseOrderNumber,
+            documentType: "Purchase Invoice",
+            companyId: Number(companyId)
+          }
+        });
+        if (purchaseInvoice) {
+          const purchaseItems = await models.DocumentItems.findAll({
+            where: {
+              companyId: Number(companyId),
+              documentNumber: purchaseInvoice.documentNumber
+            }
+          });
+          if (Array.isArray(purchaseItems) && purchaseItems.length) {
+            purchaseItems.forEach((item) => {
+              priceMap[item.itemId] = Number(item.totalAfterTax) / item.quantity
+            })
+          }
+        }
+
         await Promise.all([models.StoreItems.bulkCreate(items?.filter(item => item?.receivedToday).map(item => {
           const itemId = itemsMap.get(item.itemId) || null;
           const storeId = storesMap.get(store) || null;
@@ -961,7 +1011,7 @@ async function createDocument(req, res) {
             quantity: settings?.['purchaseDocument'] == 'manual' ? 0 : ((item?.receivedToday * (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1))) || 0),
             status: 1,
             addedBy: createdBy,
-            price: item?.price / (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1)),
+            price: (priceMap?.[item.itemId] || item?.price) / (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1)),
             documentNumber: document.documentNumber,
             approvalId: approval.id,
             quantityForApproval: (item?.receivedToday * (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1))) || 0
@@ -981,7 +1031,7 @@ async function createDocument(req, res) {
             transferredBy: createdBy,
             comment: '',
             companyId,
-            price: item?.price / (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1)),
+            price: (priceMap?.[item.itemId] || item?.price) / (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1)),
             documentNumber: document.documentNumber,
             documentType,
             approvalId: approval.id,
@@ -1555,6 +1605,22 @@ async function createDocument(req, res) {
       });
 
       if (serviceChallan && (serviceChallan.addStockOn === 'GRN' || documentType === documentTypes.serviceQr)) {
+        let finishedGood = null;
+        if (serviceOrderNumber) {
+          const production = await models.Production.findOne({
+            where: {
+              serviceOrderNumber,
+              companyId: Number(companyId)
+            }
+          });
+          if (production) {
+            finishedGood = await models.ProductionFinishedGoods.findOne({
+              where: {
+                productionId: production.id
+              }
+            });
+          }
+        }
         documentType === documentTypes.serviceGrn && await models.Documents.update({ addStockOn: 'GRN' },
           {
             where: {
@@ -1598,7 +1664,7 @@ async function createDocument(req, res) {
             quantity: settings?.['serviceDocument'] == 'manual' ? 0 : (item?.receivedToday * (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1))) || 0,
             status: 1,
             addedBy: createdBy,
-            price: item?.price / (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1)),
+            price: (!finishedGood ? item?.price : (finishedGood.cost || 0) / finishedGood.quantity) / (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1)),
             documentNumber: document.documentNumber,
             approvalId: approval.id,
             quantityForApproval: (item?.receivedToday * (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1))) || 0
@@ -1618,7 +1684,7 @@ async function createDocument(req, res) {
             transferredBy: createdBy,
             comment: '',
             companyId,
-            price: item?.price / (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1)),
+            price: (!finishedGood ? item?.price : (finishedGood.cost || 0) / finishedGood.quantity) / (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1)),
             documentNumber: document.documentNumber,
             documentType,
             approvalId: approval.id,
@@ -1791,8 +1857,7 @@ async function createDocument(req, res) {
         where: {
           companyId: Number(companyId),
           serviceOrderNumber: serviceOrderNumber
-        },
-        raw: true
+        }
       });
       if (production && serviceChallan) {
         const finishedGoods = await models.ProductionFinishedGoods.findAll({
@@ -1802,12 +1867,12 @@ async function createDocument(req, res) {
         });
         for (const element of finishedGoods) {
           if (documentType === 'Service Grn') {
-            element.update({
+            await element.update({
               producedQuantity: (element.producedQuantity || 0) + items[0].receivedToday,
               passedQuantity: (element.passedQuantity || 0) + Number(serviceChallan.addStockOn === 'GRN' ? items[0].receivedToday : 0),
             });
           } else {
-            element.update({
+            await element.update({
               // producedQuantity: (element?.producedQuantity || 0) + Number(items[0].receivedToday || 0),
               passedQuantity: (element?.passedQuantity || 0) + Number(items[0].receivedToday),
               rejectQuantity: (element?.rejectQuantity || 0) + Number(items[0].pendingQuantity)
@@ -1967,7 +2032,8 @@ async function createDocument(req, res) {
         price: finishedGood?.price,
         totalBeforeTax: finishedGood?.totalBeforeTax,
         totalTax: finishedGood?.totalTax,
-        totalAfterTax: finishedGood?.totalAfterTax
+        totalAfterTax: finishedGood?.totalAfterTax,
+        category: finishedGood?.category
       });
       if (addStockOn === 'GRN' || documentType === 'Service Confirmation Qr') {
         const settings = await models.Settings.findOne({
@@ -3587,7 +3653,8 @@ async function editDocument(req, res) {
             ServiceName: item?.ServiceName,
             additionalDetails: item?.additionalDetails,
             customFields: item?.customFields,
-            imageUrl: item?.imageUrl
+            imageUrl: item?.imageUrl,
+            category: item?.category
           })
         })
       ),

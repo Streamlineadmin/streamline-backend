@@ -58,16 +58,18 @@ function editDocumentSeries(req, res) {
     const prefix = req.body.series;
     const number = req.body.number;
     const companyId = req.body.companyId;
+    const nextNumber = req.body.nextNumber;
 
     const updatedDocumentSeriesData = {
         DocType,
         seriesName,
         prefix,
-        number,
+        // number,
         companyId,
         status: req.body.status || 1,
         ip_address: req.body.ip_address,
-        createdBy: req.body.createdBy
+        createdBy: req.body.createdBy,
+        nextNumber
     };
 
     // Check if the team name already exists for the given company but exclude the current team
