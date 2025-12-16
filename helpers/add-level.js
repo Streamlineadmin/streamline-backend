@@ -133,7 +133,7 @@ function secondsToTime(totalSeconds) {
 function timeToSeconds(timeString) {
   if (!timeString) return 0;
   const [dd, hh, mm, ss] = timeString.split(":").map(Number);
-  return (dd || 0) * 86400 + (hh || 0) * 3600 + (mm || 0) * 60 + (ss || 0);
+  return ((dd || 0) * 86400) + ((hh || 0) * 3600) + ((mm || 0) * 60) + (ss || 0);
 }
 
 

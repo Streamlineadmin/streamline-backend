@@ -450,7 +450,7 @@ async function getItems(req, res) {
         const items = await models.Items.findAll({
             where: { companyId },
             raw: true,
-            order: [['createdAt','DESC']]
+            order: [['createdAt', 'DESC']]
         });
 
         if (!items || items.length === 0) {
@@ -973,6 +973,11 @@ async function stockReconcilation(req, res) {
 
         for (const item of items) {
             const { 'Item ID': itemId, 'Price/Unit': price } = item;
+            if (
+                String(item['Final Stock'] ?? '').trim() === '' ||
+                Number.isNaN(Number(String(item['Final Stock'] ?? '').trim()))
+            ) continue;
+
             if (!item['Final Stock'] && item['Final Stock'] != 0) continue;
             let err = '';
             const existingItem = itemIdMap[itemId?.toString()]
