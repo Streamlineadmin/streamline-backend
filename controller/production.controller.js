@@ -239,7 +239,7 @@ async function startProduction(req, res) {
                         const [days, hours, minutes, seconds] = !data?.plannedTime ? [0, 0, 0, 0] : data?.plannedTime?.split(":")?.map(Number);
                         const totalMinutes = (((days * 24) + hours) * 60) + minutes;
                         const miniute = (finishedGoodsQuantity) * (totalMinutes / childFinishedGoods[0]?.quantity);
-                        const totalSeconds = miniute * 60;
+                        const totalSeconds = (miniute * 60) + seconds;
 
                         const day = Math.floor(totalSeconds / (24 * 3600));
                         const remainingAfterDays = totalSeconds % (24 * 3600);
@@ -361,7 +361,7 @@ async function startProduction(req, res) {
                 const [days, hours, minutes, seconds] = !data?.plannedTime ? [0, 0, 0, 0] : data?.plannedTime?.split(":")?.map(Number);
                 const totalMinutes = (((days * 24) + hours) * 60) + minutes;
                 const miniute = (productions[index]?.quantity) * (totalMinutes / finishedGoods[0]?.quantity);
-                const totalSeconds = miniute * 60;
+                const totalSeconds = (miniute * 60) + seconds;
 
                 const day = Math.floor(totalSeconds / (24 * 3600));
                 const remainingAfterDays = totalSeconds % (24 * 3600);
@@ -951,7 +951,11 @@ async function issueRawMaterial(req, res) {
         if (!production) {
             return res.status(404).json({ message: 'Production not found.' });
         }
-        await production.update({ status: 2 });
+        await production.update({
+            status: 2, ...(production.productionStartDate
+                ? {}
+                : { productionStartDate: new Date().toISOString() })
+        });
         const settings = isValidJSON(production?.isManual) || {}
         const approvalCount = await models.InventoryApproval.count({
             where: {
@@ -1073,16 +1077,22 @@ async function issueRawMaterial(req, res) {
 async function updateProcess(req, res) {
     try {
         const { processData, by } = req.body;
-        await models.Production.update({ status: 2 }, {
-            where: {
-                id: processData?.[0]?.productionId
-            }
+        const production = await models.Production.findOne({
+            where: { id: processData?.[0]?.productionId }
+        });
+        if (!production) {
+            return res.status(404).json({ message: 'Production not found.' });
+        }
+        await production.update({
+            status: 2, ...(production.productionStartDate
+                ? {}
+                : { productionStartDate: new Date().toISOString() })
         });
         for (const element of processData) {
             if ((element.currentTime && element.amount)) {
                 const process = await models.ProductionSalesProcess.findOne({ where: { id: element.id } });
-                const [days, hours, miniutes] = element.currentTime.split(":").map(Number);
-                const totalMinutes = ((((days || 0) * 24) + hours) * 60) + miniutes;
+                const [days, hours, miniutes, seconds] = element.currentTime.split(":").map(Number);
+                const totalMinutes = ((((days || 0) * 24) + hours) * 60) + miniutes + ((seconds || 0) / 60);
                 let totalCost = ((totalMinutes / 60) * element.amount);
                 let currentAverageTime = '';
                 if (!process.currentPlannedTime) {
@@ -1141,10 +1151,16 @@ async function updateProcess(req, res) {
 async function updateCost(req, res) {
     try {
         const { additionalChargesData, by } = req.body;
-        await models.Production.update({ status: 2 }, {
-            where: {
-                id: additionalChargesData[0]?.productionId
-            }
+        const production = await models.Production.findOne({
+            where: { id: additionalChargesData[0]?.productionId }
+        });
+        if (!production) {
+            return res.status(404).json({ message: 'Production not found.' });
+        }
+        await production.update({
+            status: 2, ...(production.productionStartDate
+                ? {}
+                : { productionStartDate: new Date().toISOString() })
         });
         for (const element of additionalChargesData) {
             if (!element.todayCost) continue;
@@ -1196,7 +1212,11 @@ async function updateScrapLogs(req, res) {
                 id: scrapLogs[0]?.productionId
             }
         });
-        await production.update({ status: 2 })
+        await production.update({
+            status: 2, ...(production.productionStartDate
+                ? {}
+                : { productionStartDate: new Date().toISOString() })
+        });
         const settings = isValidJSON(production?.isManual) || {}
         const approvalCount = await models.InventoryApproval.count({
             where: {
@@ -1465,6 +1485,19 @@ async function saveFinishedGoods(req, res) {
             },
             transaction
         });
+
+        const finishedGood = await models.ProductionFinishedGoods.findOne({
+            where: {
+                id: finishedGoods[0].id
+            }
+        });
+        if (finishedGood?.passedQuantity >= finishedGood?.quantity) {
+            await production.update({
+                status: 4, ...(production.productionCompletionDate
+                    ? {}
+                    : { productionCompletionDate: new Date().toISOString() })
+            });
+        }
 
         for (const element of additionalCharges) {
             await models.ProductionAdditionalCharges.update({
@@ -2652,7 +2685,7 @@ async function startBulkProduction(req, res) {
                 const [days, hours, minutes, seconds] = !data?.plannedTime ? [0, 0, 0, 0] : data?.plannedTime?.split(":")?.map(Number);
                 const totalMinutes = (((days * 24) + hours) * 60) + minutes;
                 const miniute = (productions[index]?.quantity) * (totalMinutes / finishedGoods[0]?.quantity);
-                const totalSeconds = miniute * 60;
+                const totalSeconds = (miniute * 60) + seconds;
 
                 const day = Math.floor(totalSeconds / (24 * 3600));
                 const remainingAfterDays = totalSeconds % (24 * 3600);
@@ -2801,9 +2834,17 @@ async function discardProduction(req, res) {
 
 async function bulkIssue(req, res) {
     try {
-        const { productionId, quantity, companyId, userId } = req.body;
+        const { productionId, quantity, companyId,
+            userId, auto, skip, finishedGoodStoreMap,
+            rawMaterialStoreMap, scrapMaterialStoreMap } =
+            req.body;
         let totalPrice = 0;
         const production = await models.Production.findByPk(productionId);
+        await production.update({
+            status: 2, ...(production.productionStartDate
+                ? {}
+                : { productionStartDate: new Date().toISOString() })
+        });
         const [finishedGoods, rawMaterials, scraps, processes, charges] = await Promise.all([
             models.ProductionFinishedGoods.findAll({ where: { productionId } }),
             models.ProductionRawMaterials.findAll({ where: { productionId } }),
@@ -2813,17 +2854,18 @@ async function bulkIssue(req, res) {
         ]);
         for (const element of charges) {
             const unit = element.amount / finishedGoods[0].quantity;
-            await element.update({ totalCost: (element.totalCost || 0) + (unit * quantity) });
+            auto && await element.update({ totalCost: (element.totalCost || 0) + (unit * quantity) });
+            !auto && await element.update({ currentCost: (element.currentCost || 0) + (unit * quantity) });
             totalPrice += unit * quantity;
         }
         for (const element of processes) {
             const [dd, hh, mm, ss] = element?.plannedTime?.split(":").map(Number);
             const unit = (((dd || 0) * 86400 + (hh || 0) * 3600 + (mm || 0) * 60 + (ss || 0)) / finishedGoods[0].quantity) * quantity;
-            const cost = (unit / 3600) * element.perHourCost;
+            const cost = (unit / 3600) * (element.perHourCost || 0);
             totalPrice += cost;
-            const current = timeToSeconds(element.totalPlannedTime);
+            const current = timeToSeconds(auto ? element.totalPlannedTime : element?.currentPlannedTime);
             const result = secondsToTime(unit + current);
-            await element.update({ totalPlannedTime: result, averageCost: (element.averageCost || 0) + cost, processCompleteOn: (element.processCompleteOn || 0) + quantity });
+            await element.update({ ...(auto ? { totalPlannedTime: result, averageCost: (element.averageCost || 0) + cost } : { currentPlannedTime: result, currentaverageCost: (element.currentaverageCost || 0) + cost }), processCompleteOn: (element.processCompleteOn || 0) + quantity });
         }
         for (const element of scraps) {
             const settings = isValidJSON(element?.isManual) || {};
@@ -2836,7 +2878,7 @@ async function bulkIssue(req, res) {
                 approvalId: `INA${approvalCount + 1}`,
                 documentType: 'Scrap Material',
                 documentNumber: production.id,
-                approvalStatus: settings?.['productionScrapMaterial'] == 'manual' ? 'Pending' : 'Auto Approved',
+                approvalStatus: 'Auto Approved',
                 requestedBy: userId,
                 companyId: companyId,
                 status: 1,
@@ -2850,17 +2892,17 @@ async function bulkIssue(req, res) {
                     productionId: element.productionId
                 }
             });
-            settings?.['productionScrapMaterial'] != 'manual' &&
-                await models.ProductionScrapMaterials.update({ producedQuantity: (element?.producedQuantity || 0) + (unit * quantity) }, {
-                    where: {
-                        id: element.id
-                    }
-                });
+
+            await models.ProductionScrapMaterials.update({ producedQuantity: (element?.producedQuantity || 0) + (unit * quantity) }, {
+                where: {
+                    id: element.id
+                }
+            });
 
             const store = await models.Store.findOne({
                 where: {
                     companyId: Number(companyId),
-                    name: element.store?.replaceAll("-fromrejectstore", "")
+                    name: scrapMaterialStoreMap?.[element.itemId]?.replaceAll("-fromrejectstore", "")
                 }
             });
 
@@ -2874,7 +2916,7 @@ async function bulkIssue(req, res) {
             await models.StoreItems.create({
                 storeId: store.id,
                 itemId: item.id,
-                quantity: settings?.['productionScrapMaterial'] == 'manual' ? 0 : ((unit * quantity) * (element?.conversionFactor || 1)),
+                quantity: ((unit * quantity) * (element?.conversionFactor || 1)),
                 status: 1,
                 addedBy: Number(companyId),
                 price: !rawMaterial ? (item?.price || 0) : 0,
@@ -2887,7 +2929,7 @@ async function bulkIssue(req, res) {
                 transferNumber: generateTransferNumber(),
                 fromStoreId: null,
                 itemId: item.id,
-                quantity: settings?.['productionScrapMaterial'] == 'manual' ? null : ((unit * quantity) * (element?.conversionFactor || 1)),
+                quantity: ((unit * quantity) * (element?.conversionFactor || 1)),
                 toStoreId: store.id,
                 transferDate: new Date().toISOString(),
                 transferredBy: Number(companyId),
@@ -2916,8 +2958,9 @@ async function bulkIssue(req, res) {
         const storeMap = new Map(stores.map(store => [store.name, store]));
         const itemMap = new Map(items.map(item => [item.itemId, item]));
         for (const element of rawMaterials) {
+            if (skip?.includes(element.itemId)) continue;
             const unit = element.quantity / finishedGoods[0].quantity;
-            if (!element.store) continue;
+            if (!rawMaterialStoreMap[element.itemId]) continue;
             const settings = isValidJSON(production?.isManual) || {}
             const approvalCount = await models.InventoryApproval.count({
                 where: {
@@ -2928,7 +2971,7 @@ async function bulkIssue(req, res) {
                 approvalId: `INA${approvalCount + 1}`,
                 documentType: 'Raw Material',
                 documentNumber: production.id,
-                approvalStatus: settings?.['productionRawMaterial'] == 'manual' ? 'Pending' : 'Auto Approved',
+                approvalStatus: 'Auto Approved',
                 requestedBy: userId,
                 companyId: companyId,
                 status: 1,
@@ -2936,133 +2979,134 @@ async function bulkIssue(req, res) {
             });
 
             const stockTransferPayloads = [];
-            const storeName = element.store?.replaceAll("-fromrejectstore", "");
+            const storeName = rawMaterialStoreMap[element.itemId];
             const store = storeMap.get(storeName);
             const item = itemMap.get(element.itemId);
             if (!store || !item) continue;
             const isRejected = element?.isReject || false;
-            if (settings?.['productionRawMaterial'] != 'manual') {
-                const existingStock = await models.StoreItems.findAll({
-                    where: {
-                        storeId: store.id,
-                        itemId: item.id,
-                        isRejected
-                    },
-                    order: [['createdAt', 'ASC']]
-                });
-                let price = 0;
-                let remainingQuantity = (unit * quantity) * (element?.conversionFactor || 1);
-                for (const stock of existingStock) {
-                    if (remainingQuantity <= 0) break;
-                    if (stock.quantity <= 0) continue;
-                    const deductQty = Math.min(stock.quantity, remainingQuantity);
-                    remainingQuantity -= deductQty;
-                    await stock.update({ quantity: stock.quantity - deductQty });
-                    stockTransferPayloads.push({
-                        transferNumber: generateTransferNumber(),
-                        fromStoreId: store.id,
-                        itemId: item.id,
-                        quantity: -deductQty,
-                        toStoreId: null,
-                        transferDate: new Date().toISOString(),
-                        transferredBy: userId,
-                        companyId,
-                        price: stock.price,
-                        productionId: production.productionId,
-                        productionNavigationId: production.id,
-                        isRejected,
-                        approvalId: approval.id,
-                        quantityForApproval: deductQty
-                    });
-
-                    price += stock.price * deductQty;
-                }
-                totalPrice += price;
-                await models.ProductionRawMaterials.update(
-                    {
-                        consumedQuantity: Number((element.consumedQuantity || 0)) + Number(((unit * quantity) || 0)),
-                        averagePrice: (element.averagePrice || 0) + price
-                    },
-                    {
-                        where: { id: element.id }
-                    }
-                );
-
-            }
-            else {
+            const existingStock = await models.StoreItems.findAll({
+                where: {
+                    storeId: store.id,
+                    itemId: item.id,
+                    isRejected
+                },
+                order: [['createdAt', 'ASC']]
+            });
+            let price = 0;
+            let remainingQuantity = (unit * quantity) * (element?.conversionFactor || 1);
+            for (const stock of existingStock) {
+                if (remainingQuantity <= 0) break;
+                if (stock.quantity <= 0) continue;
+                const deductQty = Math.min(stock.quantity, remainingQuantity);
+                remainingQuantity -= deductQty;
+                await stock.update({ quantity: stock.quantity - deductQty });
                 stockTransferPayloads.push({
                     transferNumber: generateTransferNumber(),
                     fromStoreId: store.id,
                     itemId: item.id,
-                    quantity: null,
+                    quantity: -deductQty,
                     toStoreId: null,
                     transferDate: new Date().toISOString(),
                     transferredBy: userId,
                     companyId,
-                    price: 0,
+                    price: stock.price,
                     productionId: production.productionId,
                     productionNavigationId: production.id,
                     isRejected,
                     approvalId: approval.id,
-                    quantityForApproval: element.issuedToday * (element?.conversionFactor || 1)
+                    quantityForApproval: deductQty
                 });
+
+                price += stock.price * deductQty;
             }
+            totalPrice += price;
+            auto && await models.ProductionRawMaterials.update(
+                {
+                    consumedQuantity: Number((element.consumedQuantity || 0)) + Number(((unit * quantity) || 0)),
+                    averagePrice: (element.averagePrice || 0) + price
+                },
+                {
+                    where: { id: element.id }
+                }
+            );
+            !auto && await models.ProductionRawMaterials.update(
+                {
+                    issuedQuantity: Number((element.issuedQuantity || 0)) + (unit*quantity),
+                    currentAverage: (element.currentAverage || 0) + price
+                },
+                {
+                    where: { id: element.id }
+                }
+            );
 
             if (stockTransferPayloads.length > 0) {
                 await models.StockTransfer.bulkCreate(stockTransferPayloads);
             }
         }
         for (const element of finishedGoods) {
-            if (!element.store) continue;
-            const settings = isValidJSON(production?.isManual) || {}
-            const approvalCount = await models.InventoryApproval.count({
-                where: {
-                    companyId
-                }
-            });
-            const approval = await models.InventoryApproval.create({
-                approvalId: `INA${approvalCount + 1}`,
-                documentType: 'Finished Good',
-                documentNumber: production.id,
-                approvalStatus: settings?.['productionFinishedGood'] == 'manual' ? 'Pending' : 'Auto Approved',
-                requestedBy: userId,
-                companyId: companyId,
-                status: 1,
-                approvedBy: null
-            });
+            if (!finishedGoodStoreMap?.[element.itemId]) continue;
+            await element.update({ producedQuantity: (element.producedQuantity || 0) + quantity, ...(auto ? { passedQuantity: (element.passedQuantity || 0) + quantity, cost: (element.cost || 0) + totalPrice } : {}), ...(!auto ? { quantityToTest: (element.quantityToTest || 0) + quantity } : {}) });
+            if (auto) {
+                const approvalCount = await models.InventoryApproval.count({
+                    where: {
+                        companyId
+                    }
+                });
+                const approval = await models.InventoryApproval.create({
+                    approvalId: `INA${approvalCount + 1}`,
+                    documentType: 'Finished Good',
+                    documentNumber: production.id,
+                    approvalStatus: 'Auto Approved',
+                    requestedBy: userId,
+                    companyId: companyId,
+                    status: 1,
+                    approvedBy: null
+                });
+                const item = await models.Items.findOne({ where: { companyId: Number(companyId), itemId: element.itemId } });
+                const stores = storeMap.get(finishedGoodStoreMap[element.itemId]);
+                const costPerUnit = totalPrice / quantity;
 
-            await element.update({ producedQuantity: (element.producedQuantity || 0) + quantity, passedQuantity: (element.passedQuantity || 0) + quantity, cost: (element.cost || 0) + totalPrice });
-            const item = await models.Items.findOne({ where: { companyId: Number(companyId), itemId: element.itemId } });
-            const stores = storeMap.get(element.store);
-            const costPerUnit = totalPrice / quantity;
+                await models.StoreItems.create({
+                    storeId: stores.id,
+                    itemId: item.id,
+                    quantity: (quantity * (finishedGoods[0]?.conversionFactor || 1)),
+                    status: 1,
+                    addedBy: companyId,
+                    price: costPerUnit,
+                    approvalId: approval.id,
+                    quantityForApproval: quantity * (finishedGoods[0]?.conversionFactor || 1)
+                });
 
-            await models.StoreItems.create({
-                storeId: stores.id,
-                itemId: item.id,
-                quantity: settings?.['productionFinishedGood'] == 'manual' ? 0 : (quantity * (finishedGoods[0]?.conversionFactor || 1)),
-                status: 1,
-                addedBy: companyId,
-                price: costPerUnit,
-                approvalId: approval.id,
-                quantityForApproval: quantity * (finishedGoods[0]?.conversionFactor || 1)
-            });
-
-            await models.StockTransfer.create({
-                transferNumber: generateTransferNumber(),
-                fromStoreId: null,
-                itemId: item.id,
-                quantity: settings?.['productionFinishedGood'] == 'manual' ? null : (quantity * (finishedGoods[0]?.conversionFactor || 1)),
-                toStoreId: stores.id,
-                transferDate: new Date().toISOString(),
-                transferredBy: companyId,
-                companyId,
-                price: costPerUnit,
-                productionId: production.productionId,
-                productionNavigationId: production.id,
-                approvalId: approval.id,
-                quantityForApproval: quantity * (finishedGoods[0]?.conversionFactor || 1)
-            });
+                await models.StockTransfer.create({
+                    transferNumber: generateTransferNumber(),
+                    fromStoreId: null,
+                    itemId: item.id,
+                    quantity: (quantity * (finishedGoods[0]?.conversionFactor || 1)),
+                    toStoreId: stores.id,
+                    transferDate: new Date().toISOString(),
+                    transferredBy: companyId,
+                    companyId,
+                    price: costPerUnit,
+                    productionId: production.productionId,
+                    productionNavigationId: production.id,
+                    approvalId: approval.id,
+                    quantityForApproval: quantity * (finishedGoods[0]?.conversionFactor || 1)
+                });
+            }
+            if (element.passedQuantity >= element.quantity) {
+                await production.update({
+                    status: 4, ...(production.productionCompletionDate
+                        ? {}
+                        : { productionCompletionDate: new Date().toISOString() })
+                });
+            }
         }
+
+        await models.ProductionHistory.create({
+            productionId,
+            actionType: `Bulk Issue Requested.`,
+            summary: `Bulk Issue Requested For ${quantity} Units.`
+        });
 
         res.status(200).json({
             message: 'Bulk Issue Successfully.'
