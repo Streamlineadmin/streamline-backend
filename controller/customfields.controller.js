@@ -15,7 +15,8 @@ async function addCustomfields(req, res) {
         options,
         showByDefault,
         level,
-        category
+        category,
+        unique
       } = req.body;
 
     if (!fieldName || !type || !documentType) {
@@ -33,7 +34,8 @@ async function addCustomfields(req, res) {
       options: isValidJSON(options) || [],
       showByDefault: showByDefault || false,
       level: level || '',
-      category
+      category,
+      unique: unique || false
     });
 
     return res.status(201).json({
