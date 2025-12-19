@@ -241,6 +241,8 @@ async function getReports(req, res) {
                     salesOrderNumber: productionMap[element.productionId]?.documentNumber,
                     bomId: bomMap[productionMap[element.productionId]?.bomId]?.bomId,
                     bomName: bomMap[productionMap[element.productionId]?.bomId]?.bomName,
+                    bomNavigationId: bomMap[productionMap[element.productionId]?.bomId]?.id,
+                    productionNavigationId: productionMap[element.productionId]?.id
                 });
             }
             return res.status(200).json({ data, total: data.length });
@@ -340,6 +342,8 @@ async function getReports(req, res) {
                     uom: uomMap[finishedGoodsMap[element.productionId]?.uom],
                     bomId: bomMap[productionMap[element.productionId]?.bomId]?.bomId,
                     bomName: bomMap[productionMap[element.productionId]?.bomId]?.bomName,
+                    bomNavigationId: bomMap[productionMap[element.productionId]?.bomId]?.id,
+                    productionNavigationId: productionMap[element.productionId]?.id,
                     category: categorysMap[itemsMap[finishedGoodsMap[element.productionId]?.itemId]?.category],
                     subCategory: categorysMap[itemsMap[finishedGoodsMap[element.productionId]?.itemId]?.subCategory],
                     microCategory: categorysMap[itemsMap[element.itemId]?.microCategory],

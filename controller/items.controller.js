@@ -29,6 +29,39 @@ async function addItem(req, res) {
             });
         }
 
+        const uniqueCustomField = await models.CustomFields.findOne({
+            where: {
+                documentType: 'item',
+                companyId,
+                unique: true
+            },
+            raw: true
+        });
+
+        if (uniqueCustomField) {
+            const customFieldValue = customFields?.[uniqueCustomField.fieldName];
+            if (customFieldValue !== undefined &&
+                customFieldValue !== null &&
+                customFieldValue !== '') {
+                const existingItemWithCustomField = await models.Items.findOne({
+                    where: {
+                        companyId,
+                        [Op.and]: [
+                            models.Sequelize.literal(
+                                `JSON_UNQUOTE(JSON_EXTRACT(customFields, '$."${uniqueCustomField.fieldName}"')) = '${String(customFieldValue)}'`
+                            )
+                        ]
+                    }
+                });
+
+                if (existingItemWithCustomField) {
+                    return res.status(409).json({
+                        message: `An item with the same Custom Field "${uniqueCustomField.fieldName}" value already exists.`
+                    });
+                }
+            }
+        }
+
         // ✅ Check if item already exists
         const itemResult = await models.Items.findOne({
             where: {
@@ -194,6 +227,47 @@ async function editItem(req, res) {
         if (existingItem) {
             return res.status(409).json({ message: "Item ID already exists for another item!" });
         }
+
+        const uniqueCustomField = await models.CustomFields.findOne({
+            where: {
+                documentType: 'item',
+                companyId,
+                unique: true
+            },
+            raw: true
+        });
+
+        if (uniqueCustomField) {
+            const customFieldValue = customFields?.[uniqueCustomField.fieldName];
+
+            if (
+                customFieldValue !== undefined &&
+                customFieldValue !== null &&
+                customFieldValue !== ''
+            ) {
+                const valueToCompare = String(customFieldValue);
+
+                const existingItemWithCustomField = await models.Items.findOne({
+                    where: {
+                        companyId,
+                        id: { [Op.ne]: id }, // 👈 exclude current item
+                        [Op.and]: [
+                            models.Sequelize.literal(
+                                `JSON_UNQUOTE(JSON_EXTRACT(customFields, '$."${uniqueCustomField.fieldName}"')) = '${valueToCompare}'`
+                            )
+                        ]
+                    }
+                });
+
+                if (existingItemWithCustomField) {
+                    return res.status(409).json({
+                        message: `An item with the same Custom Field "${uniqueCustomField.fieldName}" value already exists.`
+                    });
+                }
+            }
+        }
+
+
 
         // Transaction ensures atomic update
         const transaction = await models.sequelize.transaction();
@@ -526,7 +600,6 @@ async function getItems(req, res) {
     }
 }
 
-
 async function addBulkItem(req, res) {
     try {
         const file = req.file;
@@ -540,6 +613,31 @@ async function addBulkItem(req, res) {
         let errorArray = [];
         let err = '';
 
+        const uniqueCustomField = await models.CustomFields.findOne({
+            where: {
+                documentType: 'item',
+                companyId,
+                unique: true
+            },
+            raw: true
+        });
+
+        const uniqueCustomFieldMap = {};
+        const uniqueFieldInSheet = {};
+
+        if (uniqueCustomField) {
+            const allItems = await models.Items.findAll({
+                where: { companyId },
+                attributes: ["customFields"],
+                raw: true
+            });
+            allItems.forEach(item => {
+                const val = isValidJSON(item?.customFields)?.[uniqueCustomField.fieldName];
+                if (val !== undefined && val !== null && val !== '') {
+                    uniqueCustomFieldMap[String(val).trim()] = true;
+                }
+            });
+        }
         const itemIds = data.map(item => item['* Item ID']?.toString()?.trim());
 
         const existingItems = await models.Items.findAll({
@@ -649,6 +747,20 @@ async function addBulkItem(req, res) {
                 err += 'Same ItemId found in sheet. ';
             }
 
+            if (uniqueCustomField) {
+                const val = item?.customFields?.[uniqueCustomField.fieldName];
+                if (val !== undefined && val !== null && val !== '') {
+                    const v = String(val).trim();
+                    if (uniqueCustomFieldMap?.[v]) {
+                        err += `"${uniqueCustomField.fieldName}" already exists. `;
+                    }
+                    if (uniqueFieldInSheet?.[v]) {
+                        err += `Duplicate "${uniqueCustomField.fieldName}" in sheet. `;
+                    }
+                    uniqueFieldInSheet[v] = true;
+                }
+            }
+
             // if (item['HSN'] && !hsnRegex.test(item['HSN'])) {
             //     err += 'HSN is not Valid.'
             // }
@@ -754,6 +866,8 @@ async function addBulkItem(req, res) {
             }
         }
 
+        console.log("mapmap", uniqueCustomFieldMap, uniqueFieldInSheet);
+
         const msg = !errorArray.length
             ? 'Bulk items uploaded successfully.'
             : errorArray.length !== data.length
@@ -782,6 +896,32 @@ async function bulkEditItems(req, res) {
         const existingItems = await models.Items.findAll({
             where: { companyId, itemId: { [Op.in]: itemIds } },
         });
+
+        const uniqueCustomField = await models.CustomFields.findOne({
+            where: {
+                documentType: 'item',
+                companyId,
+                unique: true
+            },
+            raw: true
+        });
+
+        const uniqueCustomFieldMap = {};
+        const uniqueFieldInSheet = {};
+
+        if (uniqueCustomField) {
+            const allItems = await models.Items.findAll({
+                where: { companyId },
+                attributes: ["customFields", "itemId"],
+                raw: true
+            });
+            allItems.forEach(item => {
+                const val = isValidJSON(item?.customFields)?.[uniqueCustomField.fieldName];
+                if (val !== undefined && val !== null && val !== '') {
+                    uniqueCustomFieldMap[String(val).trim()] = item?.itemId;
+                }
+            });
+        }
 
         const existingItemsMap = new Map(existingItems.map(item => [item.itemId, item]));
 
@@ -841,6 +981,20 @@ async function bulkEditItems(req, res) {
             }
             if (item["Micro Category"] && subCategory.id != microCategory.parentId) {
                 err += "Micro Category Not Found under this Sub Category."
+            }
+
+            if (uniqueCustomField) {
+                const val = item?.customFields?.[uniqueCustomField.fieldName];
+                if (val !== undefined && val !== null && val !== '') {
+                    const v = String(val).trim();
+                    if (uniqueCustomFieldMap?.[v] && uniqueCustomFieldMap?.[v] !== itemId) {
+                        err += `"${uniqueCustomField.fieldName}" already exists. `;
+                    }
+                    if (uniqueFieldInSheet?.[v]) {
+                        err += `Duplicate "${uniqueCustomField.fieldName}" in sheet. `;
+                    }
+                    uniqueFieldInSheet[v] = true;
+                }
             }
 
             if (err) {

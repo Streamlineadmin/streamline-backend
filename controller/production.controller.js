@@ -1477,7 +1477,7 @@ async function saveFinishedGoods(req, res) {
         await models.ProductionFinishedGoods.update({
             passedQuantity: (finishedGoods[0]?.passedQuantity || 0) + (settings?.['productionFinishedGood'] == 'manual' ? 0 : passedQty),
             rejectQuantity: (finishedGoods[0]?.rejectQuantity || 0) + (settings?.['productionFinishedGood'] == 'manual' ? 0 : (rejectQty || 0)),
-            cost: (finishedGoods[0]?.total || 0) + total,
+            cost: (finishedGoods[0]?.cost || 0) + total,
             quantityToTest: 0
         }, {
             where: {
@@ -3031,7 +3031,7 @@ async function bulkIssue(req, res) {
             );
             !auto && await models.ProductionRawMaterials.update(
                 {
-                    issuedQuantity: Number((element.issuedQuantity || 0)) + (unit*quantity),
+                    issuedQuantity: Number((element.issuedQuantity || 0)) + (unit * quantity),
                     currentAverage: (element.currentAverage || 0) + price
                 },
                 {
@@ -3044,6 +3044,7 @@ async function bulkIssue(req, res) {
             }
         }
         for (const element of finishedGoods) {
+            console.log("totalPrice", totalPrice);
             if (!finishedGoodStoreMap?.[element.itemId]) continue;
             await element.update({ producedQuantity: (element.producedQuantity || 0) + quantity, ...(auto ? { passedQuantity: (element.passedQuantity || 0) + quantity, cost: (element.cost || 0) + totalPrice } : {}), ...(!auto ? { quantityToTest: (element.quantityToTest || 0) + quantity } : {}) });
             if (auto) {

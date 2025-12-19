@@ -146,6 +146,7 @@ function getblogs(req, res) {
         required: true,
       }
     ],
+    order: [['createdAt', 'DESC']]
   }).then(result => {
     if (!result || result.length === 0) {
       return res.status(200).json([]);
