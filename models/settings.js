@@ -22,7 +22,11 @@ module.exports = (sequelize, DataTypes) => {
         productionFinishedGood: DataTypes.STRING,
         productionRawMaterial: DataTypes.STRING,
         productionScrapMaterial: DataTypes.STRING,
-        fetchCategoryOnCustomFields: DataTypes.STRING
+        fetchCategoryOnCustomFields: DataTypes.STRING,
+        template: {
+            type: DataTypes.STRING,
+            defaultValue: 'default'
+        }
     }, {
         sequelize,
         modelName: 'Settings',
