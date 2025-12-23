@@ -414,7 +414,22 @@ async function startProduction(req, res) {
 
 async function getProductions(req, res) {
     try {
-        const { companyId } = req.body;
+        const { companyId, endDate, startDate } = req.body;
+        let finalStartDate;
+        let finalEndDate;
+
+        if (startDate && endDate) {
+            finalStartDate = new Date(startDate);
+            finalEndDate = new Date(endDate);
+            finalStartDate.setDate(finalStartDate.getDate() - 1);
+            finalEndDate.setDate(finalEndDate.getDate() + 1);
+        } else {
+            finalEndDate = new Date();
+            finalStartDate = new Date();
+            finalStartDate.setDate(finalEndDate.getDate() - 7);
+            finalStartDate.setDate(finalStartDate.getDate() - 1);
+            finalEndDate.setDate(finalEndDate.getDate() + 1);
+        }
         const salesDocuments = await models.Documents.findAll({
             where: {
                 companyId: Number(companyId),
@@ -423,6 +438,9 @@ async function getProductions(req, res) {
                 },
                 status: {
                     [Op.notIn]: [0, 2]
+                },
+                createdAt: {
+                    [Op.between]: [finalStartDate, finalEndDate]
                 }
             },
             raw: true,
@@ -446,6 +464,9 @@ async function getProductions(req, res) {
                 bulkProductionId: null,
                 status: {
                     [Op.ne]: 0
+                },
+                createdAt: {
+                    [Op.between]: [finalStartDate, finalEndDate]
                 }
             },
             raw: true
@@ -539,10 +560,28 @@ async function getProductions(req, res) {
 
 async function getBulkProductions(req, res) {
     try {
-        const { companyId } = req.body;
+        const { companyId, startDate, endDate } = req.body;
+        let finalStartDate;
+        let finalEndDate;
+
+        if (startDate && endDate) {
+            finalStartDate = new Date(startDate);
+            finalEndDate = new Date(endDate);
+            finalStartDate.setDate(finalStartDate.getDate() - 1);
+            finalEndDate.setDate(finalEndDate.getDate() + 1);
+        } else {
+            finalEndDate = new Date();
+            finalStartDate = new Date();
+            finalStartDate.setDate(finalEndDate.getDate() - 7);
+            finalStartDate.setDate(finalStartDate.getDate() - 1);
+            finalEndDate.setDate(finalEndDate.getDate() + 1);
+        }
         const bulkProductions = await models.BulkProduction.findAll({
             where: {
-                companyId
+                companyId,
+                createdAt: {
+                    [Op.between]: [finalStartDate, finalEndDate]
+                }
             },
             raw: true
         });
@@ -2738,7 +2777,22 @@ async function startBulkProduction(req, res) {
 
 async function remainingProduction(req, res) {
     try {
-        const { companyId } = req.body;
+        const { companyId, startDate, endDate } = req.body;
+        let finalStartDate;
+        let finalEndDate;
+
+        if (startDate && endDate) {
+            finalStartDate = new Date(startDate);
+            finalEndDate = new Date(endDate);
+            finalStartDate.setDate(finalStartDate.getDate() - 1);
+            finalEndDate.setDate(finalEndDate.getDate() + 1);
+        } else {
+            finalEndDate = new Date();
+            finalStartDate = new Date();
+            finalStartDate.setDate(finalEndDate.getDate() - 7);
+            finalStartDate.setDate(finalStartDate.getDate() - 1);
+            finalEndDate.setDate(finalEndDate.getDate() + 1);
+        }
         const productions = await models.Production.findAll({
             where: {
                 companyId: Number(companyId),
@@ -2774,7 +2828,10 @@ async function remainingProduction(req, res) {
                 documentNumber: {
                     [Op.in]: Object.values(docMap)
                 },
-                companyId: Number(companyId)
+                companyId: Number(companyId),
+                createdAt: {
+                    [Op.between]: [finalStartDate, finalEndDate]
+                }
             },
             attributes: ['id', 'documentNumber', 'requestedBy', 'deliveryDate'],
             raw: true
@@ -2786,7 +2843,7 @@ async function remainingProduction(req, res) {
         const items = await models.DocumentItems.findAll({
             where: {
                 documentNumber: {
-                    [Op.in]: Object.values(docMap)
+                    [Op.in]: documents?.map(doc => doc.documentNumber)
                 }
             },
             raw: true
