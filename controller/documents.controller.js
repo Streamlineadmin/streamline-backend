@@ -5,6 +5,9 @@ const { generateTransferNumber, generateProductionId } = require('../helpers/tra
 const { getTodayDateInIST, gstStateCodes } = require('../helpers/helper');
 const { isValidJSON } = require('../helpers/add-level');
 const axios = require('axios');
+const nodemailer = require('nodemailer');
+const path = require("path");
+const fs = require("fs");
 
 async function createDocument(req, res) {
   try {
@@ -4491,6 +4494,74 @@ const createEWayBill = async (req, res) => {
   }
 }
 
+async function emailDocument(req, res) {
+  const directory = path.join(__dirname, '..', 'uploads', req.file.filename);
+  try {
+    const { fileName, to, subject, htmlContent, companyId } = req.body;
+
+    const emailCredential = await models.EMailCredential.findOne({
+      where: {
+        companyId: Number(companyId)
+      }
+    })
+
+    const user = emailCredential?.email || process.env.SMTP_USER;
+    const pass = emailCredential?.password || process.env.SMTP_PASS;
+    const from = emailCredential?.email || process.env.SMTP_USER;
+
+    const transporter = nodemailer.createTransport({
+      host: process.env.SMTP_HOST,
+      port: process.env.SMTP_PORT,
+      secure: true,
+      auth: {
+        user: user,
+        pass: pass
+      }
+    });
+
+    const formattedHtml = htmlContent
+      .split("\n\n")
+      .map(p => `<p>${p.replace(/\n/g, "<br />")}<br/>
+    <div style="display: flex; align-items: center; margin: 10px 0;">
+      <a href="https://easemargin.com" target="_blank" style="text-decoration:none; color: inherit; display:flex; align-items:center;">
+        Powered By 
+        <img src="https://testapi.easemargin.com/uploads/1750521347467-ease%20logo.png" 
+             style="width:90px; height:16px; object-fit:contain; margin-left:5px;" />
+      </a>
+    </div>
+  </p>`)
+      .join("");
+
+
+
+    await transporter.sendMail({
+      from: from,
+      to,
+      subject: subject || "Sharing Document",
+      html: formattedHtml,
+      attachments: [
+        {
+          filename: fileName || "document.pdf",
+          path: req.file.path,
+          contentType: "application/pdf"
+        }
+      ]
+    });
+
+    fs.unlink(directory, (err) => {
+    });
+
+    res.json({ message: "Document Emailed Successfully." });
+  } catch (err) {
+    fs.unlink(directory, (err) => {
+    });
+    console.error("responseCode", err);
+    res.status(500).json({
+      error: err.responseCode == 535 ? "Invalid App Credential." : "Something Went Wrong."
+    });
+  }
+}
+
 
 module.exports = {
   getDocuments,
@@ -4507,5 +4578,6 @@ module.exports = {
   approveDocument,
   createEInvoice,
   createEWayBill,
-  fetchCurrentDoc
+  fetchCurrentDoc,
+  emailDocument
 };

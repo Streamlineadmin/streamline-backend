@@ -137,6 +137,7 @@ const documentApprovalRoutes = require("./routes/documentApproval");
 const labelsRoute = require("./routes/labels");
 const inventoryApprovalRoutes = require("./routes/inventoryApproval");
 const eInvoiceRoutes = require("./routes/eInvoiceCredentials");
+const eMailRoutes = require("./routes/emailCredentials");
 const { mode } = require("simple-statistics");
 const app = express();
 
@@ -232,6 +233,7 @@ app.use("/documentApproval", documentApprovalRoutes);
 app.use("/labels", labelsRoute);
 app.use("/inventoryApproval", inventoryApprovalRoutes);
 app.use("/eInvoice", eInvoiceRoutes);
+app.use("/email", eMailRoutes);
 
 
 module.exports = app;
