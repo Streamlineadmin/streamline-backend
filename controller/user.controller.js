@@ -347,6 +347,26 @@ async function updateProfileURL(req, res) {
     }
 }
 
+async function partialUser(req, res) {
+    try {
+        const user = await models.Users.findOne({
+            where: {
+                companyId: req.body.companyId,
+                role: {
+                    [Op.in]: [1, 2]
+                }
+            },
+            raw: true
+        });
+        res.status(200).json({ ...user, logoUrl: user?.profileURL || "" });
+    } catch (error) {
+        res.status(500).json({
+            message: "Something went wrong, please try again later!",
+            error: error?.message || error
+        });
+    }
+}
+
 module.exports = {
     addUser: addUser,
     getUsers: getUsers,
@@ -354,4 +374,5 @@ module.exports = {
     deleteUser: deleteUser,
     updateProfile: updateProfile,
     updateProfileURL: updateProfileURL,
+    partialUser: partialUser
 }
