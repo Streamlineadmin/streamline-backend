@@ -40,6 +40,16 @@ module.exports = (sequelize, DataTypes) => {
   }, {
     sequelize,
     modelName: 'StockTransfer',
+    indexes: [
+      {
+        name: 'idx_stock_transfer_company_id',
+        fields: ['companyId'],
+      },
+      {
+        name: 'idx_stock_transfer_item_id',
+        fields: ['itemId'],
+      },
+    ],
   });
 
   return StockTransfer;

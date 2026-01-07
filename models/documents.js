@@ -188,6 +188,12 @@ module.exports = (sequelize, DataTypes) => {
   }, {
     sequelize,
     modelName: 'Documents',
+    indexes: [
+      {
+        name: 'idx_document_items_company_id',
+        fields: ['companyId'],
+      },
+    ],
   });
 
   return Documents;
