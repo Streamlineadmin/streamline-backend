@@ -27,6 +27,16 @@ module.exports = (sequelize, DataTypes) => {
   }, {
     sequelize,
     modelName: 'StoreItems',
+    indexes: [
+      {
+        name: 'idx_store_items_store_id',
+        fields: ['storeId'],
+      },
+      {
+        name: 'idx_store_items_item_id',
+        fields: ['itemId'],
+      },
+    ],
   });
   return StoreItems;
 };

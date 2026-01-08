@@ -18,7 +18,8 @@ function addBuyerSupplier(req, res) {
         GSTType: req.body.gstType,
         ip_address: req.body.ip_address,
         status: req.body.status,
-        customerType: req.body?.customerType || "company"
+        customerType: req.body?.customerType || "company",
+        pocDetails: req.body?.pocDetails || []
     }
 
     models.BuyerSupplier.create(buyerSupplierData).then(result => {
@@ -70,6 +71,7 @@ async function editBuyerSupplier(req, res) {
             GSTNumber: gstNumber,
             GSTType: gstType,
             ip_address,
+            pocDetails: req.body?.pocDetails || []
         });
 
         if (addresses && addresses.length > 0) {
@@ -192,7 +194,8 @@ async function getBuyerSupplier(req, res) {
     try {
         const companyId = req.body.companyId;
         const buyerSuppliers = await models.BuyerSupplier.findAll({
-            where: { companyId }
+            where: { companyId },
+            order: [['createdAt', 'DESC']]
         });
 
         if (!buyerSuppliers || buyerSuppliers.length === 0) {
@@ -244,7 +247,7 @@ async function bulkUploadBuyerSuppliers(req, res) {
         });
 
         const existingBuyerSupplierMap = existingBuyerSupplier?.reduce((acc, curr) => {
-            acc[curr?.companyName] = 1;
+            acc[curr?.companyName?.toLowerCase?.()] = 1;
             return acc;
         }, {});
 
@@ -257,7 +260,6 @@ async function bulkUploadBuyerSuppliers(req, res) {
         const errorData = [];
         const requiredFields = [
             "* Company Name",
-            "* Company Email",
             "* Company Type",
             "* Address",
             "* Address Type",
@@ -280,7 +282,7 @@ async function bulkUploadBuyerSuppliers(req, res) {
                 "Person Email": personEmail,
                 "Phone": phone,
                 "* Company Name": companyName,
-                "* Company Email": companyEmail,
+                "Company Email": companyEmail,
                 "* Company Type": companyType,
                 "GST Number": gstNumber,
                 "GST Type": gstType,
@@ -291,19 +293,19 @@ async function bulkUploadBuyerSuppliers(req, res) {
                 "* State": state,
             } = row;
 
-            if (existingBuyerSupplierMap[companyName]) {
+            if (existingBuyerSupplierMap[companyName?.toLowerCase?.()]) {
                 row["Error"] = 'Company Name Already Exist.'
                 errorData.push(row);
                 continue;
             }
 
-            if (sheetDataBuyerSupplierMap?.[companyName]) {
+            if (sheetDataBuyerSupplierMap?.[companyName?.toLowerCase?.()]) {
                 row["Error"] = 'Company Name Already Exist in Sheet.'
                 errorData.push(row);
                 continue;
             }
 
-            sheetDataBuyerSupplierMap[companyName] = 1;
+            sheetDataBuyerSupplierMap[companyName?.toLowerCase?.()] = 1;
 
             if (missingFields.length > 0) {
                 row["Error"] = `Missing required fields: ${missingFields.join(", ")}`;
@@ -323,6 +325,7 @@ async function bulkUploadBuyerSuppliers(req, res) {
                 GSTType: gstType?.trim() ? gstType == 'Regular' ? 1 : 2 : '',
                 status: 1,
                 customerType: "company",
+                pocDetails: personName?.trim() ? [{ name: personName?.trim(), email: personEmail?.trim(), phone: phone || "" }] : [],
             });
 
             addressPayload.push({

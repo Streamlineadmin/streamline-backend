@@ -1,6 +1,7 @@
 const express = require('express');
 const { Model } = require('sequelize');
 const documentsController = require('../controller/documents.controller');
+const { upload } = require('../helpers/file-uploader');
 
 const router = express.Router();
 router.post('/', documentsController.getDocuments);
@@ -18,5 +19,6 @@ router.post('/getServiceChallanItems', documentsController.getServiceChallanItem
 router.post('/approveDocument', documentsController.approveDocument);
 router.post('/createEInvoice', documentsController.createEInvoice);
 router.post('/createEWayBill', documentsController.createEWayBill);
+router.post('/emailDocument', upload.single("pdfBase64"), documentsController.emailDocument);
 
 module.exports = router;

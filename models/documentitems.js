@@ -48,10 +48,18 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.JSON,
       defaultValue: []
     },
-    type: DataTypes.STRING
+    type: DataTypes.STRING,
+    imageUrl: DataTypes.STRING,
+    category: DataTypes.INTEGER
   }, {
     sequelize,
     modelName: 'DocumentItems',
+    indexes: [
+      {
+        name: 'idx_document_items_company_id',
+        fields: ['companyId'],
+      },
+    ],
   });
   return DocumentItems;
 };

@@ -5,6 +5,9 @@ const { generateTransferNumber, generateProductionId } = require('../helpers/tra
 const { getTodayDateInIST, gstStateCodes } = require('../helpers/helper');
 const { isValidJSON } = require('../helpers/add-level');
 const axios = require('axios');
+const nodemailer = require('nodemailer');
+const path = require("path");
+const fs = require("fs");
 
 async function createDocument(req, res) {
   try {
@@ -113,7 +116,8 @@ async function createDocument(req, res) {
       bomName = '',
       finishedGood = {},
       serviceOrderNumber = '',
-      serviceOrderDate = ''
+      serviceOrderDate = '',
+      contactPerson = ''
     } = req.body;
 
     let message = '';
@@ -136,6 +140,7 @@ async function createDocument(req, res) {
       documentType,
       documentNumber,
       buyerName,
+      contactPerson,
       documentTo,
       buyerBillingAddress,
       advancePayment,
@@ -236,6 +241,7 @@ async function createDocument(req, res) {
 
     if (isDraft) document.update({
       documentType,
+      contactPerson,
       documentNumber,
       buyerName,
       documentTo,
@@ -332,13 +338,27 @@ async function createDocument(req, res) {
     });
 
     if (documentType != documentTypes.purchaseInvoice) {
-      const documentSeries = await models.DocumentSeries.findOne({
-        where: {
-          id: seriesId
+      if (seriesId) {
+        const documentSeries = await models.DocumentSeries.findOne({
+          where: {
+            id: seriesId
+          }
+        });
+        if (documentSeries) {
+          await documentSeries.update({ nextNumber: documentSeries.nextNumber + 1 });
         }
-      });
-      if (documentSeries) {
-        await documentSeries.update({ nextNumber: documentSeries.nextNumber + 1 });
+      }
+      else {
+        const defaultSeries = await models.DocumentSeries.findOne({
+          where: {
+            companyId: Number(companyId),
+            DocType: documentType,
+            default: 1
+          }
+        });
+        if (defaultSeries) {
+          await defaultSeries.update({ nextNumber: defaultSeries.nextNumber + 1 });
+        }
       }
     }
 
@@ -805,7 +825,9 @@ async function createDocument(req, res) {
             ServiceID: item?.ServiceID,
             ServiceName: item?.ServiceName,
             additionalDetails: item?.additionalDetails,
-            customFields: item?.customFields
+            customFields: item?.customFields,
+            imageUrl: item?.imageUrl,
+            category: item?.category
           })
         })
       ),
@@ -933,7 +955,56 @@ async function createDocument(req, res) {
           status: 1,
           approvedBy: null
         });
-        message = settings?.['purchaseDocument'] == 'manual' ? 'inventory' : ''
+        message = settings?.['purchaseDocument'] == 'manual' ? 'inventory' : '';
+        const purchaseItems = await models.DocumentItems.findAll({
+          where: {
+            companyId: Number(companyId),
+            documentNumber: purchaseOrderNumber
+          }
+        });
+        const total = purchaseItems?.reduce((acc, curr) => {
+          acc += Number(curr.totalBeforeTax);
+          return acc;
+        }, 0);
+        const purchaseAdditionalCharges = await models.DocumentAdditionalCharges.findAll({
+          where: {
+            documentNumber: purchaseOrderNumber,
+            companyId: Number(companyId)
+          }
+        });
+
+        const additionalCost = purchaseAdditionalCharges?.reduce((acc, curr) => {
+          acc += Number(curr.total);
+          return acc;
+        }, 0) || 0;
+
+        const priceMap = purchaseItems?.reduce((acc, curr) => {
+          const percent = (Number(curr.totalBeforeTax) / total) * 100;
+          acc[curr.itemId] = ((Number(curr.totalAfterTax)) + ((percent * additionalCost) / 100)) / curr.quantity;
+          return acc;
+        }, {});
+
+        const purchaseInvoice = await models.Documents.findOne({
+          where: {
+            purchaseOrderNumber,
+            documentType: "Purchase Invoice",
+            companyId: Number(companyId)
+          }
+        });
+        if (purchaseInvoice) {
+          const purchaseItems = await models.DocumentItems.findAll({
+            where: {
+              companyId: Number(companyId),
+              documentNumber: purchaseInvoice.documentNumber
+            }
+          });
+          if (Array.isArray(purchaseItems) && purchaseItems.length) {
+            purchaseItems.forEach((item) => {
+              priceMap[item.itemId] = Number(item.totalAfterTax) / item.quantity
+            })
+          }
+        }
+
         await Promise.all([models.StoreItems.bulkCreate(items?.filter(item => item?.receivedToday).map(item => {
           const itemId = itemsMap.get(item.itemId) || null;
           const storeId = storesMap.get(store) || null;
@@ -943,7 +1014,7 @@ async function createDocument(req, res) {
             quantity: settings?.['purchaseDocument'] == 'manual' ? 0 : ((item?.receivedToday * (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1))) || 0),
             status: 1,
             addedBy: createdBy,
-            price: item?.price / (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1)),
+            price: (priceMap?.[item.itemId] || item?.price) / (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1)),
             documentNumber: document.documentNumber,
             approvalId: approval.id,
             quantityForApproval: (item?.receivedToday * (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1))) || 0
@@ -963,7 +1034,7 @@ async function createDocument(req, res) {
             transferredBy: createdBy,
             comment: '',
             companyId,
-            price: item?.price / (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1)),
+            price: (priceMap?.[item.itemId] || item?.price) / (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1)),
             documentNumber: document.documentNumber,
             documentType,
             approvalId: approval.id,
@@ -1537,6 +1608,22 @@ async function createDocument(req, res) {
       });
 
       if (serviceChallan && (serviceChallan.addStockOn === 'GRN' || documentType === documentTypes.serviceQr)) {
+        let finishedGood = null;
+        if (serviceOrderNumber) {
+          const production = await models.Production.findOne({
+            where: {
+              serviceOrderNumber,
+              companyId: Number(companyId)
+            }
+          });
+          if (production) {
+            finishedGood = await models.ProductionFinishedGoods.findOne({
+              where: {
+                productionId: production.id
+              }
+            });
+          }
+        }
         documentType === documentTypes.serviceGrn && await models.Documents.update({ addStockOn: 'GRN' },
           {
             where: {
@@ -1580,7 +1667,7 @@ async function createDocument(req, res) {
             quantity: settings?.['serviceDocument'] == 'manual' ? 0 : (item?.receivedToday * (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1))) || 0,
             status: 1,
             addedBy: createdBy,
-            price: item?.price / (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1)),
+            price: (!finishedGood ? item?.price : (finishedGood.cost || 0) / finishedGood.quantity) / (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1)),
             documentNumber: document.documentNumber,
             approvalId: approval.id,
             quantityForApproval: (item?.receivedToday * (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1))) || 0
@@ -1600,7 +1687,7 @@ async function createDocument(req, res) {
             transferredBy: createdBy,
             comment: '',
             companyId,
-            price: item?.price / (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1)),
+            price: (!finishedGood ? item?.price : (finishedGood.cost || 0) / finishedGood.quantity) / (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1)),
             documentNumber: document.documentNumber,
             documentType,
             approvalId: approval.id,
@@ -1683,6 +1770,35 @@ async function createDocument(req, res) {
       });
     }
 
+    if (status && documentType === "Service Order") {
+      const production = await models.Production.findOne({
+        where: {
+          companyId: Number(companyId),
+          serviceOrderNumber: documentNumber
+        },
+        raw: true
+      });
+
+      if (production) {
+        let cost = items?.reduce((acc, curr) => {
+          acc += Number(curr?.totalAfterTax || 0)
+          return acc;
+        }, 0);
+
+        if (Array.isArray(additionalCharges)) {
+          for (const element of additionalCharges) {
+            cost += Number(element.total || 0);
+          }
+        }
+        const finishedGood = await models.ProductionFinishedGoods.findOne({
+          where: {
+            productionId: production.id
+          }
+        });
+        await finishedGood.update({ cost: ((finishedGood.cost || 0) + cost) });
+      }
+    }
+
     if (status && documentType === "Service Challan" && serviceOrderNumber) {
       const production = await models.Production.findOne({
         where: {
@@ -1692,15 +1808,23 @@ async function createDocument(req, res) {
         raw: true
       });
       if (production) {
-
         const itemsMap = items?.reduce((acc, curr) => {
           acc[curr.itemId] = curr.quantity;
           return acc;
         }, {});
+        let cost = 0;
         const itemsPriceMap = items?.reduce((acc, curr) => {
           acc[curr.itemId] = curr.price;
+          cost += Number(curr?.totalAfterTax || 0)
           return acc;
         }, {});
+
+        if (Array.isArray(additionalCharges)) {
+          for (const element of additionalCharges) {
+            cost += Number(element.total || 0);
+          }
+        }
+
         const productionRawMaterial = await models.ProductionRawMaterials.findAll({
           where: {
             productionId: production.id
@@ -1714,6 +1838,12 @@ async function createDocument(req, res) {
             });
           }
         }
+        const finishedGood = await models.ProductionFinishedGoods.findOne({
+          where: {
+            productionId: production.id
+          }
+        });
+        await finishedGood.update({ cost: ((finishedGood.cost || 0) + cost) });
       }
 
     }
@@ -1730,8 +1860,7 @@ async function createDocument(req, res) {
         where: {
           companyId: Number(companyId),
           serviceOrderNumber: serviceOrderNumber
-        },
-        raw: true
+        }
       });
       if (production && serviceChallan) {
         const finishedGoods = await models.ProductionFinishedGoods.findAll({
@@ -1741,16 +1870,19 @@ async function createDocument(req, res) {
         });
         for (const element of finishedGoods) {
           if (documentType === 'Service Grn') {
-            element.update({
+            await element.update({
               producedQuantity: (element.producedQuantity || 0) + items[0].receivedToday,
               passedQuantity: (element.passedQuantity || 0) + Number(serviceChallan.addStockOn === 'GRN' ? items[0].receivedToday : 0),
             });
           } else {
-            element.update({
+            await element.update({
               // producedQuantity: (element?.producedQuantity || 0) + Number(items[0].receivedToday || 0),
               passedQuantity: (element?.passedQuantity || 0) + Number(items[0].receivedToday),
               rejectQuantity: (element?.rejectQuantity || 0) + Number(items[0].pendingQuantity)
             });
+          }
+          if (element.passedQuantity >= element.quantity) {
+            await production.update({ status: 4 });
           }
         }
       }
@@ -1903,7 +2035,8 @@ async function createDocument(req, res) {
         price: finishedGood?.price,
         totalBeforeTax: finishedGood?.totalBeforeTax,
         totalTax: finishedGood?.totalTax,
-        totalAfterTax: finishedGood?.totalAfterTax
+        totalAfterTax: finishedGood?.totalAfterTax,
+        category: finishedGood?.category
       });
       if (addStockOn === 'GRN' || documentType === 'Service Confirmation Qr') {
         const settings = await models.Settings.findOne({
@@ -3522,7 +3655,9 @@ async function editDocument(req, res) {
             ServiceID: item?.ServiceID,
             ServiceName: item?.ServiceName,
             additionalDetails: item?.additionalDetails,
-            customFields: item?.customFields
+            customFields: item?.customFields,
+            imageUrl: item?.imageUrl,
+            category: item?.category
           })
         })
       ),
@@ -4359,6 +4494,74 @@ const createEWayBill = async (req, res) => {
   }
 }
 
+async function emailDocument(req, res) {
+  const directory = path.join(__dirname, '..', 'uploads', req.file.filename);
+  try {
+    const { fileName, to, subject, htmlContent, companyId } = req.body;
+
+    const emailCredential = await models.EMailCredential.findOne({
+      where: {
+        companyId: Number(companyId)
+      }
+    })
+
+    const user = emailCredential?.email || process.env.SMTP_USER;
+    const pass = emailCredential?.password || process.env.SMTP_PASS;
+    const from = emailCredential?.email || process.env.SMTP_USER;
+
+    const transporter = nodemailer.createTransport({
+      host: process.env.SMTP_HOST,
+      port: process.env.SMTP_PORT,
+      secure: true,
+      auth: {
+        user: user,
+        pass: pass
+      }
+    });
+
+    const formattedHtml = htmlContent
+      .split("\n\n")
+      .map(p => `<p>${p.replace(/\n/g, "<br />")}<br/>
+    <div style="display: flex; align-items: center; margin: 10px 0;">
+      <a href="https://easemargin.com" target="_blank" style="text-decoration:none; color: inherit; display:flex; align-items:center;">
+        Powered By 
+        <img src="https://testapi.easemargin.com/uploads/1750521347467-ease%20logo.png" 
+             style="width:90px; height:16px; object-fit:contain; margin-left:5px;" />
+      </a>
+    </div>
+  </p>`)
+      .join("");
+
+
+
+    await transporter.sendMail({
+      from: from,
+      to,
+      subject: subject || "Sharing Document",
+      html: formattedHtml,
+      attachments: [
+        {
+          filename: fileName || "document.pdf",
+          path: req.file.path,
+          contentType: "application/pdf"
+        }
+      ]
+    });
+
+    fs.unlink(directory, (err) => {
+    });
+
+    res.json({ message: "Document Emailed Successfully." });
+  } catch (err) {
+    fs.unlink(directory, (err) => {
+    });
+    console.error("responseCode", err);
+    res.status(500).json({
+      error: err.responseCode == 535 ? "Invalid App Credential." : "Something Went Wrong."
+    });
+  }
+}
+
 
 module.exports = {
   getDocuments,
@@ -4375,5 +4578,6 @@ module.exports = {
   approveDocument,
   createEInvoice,
   createEWayBill,
-  fetchCurrentDoc
+  fetchCurrentDoc,
+  emailDocument
 };

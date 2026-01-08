@@ -11,13 +11,13 @@ async function getReports(req, res) {
             let startDate = null, endDate = null;
 
             if (dateRange?.length === 2) {
-                const date = new Date(dateRange[0]);
-                date.setHours(0, 0, 0, 0);
-                const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
-                startDate = new Date(date.getTime() - IST_OFFSET_MS);
-                const endDateRaw = new Date(dateRange[1]);
-                endDateRaw.setHours(23, 59, 59, 999);
-                endDate = new Date(endDateRaw.getTime());
+                const IST_OFFSET = 5.5 * 60 * 60 * 1000;
+                const startIst = new Date(new Date(dateRange[0]).getTime() + IST_OFFSET);
+                const endIst = new Date(new Date(dateRange[1]).getTime() + IST_OFFSET);
+                startIst.setHours(0, 0, 0, 0);
+                endIst.setHours(23, 59, 59, 999);
+                startDate = new Date(startIst.getTime() - IST_OFFSET);
+                endDate = new Date(endIst.getTime() - IST_OFFSET);
             } else if (quickRange) {
                 const nowIst = new Date(new Date().getTime() + 5.5 * 60 * 60 * 1000);
                 const startIst = new Date(nowIst);
@@ -215,7 +215,11 @@ async function getReports(req, res) {
                     ...element,
                     ...productionMap[element.productionId],
                     uom: uomMap[element.uom],
+                    category: categorysMap[itemsMap[element.itemId]?.category],
+                    subCategory: categorysMap[itemsMap[element.itemId]?.subCategory],
+                    microCategory: categorysMap[itemsMap[element.itemId]?.microCategory],
                     producedQuantity: element?.producedQuantity || 0,
+                    pendingQuantity: Math.max(element.quantity - (element.producedQuantity || 0), 0),
                     perUnitCost: ((element.cost || 0) / (element?.passedQuantity || 1))?.toFixed?.(2) || 0,
                     rejectQuantity: element?.rejectQuantity || 0,
                     assignedTo: userMap[productionMap[element.productionId]?.assignedTo],
@@ -237,6 +241,8 @@ async function getReports(req, res) {
                     salesOrderNumber: productionMap[element.productionId]?.documentNumber,
                     bomId: bomMap[productionMap[element.productionId]?.bomId]?.bomId,
                     bomName: bomMap[productionMap[element.productionId]?.bomId]?.bomName,
+                    bomNavigationId: bomMap[productionMap[element.productionId]?.bomId]?.id,
+                    productionNavigationId: productionMap[element.productionId]?.id
                 });
             }
             return res.status(200).json({ data, total: data.length });
@@ -336,11 +342,14 @@ async function getReports(req, res) {
                     uom: uomMap[finishedGoodsMap[element.productionId]?.uom],
                     bomId: bomMap[productionMap[element.productionId]?.bomId]?.bomId,
                     bomName: bomMap[productionMap[element.productionId]?.bomId]?.bomName,
+                    bomNavigationId: bomMap[productionMap[element.productionId]?.bomId]?.id,
+                    productionNavigationId: productionMap[element.productionId]?.id,
                     category: categorysMap[itemsMap[finishedGoodsMap[element.productionId]?.itemId]?.category],
                     subCategory: categorysMap[itemsMap[finishedGoodsMap[element.productionId]?.itemId]?.subCategory],
                     microCategory: categorysMap[itemsMap[element.itemId]?.microCategory],
                     documentNumber: element.id,
-                    salesOrderNumber: productionMap[element.productionId]?.documentNumber
+                    salesOrderNumber: productionMap[element.productionId]?.documentNumber,
+                    pendingQuantity: Math.max(finishedGoodsMap[element.productionId]?.quantity - (element.processCompleteOn || 0), 0)
                 });
             }
             return res.status(200).json({ data, total: data.length });
@@ -350,13 +359,13 @@ async function getReports(req, res) {
             let startDate = null, endDate = null;
 
             if (dateRange?.length === 2) {
-                const date = new Date(dateRange[0]);
-                date.setHours(0, 0, 0, 0);
-                const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
-                startDate = new Date(date.getTime() - IST_OFFSET_MS);
-                const endDateRaw = new Date(dateRange[1]);
-                endDateRaw.setHours(23, 59, 59, 999);
-                endDate = new Date(endDateRaw.getTime());
+                const IST_OFFSET = 5.5 * 60 * 60 * 1000;
+                const startIst = new Date(new Date(dateRange[0]).getTime() + IST_OFFSET);
+                const endIst = new Date(new Date(dateRange[1]).getTime() + IST_OFFSET);
+                startIst.setHours(0, 0, 0, 0);
+                endIst.setHours(23, 59, 59, 999);
+                startDate = new Date(startIst.getTime() - IST_OFFSET);
+                endDate = new Date(endIst.getTime() - IST_OFFSET);
             }
             const stockTransfers = await models.StockTransfer.findAll({
                 where: {
@@ -671,14 +680,14 @@ async function getReports(req, res) {
 
             let startDate, endDate;
 
-            if (dateRange.length === 2) {
-                const date = new Date(dateRange[0]);
-                date.setHours(0, 0, 0, 0);
-                const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
-                startDate = new Date(date.getTime() - IST_OFFSET_MS);
-                const endDateRaw = new Date(dateRange[1]);
-                endDateRaw.setHours(23, 59, 59, 999);
-                endDate = new Date(endDateRaw.getTime());
+            if (dateRange?.length === 2) {
+                const IST_OFFSET = 5.5 * 60 * 60 * 1000;
+                const startIst = new Date(new Date(dateRange[0]).getTime() + IST_OFFSET);
+                const endIst = new Date(new Date(dateRange[1]).getTime() + IST_OFFSET);
+                startIst.setHours(0, 0, 0, 0);
+                endIst.setHours(23, 59, 59, 999);
+                startDate = new Date(startIst.getTime() - IST_OFFSET);
+                endDate = new Date(endIst.getTime() - IST_OFFSET);
             }
             const whereCondition = {
                 companyId: Number(companyId),
@@ -786,13 +795,13 @@ async function getReports(req, res) {
             let startDate, endDate;
 
             if (dateRange?.length === 2) {
-                const date = new Date(dateRange[0]);
-                date.setHours(0, 0, 0, 0);
-                const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
-                startDate = new Date(date.getTime() - IST_OFFSET_MS);
-                const endDateRaw = new Date(dateRange[1]);
-                endDateRaw.setHours(23, 59, 59, 999);
-                endDate = new Date(endDateRaw.getTime());
+                const IST_OFFSET = 5.5 * 60 * 60 * 1000;
+                const startIst = new Date(new Date(dateRange[0]).getTime() + IST_OFFSET);
+                const endIst = new Date(new Date(dateRange[1]).getTime() + IST_OFFSET);
+                startIst.setHours(0, 0, 0, 0);
+                endIst.setHours(23, 59, 59, 999);
+                startDate = new Date(startIst.getTime() - IST_OFFSET);
+                endDate = new Date(endIst.getTime() - IST_OFFSET);
             }
             const whereCondition = {
                 companyId: Number(companyId),
@@ -918,6 +927,7 @@ async function getReports(req, res) {
         const uniqueItemsMap = new Map();
         for (const item of items) {
             const key = `${item.documentNumber}_${item.itemId}`;
+            item.customFields = isValidJSON(item.customFields);
             if (!uniqueItemsMap.has(key)) {
                 uniqueItemsMap.set(key, item);
             }

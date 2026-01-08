@@ -2,6 +2,92 @@ const express = require("express");
 const bodyParser = require("body-parser");
 const path = require("path");
 const cors = require("cors");
+const cron = require("node-cron");
+const models = require('./models');
+const { Op } = require("sequelize");
+
+cron.schedule("0 0 * * *", async () => {
+  try {
+    const production = await models.Production.findAll({
+      where: {
+        status: 2
+      },
+      attributes: ['id']
+    });
+    const productionIds = production.map(data => data.id);
+    const twoDaysAgo = new Date();
+    twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
+    const rawMaterial = await models.ProductionRawMaterials.findAll({
+      where: {
+        productionId: {
+          [Op.in]: productionIds
+        },
+        updatedAt: { [Op.gt]: twoDaysAgo }
+      },
+      attributes: ["productionId"],
+      raw: true
+    });
+    const scraps = await models.ProductionScrapMaterials.findAll({
+      where: {
+        productionId: {
+          [Op.in]: productionIds
+        },
+        updatedAt: { [Op.gt]: twoDaysAgo }
+      },
+      attributes: ["productionId"],
+      raw: true
+    });
+    const finishedgoods = await models.ProductionFinishedGoods.findAll({
+      where: {
+        productionId: {
+          [Op.in]: productionIds
+        },
+        updatedAt: { [Op.gt]: twoDaysAgo }
+      },
+      attributes: ["productionId"],
+      raw: true
+    });
+    const process = await models.ProductionSalesProcess.findAll({
+      where: {
+        productionId: {
+          [Op.in]: productionIds
+        },
+        updatedAt: { [Op.gt]: twoDaysAgo }
+      },
+      attributes: ["productionId"],
+      raw: true
+    });
+    const charges = await models.ProductionAdditionalCharges.findAll({
+      where: {
+        productionId: {
+          [Op.in]: productionIds
+        },
+        updatedAt: { [Op.gt]: twoDaysAgo }
+      },
+      attributes: ["productionId"],
+      raw: true
+    });
+
+    const finalIds = [];
+    [...rawMaterial, ...scraps, ...finishedgoods, ...process, ...charges]
+      .forEach(item => {
+        finalIds.push(item.productionId);
+      });
+
+    const uniqueFinalIds = [...new Set(finalIds)];
+
+    await models.Production.update({ status: 3 }, {
+      where: {
+        id: {
+          [Op.in]: uniqueFinalIds
+        }
+      }
+    });
+
+  } catch (error) {
+    console.log(error)
+  }
+});
 
 const authenticationRoute = require("./routes/authentication");
 const fileRoute = require("./routes/file");
@@ -51,6 +137,8 @@ const documentApprovalRoutes = require("./routes/documentApproval");
 const labelsRoute = require("./routes/labels");
 const inventoryApprovalRoutes = require("./routes/inventoryApproval");
 const eInvoiceRoutes = require("./routes/eInvoiceCredentials");
+const eMailRoutes = require("./routes/emailCredentials");
+const { mode } = require("simple-statistics");
 const amyRoutes = require("./routes/amy");
 const app = express();
 
@@ -71,6 +159,30 @@ app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "/index.html"));
   //res.send("Welcome to EaseMargin APIs !");
 });
+
+app.post("/migrate", async (req, res) => {
+  try {
+    const buyerSupplier = await models.BuyerSupplier.findAll({
+    });
+
+    var i = 0;
+
+    for (const element of buyerSupplier) {
+      console.log(i++);
+      await element.update({ pocDetails: [{ name: element.name, email: element.email, phone: element.phone }] });
+    }
+
+    return res.status(200).json({
+      message: "Migration completed successfully",
+    });
+  } catch (error) {
+    console.log(error);
+    return res.status(500).json({
+      message: "Something went wrong, please try again later!",
+      error: error.message || error,
+    });
+  }
+})
 // Serve files from the 'uploads' folder
 app.use("/uploads", express.static("uploads"), fileRoute);
 
@@ -122,6 +234,8 @@ app.use("/documentApproval", documentApprovalRoutes);
 app.use("/labels", labelsRoute);
 app.use("/inventoryApproval", inventoryApprovalRoutes);
 app.use("/eInvoice", eInvoiceRoutes);
+app.use("/email", eMailRoutes);
+
 app.use("/amy", amyRoutes);
 
 module.exports = app;

@@ -22,6 +22,7 @@ async function createBOMRawMaterials(req, res) {
       status: item.status,
       createdAt: new Date(),
       updatedAt: new Date(),
+      alternateFor: item.alternateFor || null
     }));
 
     const createdItems = await models.BOMRawMaterial.bulkCreate(payload);
@@ -102,6 +103,7 @@ async function updateBOMRawMaterial(req, res) {
             costAllocation: item.costAllocation,
             status,
             updatedAt: new Date(),
+            alternateFor: item.alternateFor
           },
           { where: { id: item.id } }
         )
@@ -122,6 +124,7 @@ async function updateBOMRawMaterial(req, res) {
         status,
         createdAt: new Date(),
         updatedAt: new Date(),
+        alternateFor: item.alternateFor
       }));
 
       await models.BOMRawMaterial.bulkCreate(payload);

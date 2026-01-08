@@ -21,7 +21,8 @@ module.exports = (sequelize, DataTypes) => {
     costAllocationPercent: DataTypes.FLOAT,
     status: DataTypes.INTEGER,
     conversionFactor: DataTypes.FLOAT,
-    batchesAssigned: DataTypes.FLOAT
+    batchesAssigned: DataTypes.FLOAT,
+    alternateFor: DataTypes.STRING
   }, {
     sequelize,
     modelName: 'ProductionScrapMaterials',

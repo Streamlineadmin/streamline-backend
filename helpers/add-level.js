@@ -110,6 +110,33 @@ function getIndianTime(dateInput) {
   return new Intl.DateTimeFormat('en-IN', options).format(date);
 }
 
+function secondsToTime(totalSeconds) {
+  totalSeconds = Math.floor(totalSeconds); // avoid decimals
+
+  const dd = Math.floor(totalSeconds / 86400);
+  totalSeconds %= 86400;
+
+  const hh = Math.floor(totalSeconds / 3600);
+  totalSeconds %= 3600;
+
+  const mm = Math.floor(totalSeconds / 60);
+  const ss = Math.floor(totalSeconds % 60);
+
+  return (
+    String(dd).padStart(2, "0") + ":" +
+    String(hh).padStart(2, "0") + ":" +
+    String(mm).padStart(2, "0") + ":" +
+    String(ss).padStart(2, "0")
+  );
+}
+
+function timeToSeconds(timeString) {
+  if (!timeString) return 0;
+  const [dd, hh, mm, ss] = timeString.split(":").map(Number);
+  return ((dd || 0) * 86400) + ((hh || 0) * 3600) + ((mm || 0) * 60) + (ss || 0);
+}
+
+
 module.exports = {
   buildRawMaterialTreeWithLevel,
   isValidJSON,
@@ -117,5 +144,7 @@ module.exports = {
   istToUtc,
   getAllDatesInRange,
   formatToIstDate,
-  getIndianTime
+  getIndianTime,
+  secondsToTime,
+  timeToSeconds
 }

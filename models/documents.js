@@ -183,10 +183,17 @@ module.exports = (sequelize, DataTypes) => {
     serviceOrderDate: DataTypes.STRING,
     irnNumber: DataTypes.STRING,
     qrCode: DataTypes.TEXT,
-    ewayBillCreated: DataTypes.BOOLEAN
+    ewayBillCreated: DataTypes.BOOLEAN,
+    contactPerson: DataTypes.STRING
   }, {
     sequelize,
     modelName: 'Documents',
+    indexes: [
+      {
+        name: 'idx_document_items_company_id',
+        fields: ['companyId'],
+      },
+    ],
   });
 
   return Documents;

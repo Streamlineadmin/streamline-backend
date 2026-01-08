@@ -341,7 +341,7 @@ async function stockTransfer(req, res) {
       approvedBy: null
     });
 
-    
+
     for (const element of stockData) {
       let price = 0;
       let remainingQuantity = element.quantity * (element?.conversionFactor || 1);
@@ -541,7 +541,7 @@ async function getItemStockTransferHistory(req, res) {
         'createdAt', 'transferNumber', 'quantity', 'itemId',
         'fromStoreId', 'toStoreId', 'transferredBy', 'comment',
         'price', 'documentNumber', 'documentType',
-        'productionId', 'productionNavigationId', 'isRejected',"updatedAt"
+        'productionId', 'productionNavigationId', 'isRejected', "updatedAt"
       ],
       order: [['createdAt', 'ASC']],
       raw: true,
@@ -763,7 +763,7 @@ async function getStockTransferHistory(req, res) {
 }
 
 async function getStoreItemsByStoreId(req, res) {
-  const { storeId, isRejected = false } = req.body;
+  const { storeId, isRejected = false, fromfetch } = req.body;
   if (!storeId) return res.status(404).json({ message: "Store Not found." });
 
   try {
@@ -845,7 +845,7 @@ async function getStoreItemsByStoreId(req, res) {
       };
     });
 
-    return res.status(200).json({ storeItems });
+    return res.status(200).json({ storeItems, ...(fromfetch ? { fromfetch: true } : {}) });
 
   } catch (error) {
     console.error(error);
