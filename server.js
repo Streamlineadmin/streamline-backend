@@ -1,3 +1,5 @@
+require("dotenv").config();
+console.log("OPENAI_API_KEY:", process.env.OPENAI_API_KEY); // should print your key
 const http = require('http');
 const app = require('./app');
 const port = 8080;

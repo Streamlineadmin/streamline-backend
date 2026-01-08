@@ -139,6 +139,7 @@ const inventoryApprovalRoutes = require("./routes/inventoryApproval");
 const eInvoiceRoutes = require("./routes/eInvoiceCredentials");
 const eMailRoutes = require("./routes/emailCredentials");
 const { mode } = require("simple-statistics");
+const amyRoutes = require("./routes/amy");
 const app = express();
 
 // Apply body-parser middleware to handle JSON request bodies
@@ -235,5 +236,6 @@ app.use("/inventoryApproval", inventoryApprovalRoutes);
 app.use("/eInvoice", eInvoiceRoutes);
 app.use("/email", eMailRoutes);
 
+app.use("/amy", amyRoutes);
 
 module.exports = app;
