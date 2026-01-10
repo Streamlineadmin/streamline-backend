@@ -549,6 +549,115 @@ async function getAllItemsBoms(req, res) {
   }
 }
 
+async function duplicateBom(req, res) {
+  const transaction = await models.sequelize.transaction();
+
+  try {
+    const { companyId, bomId } = req.body;
+
+    if (!companyId || !bomId) {
+      return res.status(400).json({ message: "companyId and bomId are required" });
+    }
+
+    // 1️⃣ Fetch full BOM (same as getBOMById)
+    const bom = await models.BOMDetails.findByPk(bomId, {
+      where: { companyId },
+      include: [
+        {
+          model: models.BOMProductionProcess,
+          as: "BOMProductionProcesses",
+        },
+        { model: models.BOMFinishedGoods, as: "finishedGoods" },
+        { model: models.BOMRawMaterial, as: "rawMaterials" },
+        { model: models.BOMScrapMaterial, as: "scrapMaterials" },
+        { model: models.BOMAdditionalCharges, as: "additionalCharges" },
+        { model: models.BOMAttachments, as: "attachments" },
+      ],
+      transaction,
+    });
+
+    if (!bom) {
+      await transaction.rollback();
+      return res.status(404).json({ message: "BOM not found" });
+    }
+
+    // 2️⃣ Generate BOM Series
+    const bomSeries = await models.BOMSeries.findOne({
+      where: { companyId, default: 1 },
+      transaction,
+      lock: transaction.LOCK.UPDATE,
+    });
+
+    const newBomseries = bomSeries.prefix + bomSeries.nextNumber;
+
+    // 3️⃣ Duplicate BOM Master
+    const bomData = bom.get({ plain: true });
+    delete bomData.id;
+    delete bomData.createdAt;
+    delete bomData.updatedAt;
+
+    const newBom = await models.BOMDetails.create(
+      {
+        ...bomData,
+        bomId: newBomseries,
+      },
+      { transaction }
+    );
+
+    const newBOMId = newBom.id;
+
+    // 4️⃣ Helper to bulk copy child tables
+    const bulkCopy = async (Model, records) => {
+      if (!records?.length) return;
+
+      await Model.bulkCreate(
+        records.map(r => {
+          const obj = r.get({ plain: true }); // ✅ IMPORTANT
+          delete obj.id;
+          delete obj.createdAt;
+          delete obj.updatedAt;
+          return {
+            ...obj,
+            bomId: newBOMId,
+          };
+        }),
+        { transaction }
+      );
+    };
+
+
+    // 5️⃣ Duplicate all children
+    await bulkCopy(models.BOMProductionProcess, bom.BOMProductionProcesses);
+    await bulkCopy(models.BOMFinishedGoods, bom.finishedGoods);
+    await bulkCopy(models.BOMRawMaterial, bom.rawMaterials);
+    await bulkCopy(models.BOMScrapMaterial, bom.scrapMaterials);
+    await bulkCopy(models.BOMAdditionalCharges, bom.additionalCharges);
+    await bulkCopy(models.BOMAttachments, bom.attachments);
+
+    // 6️⃣ Update series
+    await bomSeries.update(
+      { nextNumber: bomSeries.nextNumber + 1 },
+      { transaction }
+    );
+
+    await transaction.commit();
+
+    return res.status(201).json({
+      message: "BOM duplicated successfully",
+      data: {
+        id: newBOMId,
+      },
+    });
+  } catch (error) {
+    await transaction.rollback();
+    console.error("Duplicate BOM Error:", error);
+    return res.status(500).json({
+      message: "Failed to duplicate BOM",
+      error: error.message,
+    });
+  }
+}
+
 module.exports = {
   createBOMDetails: createBOMDetails,
   updateBOMDetails: updateBOMDetails,
@@ -558,5 +667,6 @@ module.exports = {
   getAllBOMs: getAllBOMs,
   deleteBillOfMaterials: deleteBillOfMaterials,
   editBillOfMaterials: editBillOfMaterials,
-  getAllItemsBoms: getAllItemsBoms
+  getAllItemsBoms: getAllItemsBoms,
+  duplicateBom: duplicateBom
 };

@@ -28,8 +28,8 @@ async function createProductionProcess(req, res) {
       status,
       companyId,
       userId,
-      plannedTime,
-      cost,
+      plannedTime: plannedTime || "00:00:00:00",
+      cost: cost || 0,
     });
 
     res.status(201).json({

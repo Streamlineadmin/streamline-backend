@@ -26,7 +26,9 @@ module.exports = (sequelize, DataTypes) => {
         template: {
             type: DataTypes.STRING,
             defaultValue: 'default'
-        }
+        },
+        poMandatory: DataTypes.BOOLEAN,
+        poExactQuantity: DataTypes.BOOLEAN
     }, {
         sequelize,
         modelName: 'Settings',

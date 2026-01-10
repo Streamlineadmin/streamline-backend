@@ -3198,7 +3198,15 @@ async function getDocumentItems(req, res) {
     }
 
     const purchaseOrders = await models.Documents.findAll({
-      where: { purchaseOrderNumber, companyId: Number(req.body.companyId), documentType: documentTypes.goodsReceive },
+      where:
+      {
+        purchaseOrderNumber,
+        companyId: Number(req.body.companyId),
+        documentType: documentTypes.goodsReceive,
+        status: {
+          [Op.ne]: 2
+        }
+      },
       attributes: ['documentNumber']
     });
 
@@ -4497,13 +4505,13 @@ const createEWayBill = async (req, res) => {
 async function emailDocument(req, res) {
   const directory = path.join(__dirname, '..', 'uploads', req.file.filename);
   try {
-    const { fileName, to, subject, htmlContent, companyId } = req.body;
+    const { fileName, to, subject, htmlContent, companyId, userId } = req.body;
 
     const emailCredential = await models.EMailCredential.findOne({
       where: {
-        companyId: Number(companyId)
+        userId: Number(userId)
       }
-    })
+    });
 
     const user = emailCredential?.email || process.env.SMTP_USER;
     const pass = emailCredential?.password || process.env.SMTP_PASS;
