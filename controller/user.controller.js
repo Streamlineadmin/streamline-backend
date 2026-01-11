@@ -261,6 +261,12 @@ async function updateProfile(req, res) {
             return res.status(400).json({ message: "User ID is required" });
         }
 
+        const user = await models.Users.findOne({
+            where: {
+                id: userId
+            }
+        });
+
         // Update User Table
         const [affectedRows] = await models.Users.update(
             {
@@ -288,6 +294,78 @@ async function updateProfile(req, res) {
             attributes: ['id', 'name', 'email', 'companyName', 'companyId', 'contactNo', 'role', 'website', 'businessType', 'pan', 'gstNumber', 'cin']
         });
 
+        const rolePermissionsData = await models.RolePermissions.findAll({
+            where: { companyId: user.companyId, role: user.role },
+            raw: true
+        });
+
+        let rolesAccess = [];
+        if (rolePermissionsData.length) {
+            // Collect unique IDs
+            const permissionIds = [...new Set(rolePermissionsData.map(rp => rp.permission))];
+            const subpermissionIds = [...new Set(rolePermissionsData.map(rp => rp.subpermission))];
+
+            // 4️⃣ Fetch all features & subfeatures in one go
+            const [features, subfeatures] = await Promise.all([
+                models.PermissionsFeatures.findAll({
+                    where: { id: { [Op.in]: permissionIds } },
+                    attributes: ["id", "feature"],
+                    raw: true
+                }),
+                models.PermissionsSubFeatures.findAll({
+                    where: { id: { [Op.in]: subpermissionIds } },
+                    attributes: ["id", "subfeature"],
+                    raw: true
+                })
+            ]);
+
+            const featureMap = Object.fromEntries(features.map(f => [f.id, f.feature]));
+            const subfeatureMap = Object.fromEntries(subfeatures.map(s => [s.id, s.subfeature]));
+
+            // 5️⃣ Build access array
+            rolesAccess = rolePermissionsData.map(rp => ({
+                feature: featureMap[rp.permission] || null,
+                subfeature: subfeatureMap[rp.subpermission] || null,
+                create: rp.create,
+                edit: rp.edit,
+                view: Number(rp.view),
+                delete: rp.delete
+            }));
+        }
+
+        // 6️⃣ Attach admin logo if needed
+        let logoUrl = user.profileURL || "";
+        if (user.role !== 1 && !logoUrl) {
+            const admin = await models.Users.findOne({
+                where: { role: 1, companyId: user.companyId },
+                attributes: ["profileURL"],
+                raw: true
+            });
+            logoUrl = admin?.profileURL || "";
+        }
+
+        // 7️⃣ JWT payload
+        const payload = {
+            userId: user.id,
+            username: updatedUser.username,
+            email: updatedUser.email,
+            companyId: user.companyId,
+            companyName: updatedUser.companyName,
+            businessType: updatedUser.businessType,
+            profileURL: updatedUser.profileURL,
+            website: updatedUser.website,
+            name: updatedUser.name,
+            contactPersonNumber: updatedUser.contactNo,
+            role: updatedUser.role,
+            pan: updatedUser.pan,
+            gstNumber: updatedUser.gstNumber,
+            cin: updatedUser.cin,
+            permissions: rolesAccess,
+            logoUrl
+        };
+
+        const token = jwt.sign(payload, process.env.JWT_SECRET || "secret", { expiresIn: "1h" });
+
         // Format response
         res.status(200).json({
             message: "Profile updated successfully.",
@@ -303,6 +381,7 @@ async function updateProfile(req, res) {
             pan: updatedUser.pan,
             gstNumber: updatedUser.gstNumber,
             cin: updatedUser.cin,
+            token
         });
 
     } catch (error) {
@@ -332,10 +411,83 @@ async function updateProfileURL(req, res) {
             { where: { id: userId } }
         );
 
+        const rolePermissionsData = await models.RolePermissions.findAll({
+            where: { companyId: user.companyId, role: user.role },
+            raw: true
+        });
+
+        let rolesAccess = [];
+        if (rolePermissionsData.length) {
+            // Collect unique IDs
+            const permissionIds = [...new Set(rolePermissionsData.map(rp => rp.permission))];
+            const subpermissionIds = [...new Set(rolePermissionsData.map(rp => rp.subpermission))];
+
+            // 4️⃣ Fetch all features & subfeatures in one go
+            const [features, subfeatures] = await Promise.all([
+                models.PermissionsFeatures.findAll({
+                    where: { id: { [Op.in]: permissionIds } },
+                    attributes: ["id", "feature"],
+                    raw: true
+                }),
+                models.PermissionsSubFeatures.findAll({
+                    where: { id: { [Op.in]: subpermissionIds } },
+                    attributes: ["id", "subfeature"],
+                    raw: true
+                })
+            ]);
+
+            const featureMap = Object.fromEntries(features.map(f => [f.id, f.feature]));
+            const subfeatureMap = Object.fromEntries(subfeatures.map(s => [s.id, s.subfeature]));
+
+            // 5️⃣ Build access array
+            rolesAccess = rolePermissionsData.map(rp => ({
+                feature: featureMap[rp.permission] || null,
+                subfeature: subfeatureMap[rp.subpermission] || null,
+                create: rp.create,
+                edit: rp.edit,
+                view: Number(rp.view),
+                delete: rp.delete
+            }));
+        }
+
+        // 6️⃣ Attach admin logo if needed
+        let logoUrl = profileURL || "";
+        if (user.role !== 1 && !logoUrl) {
+            const admin = await models.Users.findOne({
+                where: { role: 1, companyId: user.companyId },
+                attributes: ["profileURL"],
+                raw: true
+            });
+            logoUrl = admin?.profileURL || "";
+        }
+
+        // 7️⃣ JWT payload
+        const payload = {
+            userId: user.id,
+            username: user.username,
+            email: user.email,
+            companyId: user.companyId,
+            companyName: user.companyName,
+            businessType: user.businessType,
+            profileURL: profileURL,
+            website: user.website,
+            name: user.name,
+            contactPersonNumber: user.contactNo,
+            role: user.role,
+            pan: user.pan,
+            gstNumber: user.gstNumber,
+            cin: user.cin,
+            permissions: rolesAccess,
+            logoUrl
+        };
+
+        const token = jwt.sign(payload, process.env.JWT_SECRET || "secret", { expiresIn: "1h" });
+
         // Return the updated user data
         res.status(200).json({
             message: "Profile URL updated successfully",
-            profileURL: profileURL
+            token,
+            email: user.email
         });
 
     } catch (error) {

@@ -2,11 +2,12 @@ const models = require("../models");
 
 async function createEmailCredential(req, res) {
     try {
-        const { companyId, email, password } = req.body;
+        const { companyId, email, password, userId } = req.body;
         await models.EMailCredential.create({
             companyId,
             email,
-            password
+            password,
+            userId
         });
         return res.status(200).json({
             message: 'Credentials Saved Successfully.',
@@ -18,10 +19,10 @@ async function createEmailCredential(req, res) {
 
 async function getEmailCredential(req, res) {
     try {
-        const { companyId } = req.body;
+        const { userId } = req.body;
 
         const credential = await models.EMailCredential.findOne({
-            where: { companyId },
+            where: { userId },
         });
 
         return res.status(200).json({ data: credential });
@@ -33,10 +34,10 @@ async function getEmailCredential(req, res) {
 
 async function updateEmailCredential(req, res) {
     try {
-        const { email, password, companyId } = req.body;
+        const { email, password, userId } = req.body;
 
         const credential = await models.EMailCredential.findOne({
-            where: { companyId },
+            where: { userId },
         });
 
         if (!credential) {
@@ -53,10 +54,10 @@ async function updateEmailCredential(req, res) {
 
 async function deleteEmailCredentials(req, res) {
     try {
-        const { companyId } = req.body;
+        const { userId } = req.body;
 
         await models.EMailCredential.destroy({
-            where: { companyId },
+            where: { userId },
         });
 
         return res.status(200).json({ message: "Credentials deleted successfully." });

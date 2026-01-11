@@ -159,30 +159,6 @@ app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "/index.html"));
   //res.send("Welcome to EaseMargin APIs !");
 });
-
-app.post("/migrate", async (req, res) => {
-  try {
-    const buyerSupplier = await models.BuyerSupplier.findAll({
-    });
-
-    var i = 0;
-
-    for (const element of buyerSupplier) {
-      console.log(i++);
-      await element.update({ pocDetails: [{ name: element.name, email: element.email, phone: element.phone }] });
-    }
-
-    return res.status(200).json({
-      message: "Migration completed successfully",
-    });
-  } catch (error) {
-    console.log(error);
-    return res.status(500).json({
-      message: "Something went wrong, please try again later!",
-      error: error.message || error,
-    });
-  }
-})
 // Serve files from the 'uploads' folder
 app.use("/uploads", express.static("uploads"), fileRoute);
 
