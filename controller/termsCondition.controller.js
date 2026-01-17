@@ -1,91 +1,92 @@
 
 const models = require('../models');
 
-function addTermsCondition(req, res) {
-  const { documentType, userId, companyId, terms } = req.body;
+const { Op } = require("sequelize");
 
-  if (!documentType || !userId || !companyId || !terms || terms.length === 0) {
-    return res.status(400).json({
-      message: "Document Type, User ID, Company ID, and Terms are required.",
-    });
-  }
+async function addTermsCondition(req, res) {
+  try {
+    const { documentType, userId, companyId, terms, ip_address } = req.body;
 
-  const conflictPromises = terms.map((term) => {
-    return models.TermsCondition.findOne({
+    if (
+      !documentType ||
+      !userId ||
+      !companyId ||
+      !Array.isArray(terms) ||
+      terms.length === 0
+    ) {
+      return res.status(400).json({
+        message:
+          "Document Type, User ID, Company ID, and Terms are required.",
+      });
+    }
+
+    const documentTypes = Array.isArray(documentType)
+      ? documentType
+      : [documentType];
+
+    const conflict = await models.TermsCondition.findOne({
       where: {
-        documentType,
+        documentType: { [Op.in]: documentTypes },
         companyId,
         userId,
-        term: term.term,
-        description: term.description,
+        [Op.or]: terms.map((t) => ({
+          term: t.term,
+          description: t.description,
+        })),
       },
     });
-  });
 
-  Promise.all(conflictPromises)
-    .then((results) => {
-      for (const result of results) {
-        if (result) {
-          return res.status(409).json({
-            message: `Term "${result.term}" already exists for the given document type, company, and user.`,
-          });
-        }
-      }
-
-      const termsConditions = terms.map((term) => ({
-        companyId: req.body.companyId,
-        userId: req.body.userId,
-        documentType: req.body.documentType,
-        term: term.term,
-        description: term.description,
-        ip_address: req.body.ip_address,
-        status: 1,
-      }));
-
-      Promise.all(
-        termsConditions.map(async (termsCondition) => {
-          try {
-            const result = await models.TermsCondition.create(termsCondition);
-            return result;
-          } catch (error) {
-            console.error("Error creating terms condition:", error);
-            throw new Error("Error creating terms condition");
-          }
-        })
-      )
-        .then((results) => { 
-          res.status(201).json({
-            message: "Terms condition(s) added successfully!",
-            data: {
-              documentType: req.body.documentType,
-              userId: req.body.userId,
-              companyId: req.body.companyId,
-              ip_address: req.body.ip_address,
-              status: 1,
-              terms: results.map((term) => ({
-                id: term.id,
-                term: term.term,
-                description: term.description,
-              })),
-            },
-          });
-        })
-        .catch((error) => {
-          console.error("Error in creating TermsConditions:", error);
-          res.status(500).json({
-            message:
-              "Something went wrong in creating TermsConditions. Please try again later.",
-            error: error.message,
-          });
-        });
-    })
-    .catch((error) => {
-      console.error("Error checking for term conflicts:", error);
-      res.status(500).json({
-        message: "Something went wrong. Please try again later.",
-        error: error.message,
+    if (conflict) {
+      return res.status(409).json({
+        message: `Term "${conflict.term}" already exists for document type "${conflict.documentType}".`,
       });
+    }
+
+    const termsConditions = [];
+
+    for (const docType of documentTypes) {
+      for (const term of terms) {
+        termsConditions.push({
+          companyId,
+          userId,
+          documentType: docType,
+          term: term.term,
+          description: term.description,
+          ip_address,
+          status: 1,
+        });
+      }
+    }
+
+    const createdTerms = await models.TermsCondition.bulkCreate(
+      termsConditions,
+      { returning: true }
+    );
+
+    return res.status(201).json({
+      message: "Terms condition(s) added successfully!",
+      data: {
+        companyId,
+        userId,
+        documentType: documentTypes,
+        ip_address,
+        status: 1,
+        terms: createdTerms.map((t) => ({
+          id: t.id,
+          documentType: t.documentType,
+          term: t.term,
+          description: t.description,
+        })),
+      },
     });
+  } catch (error) {
+    console.error("Error creating terms condition:", error);
+    return res.status(500).json({
+      message:
+        "Something went wrong in creating TermsConditions. Please try again later.",
+      error: error.message,
+    });
+  }
 }
 
 async function editTermsCondition(req, res) {
@@ -104,7 +105,7 @@ async function editTermsCondition(req, res) {
     });
 
     const termIdsInRequest = terms.map(term => term.id).filter(id => id !== null);
-    
+
     // Find terms to delete (terms in DB that are NOT in the request)
     const termsToDelete = existingTerms.filter(term => !termIdsInRequest.includes(term.id));
 
@@ -179,76 +180,76 @@ async function editTermsCondition(req, res) {
 
 async function deleteTermsCondition(req, res) {
   try {
-      const { termsConditionId, companyId } = req.body;
+    const { termsConditionId, companyId } = req.body;
 
-      if (!termsConditionId || !companyId) {
-          return res.status(400).json({ message: "Terms Condition ID and Company ID are required." });
-      }
+    if (!termsConditionId || !companyId) {
+      return res.status(400).json({ message: "Terms Condition ID and Company ID are required." });
+    }
 
-      const existingTerm = await models.TermsCondition.findOne({
-          where: { id: termsConditionId, companyId },
-      });
+    const existingTerm = await models.TermsCondition.findOne({
+      where: { id: termsConditionId, companyId },
+    });
 
-      if (!existingTerm) {
-          return res.status(200).json({ message: "Terms condition not found for the given Company ID." });
-      }
+    if (!existingTerm) {
+      return res.status(200).json({ message: "Terms condition not found for the given Company ID." });
+    }
 
-      await models.TermsCondition.destroy({
-          where: { id: termsConditionId, companyId },
-      });
+    await models.TermsCondition.destroy({
+      where: { id: termsConditionId, companyId },
+    });
 
-      return res.status(200).json({
-          message: "Terms condition deleted successfully.",
-      });
+    return res.status(200).json({
+      message: "Terms condition deleted successfully.",
+    });
   } catch (error) {
-      console.error("Error deleting terms condition:", error);
-      return res.status(500).json({
-          message: "Something went wrong while deleting terms condition.",
-          error: error.message,
-          data: [],
-      });
+    console.error("Error deleting terms condition:", error);
+    return res.status(500).json({
+      message: "Something went wrong while deleting terms condition.",
+      error: error.message,
+      data: [],
+    });
   }
 }
 
 async function getTermsCondition(req, res) {
   try {
-      const { companyId } = req.body;
+    const { companyId } = req.body;
 
-      if (!companyId) {
-          return res.status(400).json({ message: "Company ID is required." });
+    if (!companyId) {
+      return res.status(400).json({ message: "Company ID is required." });
+    }
+
+    const termsConditions = await models.TermsCondition.findAll({
+      where: { companyId },
+      attributes: ["id", "documentType", "term", "description", "userId", "ip_address", "status", "createdAt", "updatedAt"],
+    });
+
+    if (!termsConditions.length) {
+      return res.status(200).json([]);
+    }
+
+    const groupedTerms = termsConditions.reduce((acc, term) => {
+      if (!acc[term.documentType]) {
+        acc[term.documentType] = { docType: term.documentType, termsData: [] };
       }
-
-      const termsConditions = await models.TermsCondition.findAll({
-          where: { companyId },
-          attributes: ["id", "documentType", "term", "description", "userId", "ip_address", "status", "createdAt", "updatedAt"],
+      acc[term.documentType].termsData.push({
+        id: term.id,
+        term: term.term,
+        desc: term.description,
       });
+      return acc;
+    }, {});
 
-      if (!termsConditions.length) {
-        return res.status(200).json([]);
-      }
-
-      const groupedTerms = termsConditions.reduce((acc, term) => {
-          if (!acc[term.documentType]) {
-              acc[term.documentType] = { docType: term.documentType, termsData: [] };
-          }
-          acc[term.documentType].termsData.push({
-              id: term.id,
-              term: term.term,
-              desc: term.description,
-          });
-          return acc;
-      }, {});
-
-      res.status(200).json(Object.values(groupedTerms));
+    res.status(200).json(Object.values(groupedTerms));
   } catch (error) {
-      console.error("Error fetching terms conditions:", error);
-      res.status(500).json({ message: "Something went wrong.", error: error.message });
+    console.error("Error fetching terms conditions:", error);
+    res.status(500).json({ message: "Something went wrong.", error: error.message });
   }
 }
 
 module.exports = {
-    addTermsCondition: addTermsCondition,
-    getTermsCondition: getTermsCondition,
-    editTermsCondition: editTermsCondition,
-    deleteTermsCondition: deleteTermsCondition,
+  addTermsCondition: addTermsCondition,
+  getTermsCondition: getTermsCondition,
+  editTermsCondition: editTermsCondition,
+  deleteTermsCondition: deleteTermsCondition,
 };

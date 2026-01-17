@@ -5,19 +5,30 @@ const { Op } = require('sequelize');
 
 async function getReports(req, res) {
     try {
-        const { companyId, documentType = '', search = '' } = req.body;
+        const { companyId, documentType = '', search = '', dateRange } = req.body;
+        let startDate = null, endDate = null;
+
+        if (dateRange?.length === 2) {
+            const IST_OFFSET = 5.5 * 60 * 60 * 1000;
+            const startIst = new Date(new Date(dateRange[0]).getTime());
+            const endIst = new Date(new Date(dateRange[1]).getTime());
+            startIst.setHours(0, 0, 0, 0);
+            endIst.setHours(23, 59, 59, 999);
+            startDate = new Date(startIst.getTime() - IST_OFFSET);
+            endDate = new Date(endIst.getTime());
+        }
         if (documentType === "productionReport") {
             const { toStore, dateRange, itemType, quickRange } = req.body;
             let startDate = null, endDate = null;
 
             if (dateRange?.length === 2) {
                 const IST_OFFSET = 5.5 * 60 * 60 * 1000;
-                const startIst = new Date(new Date(dateRange[0]).getTime() + IST_OFFSET);
-                const endIst = new Date(new Date(dateRange[1]).getTime() + IST_OFFSET);
+                const startIst = new Date(new Date(dateRange[0]).getTime());
+                const endIst = new Date(new Date(dateRange[1]).getTime());
                 startIst.setHours(0, 0, 0, 0);
                 endIst.setHours(23, 59, 59, 999);
                 startDate = new Date(startIst.getTime() - IST_OFFSET);
-                endDate = new Date(endIst.getTime() - IST_OFFSET);
+                endDate = new Date(endIst.getTime());
             } else if (quickRange) {
                 const nowIst = new Date(new Date().getTime() + 5.5 * 60 * 60 * 1000);
                 const startIst = new Date(nowIst);
@@ -71,6 +82,20 @@ async function getReports(req, res) {
                 return acc;
             }, {});
 
+            const alternateUnits = await models.AlternateUnits.findAll({
+                where: { itemId: itemIds },
+                attributes: ['itemId', 'alternateUnits', 'conversionfactor',],
+                raw: true,
+            });
+
+            const alternateUnitMap = {};
+            for (const unit of alternateUnits) {
+                if (!alternateUnitMap[unit.itemId]) {
+                    alternateUnitMap[unit.itemId] = [];
+                }
+                alternateUnitMap[unit.itemId].push({ ...unit, alternateUnits: uomMap[unit.alternateUnits] });
+            }
+
             const itemDailyData = {};
             StockTransfers.forEach(transfer => {
                 const itemId = transfer.itemId;
@@ -97,7 +122,8 @@ async function getReports(req, res) {
                     itemName: itemsMap[itemId]?.itemName || null,
                     uom: uomMap[itemsMap[itemId]?.metricsUnit] || null,
                     totalQuantity: itemDailyData[itemId].totalQuantity,
-                    documentNumber: itemId
+                    documentNumber: itemId,
+                    alternateUnits: alternateUnitMap[itemId] || [],
                 };
 
                 allDates.forEach(dateKey => {
@@ -360,12 +386,12 @@ async function getReports(req, res) {
 
             if (dateRange?.length === 2) {
                 const IST_OFFSET = 5.5 * 60 * 60 * 1000;
-                const startIst = new Date(new Date(dateRange[0]).getTime() + IST_OFFSET);
-                const endIst = new Date(new Date(dateRange[1]).getTime() + IST_OFFSET);
+                const startIst = new Date(new Date(dateRange[0]).getTime());
+                const endIst = new Date(new Date(dateRange[1]).getTime());
                 startIst.setHours(0, 0, 0, 0);
                 endIst.setHours(23, 59, 59, 999);
                 startDate = new Date(startIst.getTime() - IST_OFFSET);
-                endDate = new Date(endIst.getTime() - IST_OFFSET);
+                endDate = new Date(endIst.getTime());
             }
             const stockTransfers = await models.StockTransfer.findAll({
                 where: {
@@ -421,8 +447,8 @@ async function getReports(req, res) {
                 acc[curr.id] = curr;
                 return acc;
             }, {});
-            const startUtc = startDate ? istToUtc(startDate) : null;
-            const endUtc = startDate ? istToUtc(endDate) : null;
+            const startUtc = startDate
+            const endUtc = endDate
             const approvals = await models.InventoryApproval.findAll({
                 where: {
                     id: {
@@ -682,12 +708,12 @@ async function getReports(req, res) {
 
             if (dateRange?.length === 2) {
                 const IST_OFFSET = 5.5 * 60 * 60 * 1000;
-                const startIst = new Date(new Date(dateRange[0]).getTime() + IST_OFFSET);
-                const endIst = new Date(new Date(dateRange[1]).getTime() + IST_OFFSET);
+                const startIst = new Date(new Date(dateRange[0]).getTime());
+                const endIst = new Date(new Date(dateRange[1]).getTime());
                 startIst.setHours(0, 0, 0, 0);
                 endIst.setHours(23, 59, 59, 999);
                 startDate = new Date(startIst.getTime() - IST_OFFSET);
-                endDate = new Date(endIst.getTime() - IST_OFFSET);
+                endDate = new Date(endIst.getTime());
             }
             const whereCondition = {
                 companyId: Number(companyId),
@@ -796,12 +822,12 @@ async function getReports(req, res) {
 
             if (dateRange?.length === 2) {
                 const IST_OFFSET = 5.5 * 60 * 60 * 1000;
-                const startIst = new Date(new Date(dateRange[0]).getTime() + IST_OFFSET);
-                const endIst = new Date(new Date(dateRange[1]).getTime() + IST_OFFSET);
+                const startIst = new Date(new Date(dateRange[0]).getTime());
+                const endIst = new Date(new Date(dateRange[1]).getTime());
                 startIst.setHours(0, 0, 0, 0);
                 endIst.setHours(23, 59, 59, 999);
                 startDate = new Date(startIst.getTime() - IST_OFFSET);
-                endDate = new Date(endIst.getTime() - IST_OFFSET);
+                endDate = new Date(endIst.getTime());
             }
             const whereCondition = {
                 companyId: Number(companyId),
@@ -846,6 +872,432 @@ async function getReports(req, res) {
             }
             return res.status(200).json({ data: data, total: data.length });
         }
+        if (documentType === 'Opening & Closing Stock report') {
+            const { store, dateRange } = req.body;
+            let startDate = null, endDate = null;
+
+            if (dateRange?.length === 2) {
+                const IST_OFFSET = 5.5 * 60 * 60 * 1000;
+                const startIst = new Date(new Date(dateRange[0]).getTime());
+                const endIst = new Date(new Date(dateRange[1]).getTime());
+                startIst.setHours(0, 0, 0, 0);
+                endIst.setHours(23, 59, 59, 999);
+                startDate = new Date(startIst.getTime() - IST_OFFSET);
+                endDate = new Date(endIst.getTime());
+            }
+            const compareDate = startDate
+                ? startDate
+                : new Date(new Date().setHours(0, 0, 0, 0));
+            const items = await models.Items.findAll({
+                where: {
+                    companyId: Number(companyId)
+                },
+                order: [['createdAt', 'DESC']],
+                attributes: ['id', 'itemId', 'itemName', 'category', 'subCategory', 'microCategory', 'metricsUnit'],
+                raw: true
+            });
+            const categorys = await models.Categories.findAll({
+                where: {
+                    companyId: Number(companyId)
+                }
+            });
+            const categoryMap = categorys?.reduce((acc, curr) => {
+                acc[curr.id] = curr.name;
+                return acc;
+            }, {});
+            const uoms = await models.UOM.findAll({
+                where: {
+                    [Op.or]: [
+                        { companyId: req.body.companyId, status: 1 },
+                        { companyId: null, status: 0 }
+                    ]
+                }
+            });
+            const uomMap = uoms.reduce((acc, curr) => {
+                acc[curr.id] = curr.code;
+                return acc;
+            }, {});
+            const storeItems = await models.StoreItems.findAll({
+                where: {
+                    quantity: {
+                        [Op.gt]: 0
+                    },
+                    itemId: {
+                        [Op.in]: items.map(item => item.id),
+                    },
+                    isRejected: false
+                },
+                order: [['createdAt', 'ASC']],
+                attributes: ['itemId', 'price'],
+                raw: true
+            });
+            const fifoPrice = {};
+            storeItems.forEach((item) => {
+                if (!fifoPrice[item.itemId]) {
+                    fifoPrice[item.itemId] = item?.price || 0
+                }
+            });
+            const stockTransfers = await models.StockTransfer.findAll({
+                where: {
+                    companyId: Number(companyId),
+                    quantity: {
+                        [Op.ne]: 0
+                    },
+                    ...(store?.length > 0
+                        ? {
+                            [Op.or]: [
+                                { fromStoreId: { [Op.in]: store } },
+                                { toStoreId: { [Op.in]: store } }
+                            ]
+                        }
+                        : {}),
+                    ...(endDate ? { updatedAt: { [Op.lt]: endDate } } : {}),
+                    isRejected: false
+                },
+                order: [['updatedAt', 'ASC']],
+                raw: true
+            });
+
+            const stocksMap = {};
+            for (const element of stockTransfers) {
+                if (element.fromStoreId && element.toStoreId && (!store || store?.length == 0)) continue;
+                if (!stocksMap[element.itemId]) stocksMap[element.itemId] = {};
+                if (new Date(element.updatedAt) < compareDate) {
+                    stocksMap[element.itemId].openingQty = (stocksMap?.[element.itemId].openingQty || 0) + element.quantity;
+                    stocksMap[element.itemId].openingStockValue = (stocksMap?.[element.itemId].openingStockValue || 0) + (element.quantity * (element.price || 0));
+                }
+                else {
+                    if (element?.quantity > 0) {
+                        if (element.documentNumber || element.productionId || (element.fromStoreId && element.toStoreId)) {
+                            stocksMap[element.itemId].inwardQty = (stocksMap?.[element.itemId].inwardQty || 0) + element.quantity;
+                            stocksMap[element.itemId].inwardStockValue = (stocksMap?.[element.itemId].inwardStockValue || 0) + (element.quantity * (element.price || 0));
+                        }
+                        else {
+                            stocksMap[element.itemId].adjustmentQty = (stocksMap?.[element.itemId].adjustmentQty || 0) + element.quantity;
+                        }
+                    } else {
+                        if (element.documentNumber || element.productionId || (element.fromStoreId && element.toStoreId)) {
+                            stocksMap[element.itemId].outwardQty = (stocksMap?.[element.itemId].outwardQty || 0) + element.quantity;
+                            stocksMap[element.itemId].outwardStockValue = (stocksMap?.[element.itemId].outwardStockValue || 0) + (element.quantity * (element.price || 0));
+                        }
+                        else {
+                            stocksMap[element.itemId].adjustmentQty = (stocksMap?.[element.itemId].adjustmentQty || 0) + element.quantity;
+                        }
+                    }
+                }
+            }
+            for (const element of items) {
+                element.documentNumber = element.id;
+                element.category = categoryMap?.[element.category];
+                element.subCategory = categoryMap?.[element.subCategory];
+                element.microCategory = categoryMap?.[element.microCategory];
+                element.metricsUnit = uomMap?.[element?.metricsUnit];
+                element.openingQty = Math.abs(stocksMap[element.id]?.openingQty || 0)?.toFixed(2) || 0;
+                element.inwardQty = Math.abs(stocksMap[element.id]?.inwardQty || 0)?.toFixed(2) || 0;
+                element.outwardQty = Math.abs(stocksMap[element.id]?.outwardQty || 0)?.toFixed(2) || 0;
+                element.adjustmentQty = stocksMap[element.id]?.adjustmentQty?.toFixed(2) || 0;
+                element.closingQty = (Number(Math.abs(stocksMap[element.id]?.openingQty || 0)?.toFixed(2) || 0) +
+                    Number(Math.abs(stocksMap[element.id]?.inwardQty) || 0) -
+                    Number(Math.abs(stocksMap[element.id]?.outwardQty) || 0) +
+                    Number(stocksMap[element.id]?.adjustmentQty || 0))?.toFixed(2);
+                element.openingStockValue = Math.abs(stocksMap[element.id]?.openingStockValue || 0)?.toFixed(2) || 0;
+                element.inwardStockValue = stocksMap[element.id]?.inwardStockValue?.toFixed(2) || 0;
+                element.outwardStockValue = Math.abs(stocksMap[element.id]?.outwardStockValue || 0)?.toFixed(2) || 0;
+                element.fifoPrice = fifoPrice[element.id]?.toFixed(2) || 0;
+            }
+
+            return res.status(200).json({ data: items, total: items?.length });
+        }
+        if (documentType === 'Daily Stock report') {
+            const { store, dateRange } = req.body;
+            const IST = 'Asia/Kolkata';
+
+            const toIST_YMD = (date) =>
+                new Intl.DateTimeFormat('en-CA', {
+                    timeZone: IST,
+                    year: 'numeric',
+                    month: '2-digit',
+                    day: '2-digit'
+                }).format(new Date(date));
+
+            const toIST_DMY = (date) => {
+                const d = new Date(
+                    new Date(date).toLocaleString('en-US', { timeZone: IST })
+                );
+
+                const day = String(d.getDate()).padStart(2, '0');
+                const month = String(d.getMonth() + 1).padStart(2, '0');
+                const year = d.getFullYear();
+
+                return `${day}-${month}-${year}`;
+            };
+
+
+            const startOfISTDay = (date) => {
+                const d = new Date(date);
+                const ist = new Date(d.toLocaleString('en-US', { timeZone: IST }));
+                ist.setHours(0, 0, 0, 0);
+                return ist;
+            };
+
+            const endOfISTDay = (date) => {
+                const d = startOfISTDay(date);
+                d.setHours(23, 59, 59, 999);
+                return d;
+            };
+
+            const getAllDatesInRange = (start, end) => {
+                const dates = [];
+                const current = startOfISTDay(start);
+
+                while (current <= end) {
+                    dates.push(toIST_YMD(current)); // YYYY-MM-DD
+                    current.setDate(current.getDate() + 1);
+                }
+                return dates;
+            };
+
+            let startDate, endDate;
+
+            if (dateRange?.length === 2) {
+                startDate = startOfISTDay(dateRange[0]);
+                endDate = endOfISTDay(dateRange[1]);
+            } else {
+                endDate = endOfISTDay(new Date());
+                startDate = startOfISTDay(new Date());
+                startDate.setMonth(startDate.getMonth() - 1);
+            }
+
+            const dateList = getAllDatesInRange(startDate, endDate);
+            const startDateKey = toIST_YMD(startDate);
+
+            const categorys = await models.Categories.findAll({
+                where: {
+                    companyId: Number(companyId)
+                }
+            });
+            const categoryMap = categorys?.reduce((acc, curr) => {
+                acc[curr.id] = curr.name;
+                return acc;
+            }, {});
+
+            const uoms = await models.UOM.findAll({
+                where: {
+                    [Op.or]: [
+                        { companyId: req.body.companyId, status: 1 },
+                        { companyId: null, status: 0 }
+                    ]
+                }
+            });
+            const uomMap = uoms.reduce((acc, curr) => {
+                acc[curr.id] = curr.code;
+                return acc;
+            }, {});
+
+            const stockTransfers = await models.StockTransfer.findAll({
+                where: {
+                    companyId: Number(companyId),
+                    ...(store?.length > 0 && {
+                        [Op.or]: [
+                            { fromStoreId: { [Op.in]: store } },
+                            { toStoreId: { [Op.in]: store } }
+                        ]
+                    }),
+                    quantity: { [Op.ne]: 0 },
+                    updatedAt: { [Op.lte]: endDate },
+                    isRejected: false
+                },
+                order: [['updatedAt', 'ASC']],
+                attributes: ['itemId', 'quantity', 'updatedAt', "price", 'toStoreId', 'fromStoreId'],
+                raw: true
+            });
+
+            const items = await models.Items.findAll({
+                where: {
+                    companyId: Number(companyId)
+                },
+                raw: true
+            });
+
+            const itemIds = items.map(item => item.id);
+
+            const alternateUnits = await models.AlternateUnits.findAll({
+                where: { itemId: itemIds },
+                attributes: ['itemId', 'alternateUnits', 'conversionfactor',],
+                raw: true,
+            });
+
+            const alternateUnitMap = {};
+            for (const unit of alternateUnits) {
+                if (!alternateUnitMap[unit.itemId]) {
+                    alternateUnitMap[unit.itemId] = [];
+                }
+                alternateUnitMap[unit.itemId].push({ ...unit, alternateUnits: uomMap[unit.alternateUnits] });
+            }
+
+            const transferByDate = {};
+
+            for (const trx of stockTransfers) {
+                if (trx.toStoreId && trx.fromStoreId && (!store || store?.length === 0)) continue;
+                const dateKey = toIST_YMD(trx.updatedAt);
+                if (!transferByDate[dateKey]) {
+                    transferByDate[dateKey] = [];
+                }
+                transferByDate[dateKey].push(trx);
+            }
+
+            const runningBalance = {};
+            const resultMap = {};
+
+            items.forEach(item => {
+                runningBalance[item.id] = 0;
+                resultMap[item.id] = {
+                    documentNumber: item.id,
+                    itemId: item.itemId,
+                    category: categoryMap?.[item.category],
+                    subCategory: categoryMap?.[item.subCategory],
+                    microCategory: categoryMap?.[item.microCategory],
+                    itemName: item.itemName,
+                    price: item.price,
+                    metricsUnit: uomMap?.[item.metricsUnit],
+                    stockValue: 0,
+                    alternateUnits: alternateUnitMap[item.id] || [],
+                    customFields: isValidJSON(item.customFields) || {}
+                };
+            });
+
+            for (const trx of stockTransfers) {
+                if (trx.toStoreId && trx.fromStoreId && (!store || store?.length === 0)) continue;
+                if (toIST_YMD(trx.updatedAt) < startDateKey) {
+                    runningBalance[trx.itemId] += trx.quantity;
+                }
+            }
+
+            for (const date of dateList) {
+                const todaysTransfers = transferByDate[date] || [];
+
+                for (const trx of todaysTransfers) {
+                    runningBalance[trx.itemId] += trx.quantity;
+                    if (resultMap[trx.itemId]) resultMap[trx.itemId].stockValue += trx.quantity * (trx.price || 0);
+                }
+
+                for (const item of items) {
+                    const dmyKey = toIST_DMY(date);
+                    resultMap[item.id][dmyKey] =
+                        Number(runningBalance[item.id]).toFixed(2);
+                }
+            }
+
+            return res.status(200).json({
+                data: Object.values(resultMap),
+                total: items.length
+            });
+        }
+
+        if (documentType === 'Stock Update Ledger') {
+            const { dateRange } = req.body;
+            let startDate, endDate;
+
+            const startOfISTDay = (date) => {
+                const d = new Date(date);
+                const ist = new Date(d.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+                ist.setHours(0, 0, 0, 0);
+                return ist;
+            };
+
+            const endOfISTDay = (date) => {
+                const d = startOfISTDay(date);
+                d.setHours(23, 59, 59, 999);
+                return d;
+            };
+
+            if (dateRange?.length === 2) {
+                startDate = startOfISTDay(dateRange[0]);
+                endDate = endOfISTDay(dateRange[1]);
+            } else {
+                endDate = endOfISTDay(new Date());
+                startDate = startOfISTDay(new Date());
+                startDate.setMonth(startDate.getMonth() - 1);
+            }
+
+            const categorys = await models.Categories.findAll({
+                where: {
+                    companyId: Number(companyId)
+                }
+            });
+            const categoryMap = categorys?.reduce((acc, curr) => {
+                acc[curr.id] = curr.name;
+                return acc;
+            }, {});
+
+            const uoms = await models.UOM.findAll({
+                where: {
+                    [Op.or]: [
+                        { companyId: req.body.companyId, status: 1 },
+                        { companyId: null, status: 0 }
+                    ]
+                }
+            });
+            const uomMap = uoms.reduce((acc, curr) => {
+                acc[curr.id] = curr.code;
+                return acc;
+            }, {});
+
+            const stockTransfers = await models.StockTransfer.findAll({
+                where: {
+                    companyId: Number(companyId),
+                    updatedAt: { [Op.between]: [startDate, endDate] },
+                    isRejected: false,
+                    quantity: { [Op.ne]: 0 },
+                    [Op.or]: [
+                        { toStoreId: null },
+                        { fromStoreId: null }
+                    ]
+                },
+                raw: true
+            });
+
+            const stores = await models.Store.findAll({
+                where: {
+                    companyId: Number(companyId)
+                }
+            });
+            const storeMap = stores.reduce((acc, curr) => {
+                acc[curr.id] = curr.name;
+                return acc;
+            }, {});
+
+            const items = await models.Items.findAll({
+                where: {
+                    companyId: Number(companyId)
+                },
+                raw: true
+            });
+
+            const itemsMap = items.reduce((acc, curr) => {
+                acc[curr.id] = curr;
+                return acc;
+            }, {});
+
+            for (const element of stockTransfers) {
+                element.category = categoryMap?.[itemsMap?.[element?.itemId]?.category];
+                element.subCategory = categoryMap?.[itemsMap?.[element?.itemId]?.subCategory];
+                element.microCategory = categoryMap?.[itemsMap?.[element?.itemId]?.microCategory];
+                element.itemName = itemsMap?.[element?.itemId]?.itemName;
+                element.metricsUnit = uomMap?.[itemsMap?.[element?.itemId]?.metricsUnit];
+                element.store = storeMap?.[element?.fromStoreId] || '';
+                element.itemId = itemsMap?.[element?.itemId]?.itemId || '';
+                element.documentNumber = element.id;
+                element.type = element?.quantity > 0 ? 'Add' : 'Reduce';
+                element.quantity = Math.abs(element?.quantity);
+            }
+
+            return res.status(200).json({
+                data: stockTransfers,
+                total: stockTransfers.length
+            });
+        }
+
         const documents = await models.Documents.findAndCountAll({
             where: {
                 companyId,
@@ -854,6 +1306,11 @@ async function getReports(req, res) {
                         [Op.in]: [documentType]
                     }
                 }),
+                ...((startDate && endDate) ? {
+                    createdAt: {
+                        [Op.between]: [startDate, endDate]
+                    }
+                } : {}),
                 ...(search && {
                     [Op.or]: [
                         {
