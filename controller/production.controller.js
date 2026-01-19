@@ -455,7 +455,8 @@ async function getProductions(req, res) {
                 "requestedBy",
                 "deliveryDate",
                 "documentType",
-                "purchaseOrderNumber"
+                "purchaseOrderNumber",
+                "buyerName"
             ],
         });
         const salesDocumentsId = salesDocuments.map(doc => doc.documentNumber);
