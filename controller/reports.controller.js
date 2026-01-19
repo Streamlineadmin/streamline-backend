@@ -1285,7 +1285,7 @@ async function getReports(req, res) {
                 element.microCategory = categoryMap?.[itemsMap?.[element?.itemId]?.microCategory];
                 element.itemName = itemsMap?.[element?.itemId]?.itemName;
                 element.metricsUnit = uomMap?.[itemsMap?.[element?.itemId]?.metricsUnit];
-                element.store = storeMap?.[element?.fromStoreId] || '';
+                element.store = storeMap?.[element?.fromStoreId || element?.toStoreId] || '';
                 element.itemId = itemsMap?.[element?.itemId]?.itemId || '';
                 element.documentNumber = element.id;
                 element.type = element?.quantity > 0 ? 'Add' : 'Reduce';

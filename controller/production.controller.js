@@ -1905,6 +1905,9 @@ async function materialPlanning(req, res) {
         const productions = await models.Production.findAll({
             where: {
                 companyId: Number(companyId),
+                status: {
+                    [Op.ne]: 0
+                },
                 documentNumber: {
                     [Op.notIn]: items.map(i => i.documentNumber),
                 },
@@ -1989,7 +1992,7 @@ async function materialPlanning(req, res) {
         const mergedMap = {};
 
         bomRawMaterials.forEach(material => {
-            const key = makeKey(material.itemId, material.uom);
+            const key = makeKey(material.itemId);
 
             if (!mergedMap[key]) {
                 mergedMap[key] = {
@@ -2092,7 +2095,10 @@ async function bomBasedMaterialPlanning(req, res) {
 
         const productions = await models.Production.findAll({
             where: {
-                companyId: Number(companyId)
+                companyId: Number(companyId),
+                status: {
+                    [Op.ne]: 0
+                }
             }
         });
 
@@ -2148,15 +2154,24 @@ async function bomBasedMaterialPlanning(req, res) {
             return acc;
         }, {});
 
-        const finalArray = bomRawMaterial.map(material => ({
-            ...material,
-            metricsUnit: itemMap?.[material.itemId]?.metricsUnit,
-            requiredQty: requiredQtyMap[material.itemId] || 0,
-            minStock: itemMap[material.itemId]?.minStock || 0,
-            currentStock: availableStockMap[material.itemId] || 0,
-            wip: rawMaterialQueueMap[material.itemId] || 0,
-            poQuantityInQueue: purchaseQuantityInQueue[material.itemId] || 0
-        }));
+        const finalArray = Object.values(
+            bomRawMaterial.reduce((acc, material) => {
+                const itemId = material.itemId;
+                if (!acc[itemId]) {
+                    acc[itemId] = {
+                        ...material,
+                        metricsUnit: itemMap?.[itemId]?.metricsUnit,
+                        requiredQty: 0,
+                        minStock: itemMap?.[itemId]?.minStock || 0,
+                        currentStock: availableStockMap[itemId] || 0,
+                        wip: rawMaterialQueueMap[itemId] || 0,
+                        poQuantityInQueue: purchaseQuantityInQueue[itemId] || 0,
+                    };
+                }
+                return acc;
+            }, {})
+        );
+
         return res.status(200).json({ materialPlanningData: finalArray });
     } catch (error) {
         console.error("Transaction Error:", error);
@@ -2235,7 +2250,10 @@ async function productionBasedMaterialPlanning(req, res) {
 
         const productions = await models.Production.findAll({
             where: {
-                companyId: Number(companyId)
+                companyId: Number(companyId),
+                status: {
+                    [Op.ne]: 0
+                }
             }
         });
 
