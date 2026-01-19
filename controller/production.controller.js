@@ -1905,6 +1905,9 @@ async function materialPlanning(req, res) {
         const productions = await models.Production.findAll({
             where: {
                 companyId: Number(companyId),
+                status: {
+                    [Op.ne]: 0
+                },
                 documentNumber: {
                     [Op.notIn]: items.map(i => i.documentNumber),
                 },
@@ -2092,7 +2095,10 @@ async function bomBasedMaterialPlanning(req, res) {
 
         const productions = await models.Production.findAll({
             where: {
-                companyId: Number(companyId)
+                companyId: Number(companyId),
+                status: {
+                    [Op.ne]: 0
+                }
             }
         });
 
@@ -2244,7 +2250,10 @@ async function productionBasedMaterialPlanning(req, res) {
 
         const productions = await models.Production.findAll({
             where: {
-                companyId: Number(companyId)
+                companyId: Number(companyId),
+                status: {
+                    [Op.ne]: 0
+                }
             }
         });
 
