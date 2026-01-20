@@ -3421,12 +3421,15 @@ async function editDocument(req, res) {
           enquiryNumber: documentNumber,
           companyId: Number(companyId),
           documentType: {
-            [Op.ne]: 'Sales Lead'
+            [Op.ne]: 'Sales Lead',
+          },
+          status: {
+            [Op.ne]: 2,
           }
         }
       });
       if (document) {
-        return res.status(400).json({ message: 'This document reference is available in other document. It is not be deleted.' });
+        return res.status(400).json({ message: 'This document reference is available in other document. It is not be Edited.' });
       }
     }
     else if (documentType == 'Sales Quotation') {
@@ -3436,57 +3439,156 @@ async function editDocument(req, res) {
           companyId: Number(companyId),
           documentType: {
             [Op.notIn]: ['Sales Lead', 'Sales Quotation']
+          },
+          status: {
+            [Op.ne]: 2,
           }
         }
       });
       if (document) {
-        return res.status(400).json({ message: 'This document reference is available in other document. It is not be deleted.' });
+        return res.status(400).json({ message: 'This document reference is available in other document. It is not be Edited.' });
       }
     }
     else if (documentType == 'Sales Order') {
       const document = await models.Documents.findOne({
         where: {
           orderConfirmationNumber: documentNumber,
-          companyId: Number(companyId)
+          companyId: Number(companyId),
+          status: {
+            [Op.ne]: 2,
+          },
+          documentType: 'Proforma Invoice'
         }
       });
       if (document) {
-        return res.status(400).json({ message: 'This document reference is available in other document. It is not be deleted.' });
+        return res.status(400).json({ message: 'This document reference is available in other document. It is not be Edited.' });
+      }
+      const invoiceChallanDocument = await models.Documents.findAll({
+        where: {
+          orderConfirmationNumber: documentNumber,
+          companyId: Number(companyId),
+          status: {
+            [Op.ne]: 2,
+          },
+          documentType: {
+            [Op.in]: ['Invoice', 'Delivery Challan']
+          }
+        }
+      });
+      const documentTypeMap = invoiceChallanDocument?.reduce((acc, curr) => {
+        acc[curr.documentNumber] = curr.documentType;
+        return acc;
+      }, {});
+      const documentItems = await models.DocumentItems.findAll({
+        where: {
+          documentNumber:{
+            [Op.in]: invoiceChallanDocument?.map(doc => doc.documentNumber)
+          },
+          companyId: Number(companyId),
+        },
+        raw: true
+      });
+      const invoiceItemsMap = {}, challanItemsMap = {};
+      documentItems.forEach(item => {
+        if (documentTypeMap[item.documentNumber] === 'Invoice') {
+          invoiceItemsMap[item.itemId] = (invoiceItemsMap[item.itemId] || 0) + Number(item.quantity);
+        } else if (documentTypeMap[item.documentNumber] === 'Delivery Challan') {
+          challanItemsMap[item.itemId] = (challanItemsMap[item.itemId] || 0) + Number(item.quantity);
+        }
+      });
+
+      const itemsMap = items.reduce((acc, curr) => {
+        acc[curr.itemId] = Number(curr.quantity);
+        return acc;
+      }, {});
+
+      for (const element of Object.keys(invoiceItemsMap)) {
+        if (!itemsMap[element] || itemsMap[element] < invoiceItemsMap[element]) {
+          return res.status(400).json({ message: 'Sales Order Items Quantity Must be greater Than Invoice Items Quantity.' });
+        }
+      }
+
+      for (const element of Object.keys(challanItemsMap)) {
+        if (!itemsMap[element] || itemsMap[element] < challanItemsMap[element]) {
+          return res.status(400).json({ message: 'Sales Order Items Quantity Must be greater Than Delivery Challan Items Quantity.' });
+        }
       }
     }
     else if (documentType == 'Proforma Invoice') {
       const document = await models.Documents.findOne({
         where: {
           performaInvoiceNumber: documentNumber,
-          companyId: Number(companyId)
+          companyId: Number(companyId),
+          status: {
+            [Op.ne]: 2,
+          }
         }
       });
       if (document) {
-        return res.status(400).json({ message: 'This document reference is available in other document. It is not be deleted.' });
+        return res.status(400).json({ message: 'This document reference is available in other document. It is not be Edited.' });
       }
     }
     else if (documentType == 'Purchase Request') {
       const document = await models.Documents.findOne({
         where: {
-          indent_number: {
-            [Op.like]: `%${documentNumber},%`,
+          companyId: Number(companyId),
+          status: {
+            [Op.ne]: 2,
           },
-          companyId: Number(companyId)
-        }
+          [Op.or]: [
+            { indent_number: documentNumber },                    // only one value
+            { indent_number: { [Op.like]: `${documentNumber},%` } }, // at start
+            { indent_number: { [Op.like]: `%,${documentNumber},%` } }, // in middle
+            { indent_number: { [Op.like]: `%,${documentNumber}` } },   // at end
+          ],
+        },
       });
+
       if (document) {
-        return res.status(400).json({ message: 'This document reference is available in other document. It is not be deleted.' });
+        return res.status(400).json({ message: 'This document reference is available in other document. It is not be Edited.' });
       }
     }
     else if (documentType == 'Purchase Order') {
       const document = await models.Documents.findOne({
         where: {
           purchaseOrderNumber: documentNumber,
-          companyId: Number(companyId)
+          companyId: Number(companyId),
+          status: {
+            [Op.ne]: 2,
+          }
         }
       });
       if (document) {
-        return res.status(400).json({ message: 'This document reference is available in other document. It is not be deleted.' });
+        return res.status(400).json({ message: 'This document reference is available in other document. It is not be Edited.' });
+      }
+    }
+    else if (documentType == 'Service Order') {
+      const document = await models.Documents.findOne({
+        where: {
+          serviceOrderNumber: documentNumber,
+          companyId: Number(companyId),
+          status: {
+            [Op.ne]: 2,
+          }
+        }
+      });
+      if (document) {
+        return res.status(400).json({ message: 'This document reference is available in other document. It is not be Edited.' });
+      }
+    }
+
+    else if (documentType == 'Service Confirmation') {
+      const document = await models.Documents.findOne({
+        where: {
+          ServiceConfirmationNumber: documentNumber,
+          companyId: Number(companyId),
+          status: {
+            [Op.ne]: 2,
+          }
+        }
+      });
+      if (document) {
+        return res.status(400).json({ message: 'This document reference is available in other document. It is not be Edited.' });
       }
     }
 
@@ -3715,6 +3817,7 @@ async function editDocument(req, res) {
     res.status(200).json({ message: 'Document Updated Successfully' });
 
   } catch (error) {
+    console.log(error);
     res.status(400).json({
       message: 'Something went wrong',
       error
