@@ -21,10 +21,10 @@ async function amyCompletions(req, res) {
 
     // ✅ USE ONE OF THESE:
     // If you have a fine-tuned model:
-    // const modelName = "ft:gpt-3.5-turbo-1106:amy-ai:2026-01-08";
+    const modelName = "ftjob-9nzY5a13yBSwQTpl91tHKd6Y";
 
     // If NOT (recommended):
-    const modelName = "gpt-3.5-turbo-1106";
+    // const modelName = "gpt-3.5-turbo-1106";
 
     const messages = [
       {
