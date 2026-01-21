@@ -2070,10 +2070,8 @@ async function bomBasedMaterialPlanning(req, res) {
                 }
             }
             const perUnitQtyRequired = (element.quantity * conversionFactor) / bomFinishedGoods.quantity;
-            requiredQtyMap[element.itemId] = data.quantity * perUnitQtyRequired;
+            requiredQtyMap[element.itemId] = (requiredQtyMap[element.itemId] || 0) + (data.quantity * perUnitQtyRequired);
         }
-
-
 
         const itemToPIdMap = items?.reduce((acc, curr) => {
             acc[curr.id] = curr.itemId;
@@ -2154,23 +2152,21 @@ async function bomBasedMaterialPlanning(req, res) {
             return acc;
         }, {});
 
-        const finalArray = Object.values(
-            bomRawMaterial.reduce((acc, material) => {
-                const itemId = material.itemId;
-                if (!acc[itemId]) {
-                    acc[itemId] = {
-                        ...material,
-                        metricsUnit: itemMap?.[itemId]?.metricsUnit,
-                        requiredQty: 0,
-                        minStock: itemMap?.[itemId]?.minStock || 0,
-                        currentStock: availableStockMap[itemId] || 0,
-                        wip: rawMaterialQueueMap[itemId] || 0,
-                        poQuantityInQueue: purchaseQuantityInQueue[itemId] || 0,
-                    };
-                }
-                return acc;
-            }, {})
-        );
+        const finalArray = [];
+        const alreadyItemsMap = {};
+        for (const material of bomRawMaterial) {
+            if (alreadyItemsMap[material.itemId]) continue;
+            alreadyItemsMap[material.itemId] = true;
+            finalArray.push({
+                ...material,
+                metricsUnit: itemMap?.[material.itemId]?.metricsUnit,
+                requiredQty: requiredQtyMap[material.itemId] || 0,
+                minStock: itemMap[material.itemId]?.minStock || 0,
+                currentStock: availableStockMap[material.itemId] || 0,
+                wip: rawMaterialQueueMap[material.itemId] || 0,
+                poQuantityInQueue: purchaseQuantityInQueue[material.itemId] || 0
+            });
+        }
 
         return res.status(200).json({ materialPlanningData: finalArray });
     } catch (error) {
