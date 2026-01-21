@@ -184,7 +184,8 @@ module.exports = (sequelize, DataTypes) => {
     irnNumber: DataTypes.STRING,
     qrCode: DataTypes.TEXT,
     ewayBillCreated: DataTypes.BOOLEAN,
-    contactPerson: DataTypes.STRING
+    contactPerson: DataTypes.STRING,
+    linkedDocuments: DataTypes.JSON
   }, {
     sequelize,
     modelName: 'Documents',

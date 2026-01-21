@@ -28,7 +28,8 @@ module.exports = (sequelize, DataTypes) => {
             defaultValue: 'default'
         },
         poMandatory: DataTypes.BOOLEAN,
-        poExactQuantity: DataTypes.BOOLEAN
+        poExactQuantity: DataTypes.BOOLEAN,
+        addStockOnPurchaseInvoice: DataTypes.STRING,
     }, {
         sequelize,
         modelName: 'Settings',
