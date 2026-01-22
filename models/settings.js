@@ -30,6 +30,7 @@ module.exports = (sequelize, DataTypes) => {
         poMandatory: DataTypes.BOOLEAN,
         poExactQuantity: DataTypes.BOOLEAN,
         addStockOnPurchaseInvoice: DataTypes.STRING,
+        printFontSize: DataTypes.INTEGER
     }, {
         sequelize,
         modelName: 'Settings',

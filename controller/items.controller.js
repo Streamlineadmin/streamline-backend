@@ -155,7 +155,7 @@ async function addItem(req, res) {
         }
 
         // ✅ Update ItemSeries if custom series is used
-        if (useCustomSeries) {
+        if (useCustomSeries && useCustomSeries != "false") {
             await models.ItemSeries.increment(
                 { nextNumber: 1 },
                 {
