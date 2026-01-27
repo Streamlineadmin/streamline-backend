@@ -1,16 +1,17 @@
-const loadSchema = require('./schemaLoader');
-const aiPlanner = require('./aiPlanner');
-const executePlan = require('./executor');
-const formatResponse = require('./formatter');
+const loadSchema = require("./schemaLoader");
+const aiPlanner = require("./aiPlanner");
+const validatePlan = require("./planValidator");
+const executePlan = require("./executor");
+const formatResponse = require("./formatter");
 
-function createEngine(models) {
-  const schema = loadSchema(models);
+function createEngine(db) {
+  const schema = loadSchema(db);
 
   return async function run(query) {
-    const plan = aiPlanner(schema, query);
-    const rows = await executePlan(plan, models);
-    const response = formatResponse(plan, rows);
-    return { success: true, plan, data: rows, response };
+    const plan = await aiPlanner(schema, query);
+    validatePlan(plan, schema);
+    const rows = await executePlan(plan, db);
+    return formatResponse(plan, rows);
   };
 }
 

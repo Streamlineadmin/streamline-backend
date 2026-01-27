@@ -1,16 +1,28 @@
-function loadSchema(models) {
-    if (!models) throw new Error("Sequelize models required");
-  
+function loadSchema(db) {
     const schema = {};
-    for (const [name, model] of Object.entries(models)) {
+  
+    for (const [name, model] of Object.entries(db)) {
+      if (!model.rawAttributes) continue;
+  
       schema[name] = {
-        fields: Object.keys(model.rawAttributes),
-        associations: Object.entries(model.associations || {}).map(([key, val]) => ({
-          name: key,
-          target: val.target.name,
-          foreignKey: val.foreignKey
-        }))
+        table: model.getTableName(),
+        attributes: {},
+        associations: {}
       };
+  
+      for (const [attr, def] of Object.entries(model.rawAttributes)) {
+        schema[name].attributes[attr] = {
+          type: def.type.key,
+          allowNull: def.allowNull
+        };
+      }
+  
+      for (const [assocName, assoc] of Object.entries(model.associations || {})) {
+        schema[name].associations[assocName] = {
+          target: assoc.target.name,
+          foreignKey: assoc.foreignKey
+        };
+      }
     }
   
     return schema;

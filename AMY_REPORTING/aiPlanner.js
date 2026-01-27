@@ -1,54 +1,77 @@
-const stringSimilarity = require('string-similarity');
+const OpenAI = require("openai");
 
-function aiPlanner(schema, query) {
-  query = query.toLowerCase();
+const client = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY
+});
 
-  const plan = {
-    entity: null,
-    action: 'list',
-    filters: {},
-    range: null,
-    chart: false,
-    groupBy: null
-  };
-
-  // 1️⃣ detect entity (table)
-  const tableNames = Object.keys(schema);
-  const bestMatch = stringSimilarity.findBestMatch(query, tableNames);
-  plan.entity = bestMatch.bestMatch.rating > 0.2 ? bestMatch.bestMatch.target : tableNames[0];
-
-  // 2️⃣ detect action
-  if (/list|show|all/.test(query)) plan.action = 'list';
-  else if (/total|sum|amount/.test(query)) plan.action = 'sum';
-  else if (/count/.test(query)) plan.action = 'count';
-  else if (/chart|graph/.test(query)) { plan.action = 'chart'; plan.chart = true; }
-
-  // 3️⃣ detect column filters dynamically
-  const fields = schema[plan.entity].fields;
-  for (const field of fields) {
-    if (query.includes(field.toLowerCase())) {
-      const regex = new RegExp(`${field.toLowerCase()}\\s*(is|=)\\s*([\\w\\-]+)`);
-      const match = query.match(regex);
-      if (match) plan.filters[field] = match[2];
-    }
+/**
+ * Safely parses AI JSON output
+ * Removes ```json ``` fences if present
+ */
+function safeJSONParse(text) {
+  if (!text || typeof text !== "string") {
+    throw new Error("AI returned empty response");
   }
 
-  // 4️⃣ detect date ranges
-  const lastDays = query.match(/last (\d+) (day|days|month|months)/);
-  if (lastDays) {
-    const n = parseInt(lastDays[1]);
-    plan.range = lastDays[2].startsWith('month') ? `last_${n*30}_days` : `last_${n}_days`;
-  }
+  const cleaned = text
+    .replace(/```json/gi, "")
+    .replace(/```/g, "")
+    .trim();
 
-  // 5️⃣ detect groupBy for charts
-  if (plan.chart) {
-    const assocNames = schema[plan.entity].associations.map(a => a.name.toLowerCase());
-    for (const assoc of assocNames) {
-      if (query.includes(assoc)) plan.groupBy = assoc;
-    }
+  try {
+    return JSON.parse(cleaned);
+  } catch (err) {
+    throw new Error(
+      "AI returned invalid JSON.\n\nRAW OUTPUT:\n" + text
+    );
   }
+}
 
-  return plan;
+/**
+ * AI Query Planner
+ * Converts user question → execution plan
+ */
+async function aiPlanner(schema, userQuery) {
+  const prompt = `
+You are an AI database query planner.
+
+Database schema:
+${JSON.stringify(schema, null, 2)}
+
+User question:
+"${userQuery}"
+
+Rules:
+- Return ONLY valid JSON
+- Do NOT use markdown
+- Do NOT add explanations
+- Do NOT add comments
+
+Required JSON format:
+{
+  "entity": "table_or_model_name",
+  "action": "list | count | sum | chart",
+  "filters": {},
+  "dateRange": {
+    "type": "today | last_days | null",
+    "value": null
+  },
+  "metric": null,
+  "groupBy": null,
+  "chart": null
+}
+`;
+
+  const response = await client.chat.completions.create({
+    model: "gpt-4o-mini",
+    messages: [
+      { role: "user", content: prompt }
+    ]
+  });
+
+  const rawOutput = response.choices[0].message.content;
+
+  return safeJSONParse(rawOutput);
 }
 
 module.exports = aiPlanner;

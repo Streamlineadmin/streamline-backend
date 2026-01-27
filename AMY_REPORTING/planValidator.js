@@ -1,11 +1,17 @@
 function validatePlan(plan, schema) {
-    const tables = schema.map(t => t.table);
+    if (!schema[plan.entity]) {
+      throw new Error(`Unknown entity: ${plan.entity}`);
+    }
   
-    plan.tables.forEach(t => {
-      if (!tables.includes(t)) {
-        throw new Error(`Invalid table: ${t}`);
-      }
-    });
+    const attrs = schema[plan.entity].attributes;
+  
+    if (plan.metric && !attrs[plan.metric]) {
+      throw new Error(`Invalid metric: ${plan.metric}`);
+    }
+  
+    if (plan.groupBy && !attrs[plan.groupBy]) {
+      throw new Error(`Invalid groupBy: ${plan.groupBy}`);
+    }
   
     return true;
   }

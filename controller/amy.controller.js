@@ -108,12 +108,19 @@ const engine = createEngine(db.sequelize.models);
 async function amyReport(req, res) {
   try {
     const { query } = req.body;
-    if (!query) return res.status(400).json({ success:false, error:'Query required' });
 
-    const result = await engine(query);
-    res.json(result);
-  } catch(err) {
-    res.status(500).json({ success:false, error: err.message });
+    const response = await engine(query);
+
+    res.json({
+      success: true,
+      response
+    });
+
+  } catch (err) {
+    res.status(400).json({
+      success: false,
+      error: err.message
+    });
   }
 }
 
