@@ -10,5 +10,6 @@ router.post('/updateProfile', userController.updateProfile);
 router.post('/updateProfileURL', userController.updateProfileURL);
 router.post('/', userController.getUsers);
 router.post('/partialUser', userController.partialUser);
+router.post('/getCompanies', userController.getCompanies);
 
 module.exports = router;
