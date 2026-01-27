@@ -2317,6 +2317,24 @@ async function createDocument(req, res) {
             await salesOrder.update({ linkedDocuments });
           }
         }
+
+      }
+
+      if ((documentType === 'Credit Note' || documentType === 'Debit Note') && !orderConfirmationNumber) {
+        const salesInvoice = await models.Documents.findOne({
+          where: {
+            companyId,
+            documentNumber: invoiceNumber,
+            documentType: 'Invoice'
+          }
+        });
+        if (salesInvoice) {
+          const linkedDocuments = isValidJSON(salesInvoice.linkedDocuments) || [];
+          if (!linkedDocuments.includes(documentNumber)) {
+            linkedDocuments.push(documentNumber);
+            await salesInvoice.update({ linkedDocuments });
+          }
+        }
       }
 
       // PURCHASE FLOW
@@ -2341,6 +2359,74 @@ async function createDocument(req, res) {
             await purchaseOrder.update({ linkedDocuments });
           }
         }
+
+      }
+
+      if ((documentType === 'Purchase Credit Note' || documentType === 'Purchase Debit Note') && !purchaseOrderNumber) {
+        console.log("i am heree.")
+        const purchaseInvoice = await models.Documents.findOne({
+          where: {
+            companyId,
+            documentNumber: invoiceNumber,
+            documentType: 'Purchase Invoice'
+          }
+        });
+        if (purchaseInvoice) {
+          console.log("i am hereee..")
+          const linkedDocuments = isValidJSON(purchaseInvoice.linkedDocuments) || [];
+          if (!linkedDocuments.includes(documentNumber)) {
+            linkedDocuments.push(documentNumber);
+            await purchaseInvoice.update({ linkedDocuments });
+          }
+        }
+      }
+
+      // Service Order Flow
+      if (
+        ["Service Challan", "Service GRN", "Service QR", "Service Debit Note", "Service Credit Note", "Service Invoice", "Service Proforma Invoice"]
+          .includes(documentType) &&
+        serviceOrderNumber
+      ) {
+        const serviceOrder = await models.Documents.findOne({
+          where: {
+            companyId,
+            documentNumber: serviceOrderNumber,
+            documentType: 'Service Order'
+          }
+        });
+
+        if (serviceOrder) {
+          const linkedDocuments = isValidJSON(serviceOrder.linkedDocuments) || [];
+          if (!linkedDocuments.includes(documentNumber)) {
+            linkedDocuments.push(documentNumber);
+            await serviceOrder.update({ linkedDocuments });
+          }
+        }
+
+      }
+
+      // Service Confirmation Flow
+      if (
+        ["Service Confirmation Challan", "Service Confirmation GRN", "Service Confirmation QR", "Service Confirmation Debit Note", "Service Confirmation Credit Note", "Service Confirmation Invoice", "Service Confirmation Proforma Invoice"]
+          .includes(documentType) &&
+        ServiceConfirmationNumber
+      ) {
+        const serviceConfirmation = await models.Documents.findOne({
+          where: {
+            companyId,
+            documentNumber: ServiceConfirmationNumber,
+            documentType: 'Service Confirmation'
+          }
+        });
+
+        if (serviceConfirmation) {
+          const linkedDocuments = isValidJSON(serviceConfirmation.linkedDocuments) || [];
+          if (!linkedDocuments.includes(documentNumber)) {
+            linkedDocuments.push(documentNumber);
+            await serviceConfirmation.update({ linkedDocuments });
+          }
+        }
+
       }
     }
 
@@ -3318,6 +3404,24 @@ async function discardDocument(req, res) {
       }
     }
 
+    if (document.documentType === 'Credit Note' || document.documentType === 'Debit Note' && !document.orderConfirmationNumber) {
+      const salesInvoice = await models.Documents.findOne({
+        where: {
+          companyId,
+          documentNumber: document.invoiceNumber,
+          documentType: 'Invoice'
+        }
+      });
+      if (salesInvoice && Array.isArray(isValidJSON(salesInvoice.linkedDocuments))) {
+        const updatedLinkedDocuments = isValidJSON(salesInvoice.linkedDocuments)
+          .filter(docNo => docNo !== document.documentNumber);
+
+        if (updatedLinkedDocuments.length !== isValidJSON(salesInvoice.linkedDocuments).length) {
+          await salesInvoice.update({ linkedDocuments: updatedLinkedDocuments });
+        }
+      }
+    }
+
     if (
       ["Purchase Invoice", "Goods Received Note", "Purchase Credit Note", "Purchase Debit Note", "Quality Report", "Purchase Return"]
         .includes(document.documentType) &&
@@ -3339,6 +3443,76 @@ async function discardDocument(req, res) {
           await purchaseOrder.update({ linkedDocuments: updatedLinkedDocuments });
         }
       }
+
+
+    }
+
+    if (document.documentType === 'Purchase Credit Note' || document.documentType === 'Purchase Debit Note' && !document.purchaseOrderNumber) {
+      const purchaseInvoice = await models.Documents.findOne({
+        where: {
+          companyId,
+          documentNumber: document.invoiceNumber,
+          documentType: 'Purchase Invoice'
+        }
+      });
+      if (purchaseInvoice && Array.isArray(isValidJSON(purchaseInvoice.linkedDocuments))) {
+        const updatedLinkedDocuments = isValidJSON(purchaseInvoice.linkedDocuments)
+          .filter(docNo => docNo !== document.documentNumber);
+
+        if (updatedLinkedDocuments.length !== isValidJSON(purchaseInvoice.linkedDocuments).length) {
+          await purchaseInvoice.update({ linkedDocuments: updatedLinkedDocuments });
+        }
+      }
+    }
+
+    if (
+        ["Service Challan", "Service GRN", "Service QR", "Service Debit Note", "Service Credit Note", "Service Invoice", "Service Proforma Invoice"]
+          .includes(document.documentType) &&
+        document.serviceOrderNumber
+      ) {
+      const serviceOrder = await models.Documents.findOne({
+        where: {
+          companyId,
+          documentNumber: document.serviceOrderNumber,
+          documentType: 'Service Order'
+        }
+      });
+
+      if (serviceOrder && Array.isArray(isValidJSON(serviceOrder.linkedDocuments))) {
+        const updatedLinkedDocuments = isValidJSON(serviceOrder.linkedDocuments)
+          .filter(docNo => docNo !== document.documentNumber);
+
+        if (updatedLinkedDocuments.length !== isValidJSON(serviceOrder.linkedDocuments).length) {
+          await serviceOrder.update({ linkedDocuments: updatedLinkedDocuments });
+        }
+      }
+
+
+    }
+
+    if (
+        ["Service Confirmation Challan", "Service Confirmation GRN", "Service Confirmation QR", "Service Confirmation Debit Note", "Service Confirmation Credit Note", "Service Confirmation Invoice", "Service Confirmation Proforma Invoice"]
+          .includes(document.documentType) &&
+        document.ServiceConfirmationNumber
+      ) {
+      const serviceConfirmation = await models.Documents.findOne({
+        where: {
+          companyId,
+          documentNumber: document.ServiceConfirmationNumber,
+          documentType: 'Service Confirmation'
+        }
+      });
+
+      if (serviceConfirmation && Array.isArray(isValidJSON(serviceConfirmation.linkedDocuments))) {
+        const updatedLinkedDocuments = isValidJSON(serviceConfirmation.linkedDocuments)
+          .filter(docNo => docNo !== document.documentNumber);
+
+        if (updatedLinkedDocuments.length !== isValidJSON(serviceConfirmation.linkedDocuments).length) {
+          await serviceConfirmation.update({ linkedDocuments: updatedLinkedDocuments });
+        }
+      }
+
+
     }
 
     await document.update({ status: 2 });

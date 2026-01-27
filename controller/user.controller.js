@@ -519,6 +519,26 @@ async function partialUser(req, res) {
     }
 }
 
+async function getCompanies(req, res) {
+    try {
+        const users = await models.Users.findAll({
+            where: {
+                role: {
+                    [Op.in]: [1, 2]
+                }
+            },
+            attributes: ['companyId', 'companyName'],
+            raw: true
+        });
+        res.status(200).json({ users: users });
+    } catch (error) {
+        res.status(500).json({
+            message: "Something went wrong, please try again later!",
+            error: error?.message || error
+        });
+    }
+}
+
 module.exports = {
     addUser: addUser,
     getUsers: getUsers,
@@ -526,5 +546,6 @@ module.exports = {
     deleteUser: deleteUser,
     updateProfile: updateProfile,
     updateProfileURL: updateProfileURL,
-    partialUser: partialUser
+    partialUser: partialUser,
+    getCompanies: getCompanies
 }

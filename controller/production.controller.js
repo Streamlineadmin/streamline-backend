@@ -2987,26 +2987,62 @@ async function remainingProduction(req, res) {
 async function discardProduction(req, res) {
     try {
         const { id } = req.body;
+
+        const idsToDiscard = new Set();
+        const fetchChildren = async (parentIds) => {
+            if (!parentIds.length) return;
+
+            const children = await models.Production.findAll({
+                attributes: ['id'],
+                where: {
+                    parentProductionId: parentIds
+                }
+            });
+
+            const childIds = children.map(c => c.id);
+
+            childIds.forEach(cid => idsToDiscard.add(cid));
+
+            await fetchChildren(childIds);
+        };
+
+        idsToDiscard.add(id);
+
+        // find bul
+        const bulkProductions = await models.Production.findAll({
+            attributes: ['id'],
+            where: { bulkProductionId: id }
+        });
+
+        const bulkIds = bulkProductions.map(p => p.id);
+        bulkIds.forEach(bid => idsToDiscard.add(bid));
+
+        // fetch all children recursively
+        await fetchChildren([id, ...bulkIds]);
+
+        // update all in one go
         await models.Production.update(
             { status: 0 },
             {
                 where: {
-                    [Op.or]: [
-                        { id: id },
-                        { bulkProductionId: id }
-                    ]
+                    id: [...idsToDiscard]
                 }
             }
         );
-        return res.status(200).json({ message: 'Production Discarded.' });
+
+        return res.status(200).json({
+            message: 'Production and all related productions discarded.'
+        });
+
     } catch (error) {
-        console.error("Issue Error:", error);
+        console.error("Discard Error:", error);
         return res.status(500).json({
             message: "Failed to Discard Production",
             error: error.message,
         });
     }
 }
+
 
 async function bulkIssue(req, res) {
     try {
