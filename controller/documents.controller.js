@@ -117,7 +117,8 @@ async function createDocument(req, res) {
       finishedGood = {},
       serviceOrderNumber = '',
       serviceOrderDate = '',
-      contactPerson = ''
+      contactPerson = '',
+      storeInItemLevel = false
     } = req.body;
 
     let message = '';
@@ -602,8 +603,6 @@ async function createDocument(req, res) {
         return acc;
       }, {});
 
-      console.log('documentmap', documentsItemMap);
-
       const purchaseDoc = await models.Documents.findAll({
         where: {
           purchaseOrderNumber,
@@ -628,7 +627,6 @@ async function createDocument(req, res) {
         !acc[current?.itemId] ? acc[current?.itemId] = (current.receivedToday || current.quantity) : acc[current?.itemId] += (current.receivedToday || current.quantity);
         return acc;
       }, {});
-      console.log(purchaseDocItemsMap);
       // Add quantity of existing items in purchase documents items map
       for (const item of items) {
         if (purchaseDocItemsMap[item.itemId]) purchaseDocItemsMap[item.itemId] += Number(item.receivedToday || item.quantity);
@@ -827,7 +825,8 @@ async function createDocument(req, res) {
             additionalDetails: item?.additionalDetails,
             customFields: item?.customFields,
             imageUrl: item?.imageUrl,
-            category: item?.category
+            category: item?.category,
+            store: item?.store
           })
         })
       ),
@@ -1007,7 +1006,7 @@ async function createDocument(req, res) {
 
         await Promise.all([models.StoreItems.bulkCreate(items?.filter(item => item?.receivedToday).map(item => {
           const itemId = itemsMap.get(item.itemId) || null;
-          const storeId = storesMap.get(store) || null;
+          const storeId = (!storeInItemLevel ? storesMap.get(store) : storesMap.get(item?.store)) || null;
           return {
             storeId,
             itemId,
@@ -1023,7 +1022,7 @@ async function createDocument(req, res) {
         ),
         models.StockTransfer.bulkCreate(items?.filter(item => item?.receivedToday).map(item => {
           const itemId = itemsMap.get(item.itemId) || null;
-          const storeId = storesMap.get(store) || null;
+          const storeId = (!storeInItemLevel ? storesMap.get(store) : storesMap.get(item?.store)) || null;
           return {
             transferNumber: item?.transferNumber,
             fromStoreId: null,
@@ -1131,7 +1130,7 @@ async function createDocument(req, res) {
       const storesMap = new Map(stores.map(store => [store.name, store.id]));
       await Promise.all([models.StoreItems.bulkCreate(items?.filter(item => item?.quantity).map(item => {
         const itemId = itemsMap.get(item.itemId) || null;
-        const storeId = storesMap.get(store) || null;
+        const storeId = (!storeInItemLevel ? storesMap.get(store) : storesMap.get(item?.store)) || null;
         return {
           storeId,
           itemId,
@@ -1147,7 +1146,7 @@ async function createDocument(req, res) {
       ),
       models.StockTransfer.bulkCreate(items?.filter(item => item?.quantity).map(item => {
         const itemId = itemsMap.get(item.itemId) || null;
-        const storeId = storesMap.get(store) || null;
+        const storeId = (!storeInItemLevel ? storesMap.get(store) : storesMap.get(item?.store)) || null;
         return {
           transferNumber: item?.transferNumber,
           fromStoreId: null,
@@ -1212,7 +1211,7 @@ async function createDocument(req, res) {
         const storesMap = new Map(stores.map(store => [store.name, store.id]));
         await Promise.all([models.StoreItems.bulkCreate(items?.filter(item => item?.quantity).map(item => {
           const itemId = itemsMap.get(item.itemId) || null;
-          const storeId = storesMap.get(store) || null;
+          const storeId = (!storeInItemLevel ? storesMap.get(store) : storesMap.get(item?.store)) || null;
           return {
             storeId,
             itemId,
@@ -1228,7 +1227,7 @@ async function createDocument(req, res) {
         ),
         models.StockTransfer.bulkCreate(items?.filter(item => item?.quantity).map(item => {
           const itemId = itemsMap.get(item.itemId) || null;
-          const storeId = storesMap.get(store) || null;
+          const storeId = (!storeInItemLevel ? storesMap.get(store) : storesMap.get(item?.store)) || null;
           return {
             transferNumber: item?.transferNumber,
             fromStoreId: null,
@@ -1252,12 +1251,7 @@ async function createDocument(req, res) {
     }
 
     if (status && ((documentType === documentTypes.invoice && reduceStockOnIV === "true") || (documentType === documentTypes.deliveryChallan && reduceStockOnDC === "true"))) {
-      const storeId = await models.Store.findOne({
-        where: {
-          name: store,
-          companyId
-        }
-      });
+
       const settings = await models.Settings.findOne({
         where: {
           companyId: Number(companyId)
@@ -1281,6 +1275,12 @@ async function createDocument(req, res) {
       });
       message = settings?.['salesDocument'] == 'manual' ? 'inventory' : ''
       for (const element of items) {
+        const storeId = await models.Store.findOne({
+          where: {
+            name: !storeInItemLevel ? store : element.store,
+            companyId
+          }
+        });
         if (settings?.['salesDocument'] != 'manual') {
           let price = 0;
           let remainingQuantity = (element.quantity * (element?.conversionFactor || 1));
@@ -1353,12 +1353,7 @@ async function createDocument(req, res) {
     }
 
     if (status && documentType == documentTypes.purchaseReturn) {
-      const storeId = await models.Store.findOne({
-        where: {
-          name: store,
-          companyId
-        }
-      });
+
       const settings = await models.Settings.findOne({
         where: {
           companyId: Number(companyId)
@@ -1382,6 +1377,12 @@ async function createDocument(req, res) {
       });
       message = settings?.['purchaseDocument'] == 'manual' ? 'inventory' : ''
       for (const element of items) {
+        const storeId = await models.Store.findOne({
+          where: {
+            name: !storeInItemLevel ? store : element.store,
+            companyId
+          }
+        });
         if (settings?.['purchaseDocument'] != 'manual') {
           let price = 0;
           let remainingQuantity = (element.quantity * (element?.conversionFactor || 1));
@@ -1580,12 +1581,7 @@ async function createDocument(req, res) {
     }
 
     if (status && (documentType === documentTypes.serviceChallan || documentType == 'Service Confirmation Challan')) {
-      const storeId = await models.Store.findOne({
-        where: {
-          name: store,
-          companyId
-        }
-      });
+
       const settings = await models.Settings.findOne({
         where: {
           companyId: Number(companyId)
@@ -1609,6 +1605,12 @@ async function createDocument(req, res) {
       });
       message = settings?.['serviceDocument'] == 'manual' ? 'inventory' : ''
       for (const element of items) {
+        const storeId = await models.Store.findOne({
+          where: {
+            name: !storeInItemLevel ? store : element.store,
+            companyId
+          }
+        });
         let price = 0;
         let remainingQuantity = (element.quantity * (element?.conversionFactor || 1));
 
@@ -1742,7 +1744,7 @@ async function createDocument(req, res) {
 
         await Promise.all([models.StoreItems.bulkCreate(items?.filter(item => item?.receivedToday).map(item => {
           const itemId = itemsMap.get(item.itemId) || null;
-          const storeId = storesMap.get(store) || null;
+          const storeId = (!storeInItemLevel ? storesMap.get(store) : storesMap.get(item?.store)) || null;
           return {
             storeId,
             itemId,
@@ -1758,7 +1760,7 @@ async function createDocument(req, res) {
         ),
         models.StockTransfer.bulkCreate(items?.filter(item => item?.receivedToday).map(item => {
           const itemId = itemsMap.get(item.itemId) || null;
-          const storeId = storesMap.get(store) || null;
+          const storeId = (!storeInItemLevel ? storesMap.get(store) : storesMap.get(item?.store)) || null;
           return {
             transferNumber: item?.transferNumber,
             fromStoreId: null,
@@ -2150,7 +2152,7 @@ async function createDocument(req, res) {
 
         await Promise.all([models.StoreItems.bulkCreate(items?.filter(item => item?.receivedToday && item.type != 'Finished Good').map(item => {
           const itemId = itemsMap.get(item.itemId) || null;
-          const storeId = storesMap.get(store) || null;
+          const storeId = (!storeInItemLevel ? storesMap.get(store) : storesMap.get(item?.store)) || null;
           return {
             storeId,
             itemId,
@@ -2166,7 +2168,7 @@ async function createDocument(req, res) {
         ),
         models.StockTransfer.bulkCreate(items?.filter(item => item?.receivedToday && item.type != 'Finished Good').map(item => {
           const itemId = itemsMap.get(item.itemId) || null;
-          const storeId = storesMap.get(store) || null;
+          const storeId = (!storeInItemLevel ? storesMap.get(store) : storesMap.get(item?.store)) || null;
           return {
             transferNumber: item?.transferNumber,
             fromStoreId: null,
@@ -3466,10 +3468,10 @@ async function discardDocument(req, res) {
     }
 
     if (
-        ["Service Challan", "Service GRN", "Service QR", "Service Debit Note", "Service Credit Note", "Service Invoice", "Service Proforma Invoice"]
-          .includes(document.documentType) &&
-        document.serviceOrderNumber
-      ) {
+      ["Service Challan", "Service GRN", "Service QR", "Service Debit Note", "Service Credit Note", "Service Invoice", "Service Proforma Invoice"]
+        .includes(document.documentType) &&
+      document.serviceOrderNumber
+    ) {
       const serviceOrder = await models.Documents.findOne({
         where: {
           companyId,
@@ -3491,10 +3493,10 @@ async function discardDocument(req, res) {
     }
 
     if (
-        ["Service Confirmation Challan", "Service Confirmation GRN", "Service Confirmation QR", "Service Confirmation Debit Note", "Service Confirmation Credit Note", "Service Confirmation Invoice", "Service Confirmation Proforma Invoice"]
-          .includes(document.documentType) &&
-        document.ServiceConfirmationNumber
-      ) {
+      ["Service Confirmation Challan", "Service Confirmation GRN", "Service Confirmation QR", "Service Confirmation Debit Note", "Service Confirmation Credit Note", "Service Confirmation Invoice", "Service Confirmation Proforma Invoice"]
+        .includes(document.documentType) &&
+      document.ServiceConfirmationNumber
+    ) {
       const serviceConfirmation = await models.Documents.findOne({
         where: {
           companyId,

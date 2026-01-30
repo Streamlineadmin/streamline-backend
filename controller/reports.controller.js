@@ -1445,7 +1445,71 @@ async function getReports(req, res) {
                     acc[docmap[curr.documentNumber]][curr.itemId] = curr.quantity;
                     return acc;
                 }, {});
-                console.log('iammap', salesReturnItemsMap)
+            }
+        }
+
+        if (documentType === documentTypes.salesOrder) {
+            const invoices = await models.Documents.findAll({
+                where: {
+                    companyId: companyId,
+                    documentType: 'Invoice',
+                    orderConfirmationNumber: {
+                        [Op.in]: documents?.rows?.filter(doc => doc?.documentNumber)?.map(doc => doc.documentNumber)
+                    }
+                },
+                attributes: ['id', 'documentNumber', 'orderConfirmationNumber'],
+                raw: true
+            });
+            const invToSalesOrderMap = invoices.reduce((acc, curr) => {
+                acc[curr.documentNumber] = curr.orderConfirmationNumber;
+                return acc;
+            }, {});
+            const invoiceItems = await models.DocumentItems.findAll({
+                where: {
+                    companyId,
+                    documentNumber: {
+                        [Op.in]: invoices.map(invoice => invoice.documentNumber)
+                    }
+                },
+                raw: true,
+                attributes: ['id', 'quantity', 'itemId', 'documentNumber']
+            });
+            for (const element of invoiceItems) {
+                if (!salesItemsMap?.[invToSalesOrderMap[element.documentNumber]]) {
+                    salesItemsMap[invToSalesOrderMap[element.documentNumber]] = {};
+                }
+                salesItemsMap[invToSalesOrderMap[element.documentNumber]][element.itemId] = (salesItemsMap[invToSalesOrderMap[element.documentNumber]][element.itemId] || 0) + (element.quantity || 0)
+            }
+            const challans = await models.Documents.findAll({
+                where: {
+                    companyId: companyId,
+                    documentType: 'Delivery Challan',
+                    orderConfirmationNumber: {
+                        [Op.in]: documents?.rows?.filter(doc => doc?.documentNumber)?.map(doc => doc.documentNumber)
+                    }
+                },
+                attributes: ['id', 'documentNumber', 'orderConfirmationNumber'],
+                raw: true
+            });
+            const challanToSalesOrderMap = invoices.reduce((acc, curr) => {
+                acc[curr.documentNumber] = curr.orderConfirmationNumber;
+                return acc;
+            }, {});
+            const challanItems = await models.DocumentItems.findAll({
+                where: {
+                    companyId,
+                    documentNumber: {
+                        [Op.in]: challans.map(invoice => invoice.documentNumber)
+                    }
+                },
+                raw: true,
+                attributes: ['id', 'quantity', 'itemId', 'documentNumber']
+            });
+            for (const element of challanItems) {
+                if (!deliveryChallanItemsMap?.[challanToSalesOrderMap[element.documentNumber]]) {
+                    deliveryChallanItemsMap[challanToSalesOrderMap[element.documentNumber]] = {};
+                }
+                deliveryChallanItemsMap[challanToSalesOrderMap[element.documentNumber]][element.itemId] = (deliveryChallanItemsMap[challanToSalesOrderMap[element.documentNumber]][element.itemId] || 0) + (element.quantity || 0)
             }
         }
 
@@ -1870,11 +1934,19 @@ async function getReports(req, res) {
                 }
                 pendingItemsMap[document?.purchaseOrderNumber][item.itemId] = (pendingItemsMap[document?.purchaseOrderNumber][item.itemId] || 0) + item.quantity;
                 return ({ ...item, purchaseOrderItemsCount, pendingQuantity: Math.max(purchaseOrderItemsCount - existingQuantity, 0) });
-            })
+            });
             if (documentType === documentTypes.purchaseReturn || documentType === documentTypes.goodsReceive || documentType === documentTypes.qualityReport) itemToSend = itemToSend?.map(item => {
                 const poQuantity = salesItemsMap?.[document?.purchaseOrderNumber]?.[item.itemId];
                 return ({ ...item, poQuantity });
-            })
+            });
+            if (documentType === documentTypes.salesOrder) {
+                itemToSend = itemToSend.map(item => {
+                    const challanQuantity = (deliveryChallanItemsMap?.[document.documentNumber]?.[item?.itemId] || 0)?.toFixed(2);
+                    const invoiceQuantity = (salesItemsMap?.[document.documentNumber]?.[item?.itemId] || 0)?.toFixed(2);
+                    const pendingQuantity = Math.max((item.quantity - (Number(challanQuantity) + Number(invoiceQuantity))), 0)?.toFixed(2);
+                    return { ...item, challanQuantity, invoiceQuantity, pendingQuantity };
+                })
+            }
             return ({
                 ...{
                     ...document.toJSON(),

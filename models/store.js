@@ -22,7 +22,8 @@ module.exports = (sequelize, DataTypes) => {
     city: DataTypes.STRING,
     state: DataTypes.STRING,
     country: DataTypes.STRING,
-    storeType: DataTypes.STRING
+    storeType: DataTypes.STRING,
+    default: DataTypes.BOOLEAN
   }, {
     sequelize,
     modelName: 'Store',
