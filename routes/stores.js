@@ -18,5 +18,6 @@ router.post('/getAllStoresWithItems', storeController.getAllStoresWithItems);
 router.post('/getCompanyStoreTotals', storeController.getCompanyStoreTotals);
 router.post('/getAllRejectStoreItems', storeController.getAllRejectStoreItems);
 router.post('/getFifoPrice', storeController.getFifoPrice);
+router.post('/setDefaultStore', storeController.setDefaultStore);
 
 module.exports = router;

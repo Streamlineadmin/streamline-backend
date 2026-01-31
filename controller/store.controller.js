@@ -2,49 +2,58 @@ const { generateProductionId } = require("../helpers/transfer-number");
 const models = require("../models");
 const { Op, Sequelize } = require('sequelize');
 
-function addStore(req, res) {
-  // Check if team name already exists for the given company
-  models.Store.findOne({ where: { name: req.body.storeName, companyId: req.body.companyId } }).then(storeResult => {
+async function addStore(req, res) {
+  try {
+    // Check if store name already exists for the company
+    const storeResult = await models.Store.findOne({
+      where: {
+        name: req.body.storeName,
+        companyId: req.body.companyId
+      }
+    });
+
     if (storeResult) {
       return res.status(409).json({
-        message: "Store name already exists!",
+        message: "Store name already exists!"
       });
-    } else {
-      const store = {
-        companyId: req.body.companyId,
-        name: req.body.storeName,
-        ip_address: req.body.ip_address,
-        addressLineOne: req.body.addressLineOne,
-        addressLineTwo: req.body.addressLineTwo,
-        pincode: req.body.pinCode,
-        storeType: req.body.storeType,
-        city: req.body.city,
-        state: req.body.state,
-        country: req.body.country,
-        status: 1,
-      };
-
-      models.Store.create(store)
-        .then((result) => {
-          res.status(201).json({
-            message: "Store added successfully",
-            post: result,
-          });
-        })
-        .catch((error) => {
-          res.status(500).json({
-            message: "Something went wrong, please try again later!",
-            error: error,
-          });
-        });
     }
-  }).catch(error => {
-    res.status(500).json({
-      message: "Something went wrong, please try again later!",
-      error: error
+
+    const existingStoreCount = await models.Store.count({
+      where: {
+        companyId: req.body.companyId
+      }
     });
-  });
+
+    const store = {
+      companyId: req.body.companyId,
+      name: req.body.storeName,
+      ip_address: req.body.ip_address,
+      addressLineOne: req.body.addressLineOne,
+      addressLineTwo: req.body.addressLineTwo,
+      pincode: req.body.pinCode,
+      storeType: req.body.storeType,
+      city: req.body.city,
+      state: req.body.state,
+      country: req.body.country,
+      status: 1,
+      default: existingStoreCount === 0
+    };
+
+    const result = await models.Store.create(store);
+
+    return res.status(201).json({
+      message: "Store added successfully",
+      post: result
+    });
+
+  } catch (error) {
+    return res.status(500).json({
+      message: "Something went wrong, please try again later!",
+      error
+    });
+  }
 }
+
 
 function editStore(req, res) {
   const storeId = req.body.storeId;
@@ -1199,6 +1208,58 @@ async function getFifoPrice(req, res) {
   }
 }
 
+async function setDefaultStore(req, res) {
+  const transaction = await models.sequelize.transaction();
+
+  try {
+    const { companyId, storeId } = req.body;
+
+    // 1️⃣ Remove default from all stores of the company
+    await models.Store.update(
+      { default: false },
+      {
+        where: { companyId },
+        transaction
+      }
+    );
+
+    // 2️⃣ Set selected store as default
+    const [updatedCount] = await models.Store.update(
+      { default: true },
+      {
+        where: {
+          id: storeId,
+          companyId
+        },
+        transaction
+      }
+    );
+
+    if (updatedCount === 0) {
+      await transaction.rollback();
+      return res.status(404).json({
+        message: "Store not found for this company"
+      });
+    }
+
+    // 3️⃣ Commit transaction
+    await transaction.commit();
+
+    return res.status(200).json({
+      message: "Default store updated successfully"
+    });
+
+  } catch (error) {
+    console.log(error)
+    await transaction.rollback();
+    return res.status(500).json({
+      message: "Something went wrong while setting default store",
+      error
+    });
+  }
+}
+
+
 module.exports = {
   addStore: addStore,
   getStoresById: getStoresById,
@@ -1214,5 +1275,6 @@ module.exports = {
   getAllStoresWithItems: getAllStoresWithItems,
   getCompanyStoreTotals: getCompanyStoreTotals,
   getAllRejectStoreItems,
-  getFifoPrice
+  getFifoPrice,
+  setDefaultStore
 };
