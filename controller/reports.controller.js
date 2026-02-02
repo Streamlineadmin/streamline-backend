@@ -1193,7 +1193,6 @@ async function getReports(req, res) {
                 total: items.length
             });
         }
-
         if (documentType === 'Stock Update Ledger') {
             const { dateRange } = req.body;
             let startDate, endDate;
@@ -1290,6 +1289,182 @@ async function getReports(req, res) {
                 element.documentNumber = element.id;
                 element.type = element?.quantity > 0 ? 'Add' : 'Reduce';
                 element.quantity = Math.abs(element?.quantity);
+            }
+
+            return res.status(200).json({
+                data: stockTransfers,
+                total: stockTransfers.length
+            });
+        }
+        if (documentType === 'Testing Report') {
+            const items = await models.Items.findAll({
+                where: {
+                    companyId: Number(companyId)
+                },
+                attributes: ['microCategory', 'subCategory', 'category', 'itemId'],
+                raw: true
+            });
+            const itemsMap = items.reduce((acc, curr) => {
+                acc[curr.itemId] = curr;
+                return acc;
+            }, {});
+            const categorys = await models.Categories.findAll({
+                where: {
+                    companyId: Number(companyId)
+                },
+                attributes: ['id', 'name'],
+                raw: true
+            });
+            const categorysMap = categorys.reduce((acc, curr) => {
+                acc[curr.id] = curr.name;
+                return acc;
+            }, {});
+            const uoms = await models.UOM.findAll({
+                where: { companyId: { [Op.or]: [null, Number(companyId)] } },
+                raw: true
+            });
+            const uomMap = uoms.reduce((acc, curr) => {
+                acc[curr.id] = curr.code;
+                return acc;
+            }, {});
+            const productions = await models.Production.findAll({
+                where: {
+                    companyId,
+                    status: {
+                        [Op.ne]: 0
+                    }
+                },
+                raw: true,
+                order: [['createdAt', 'DESC']]
+            });
+            const finishedGoods = await models.ProductionFinishedGoods.findAll({
+                where: {
+                    productionId: {
+                        [Op.in]: productions.map(prod => prod.id)
+                    }
+                },
+                raw: true
+            });
+            const productionMap = productions.reduce((acc, curr) => {
+                acc[curr.id] = curr;
+                return acc;
+            }, {});
+            const enrichedFinishedGoods = finishedGoods.map(element => ({
+                ...element,
+                testingQuantity: (element.passedQuantity || 0) + (element.rejectQuantity || 0),
+                testingStatus: (
+                    element.producedQuantity >
+                        ((element.passedQuantity || 0) + (element.rejectQuantity || 0))
+                        ? 'Pending'
+                        : 'Completed'
+                ),
+                ...productionMap?.[element.productionId],
+                category: categorysMap?.[itemsMap?.[element.itemId]?.category],
+                subCategory: categorysMap?.[itemsMap?.[element.itemId]?.subCategory],
+                microCategory: categorysMap?.[itemsMap?.[element.itemId]?.microCategory],
+                uom: uomMap?.[element.uom],
+                documentNumber: element.id,
+            }));
+            return res.status(200).json({
+                data: enrichedFinishedGoods,
+                total: enrichedFinishedGoods.length
+            });
+        }
+
+        if (documentType === 'Testing Report Ledger') {
+            const approvals = await models.InventoryApproval.findAll({
+                where: {
+                    companyId,
+                    documentType: 'Finished Good',
+                },
+                raw: true
+            });
+
+            const users = await models.Users.findAll({
+                where: {
+                    companyId
+                },
+                raw: true,
+                attributes: ['id', 'name']
+            });
+
+            const userMap = users.reduce((acc, curr) => {
+                acc[curr.id] = curr.name;
+                return acc;
+            }, {});
+
+            const stores = await models.Store.findAll({
+                where: {
+                    companyId
+                },
+                raw: true,
+                attributes: ['name', 'id']
+            });
+            const storeMap = stores.reduce((acc, curr) => {
+                acc[curr.id] = curr.name;
+                return acc;
+            }, {});
+            const items = await models.Items.findAll({
+                where: {
+                    companyId: Number(companyId)
+                },
+                attributes: ['microCategory', 'subCategory', 'category', 'id', 'itemId', 'itemName'],
+                raw: true
+            });
+            const itemsMap = items.reduce((acc, curr) => {
+                acc[curr.id] = curr;
+                return acc;
+            }, {});
+            const categorys = await models.Categories.findAll({
+                where: {
+                    companyId: Number(companyId)
+                },
+                attributes: ['id', 'name'],
+                raw: true
+            });
+            const categorysMap = categorys.reduce((acc, curr) => {
+                acc[curr.id] = curr.name;
+                return acc;
+            }, {});
+            const stockTransfers = await models.StockTransfer.findAll({
+                where: {
+                    companyId,
+                    approvalId: {
+                        [Op.in]: approvals.map(app => app.id)
+                    },
+                    isRejected: false
+                },
+                order: [['createdAt', 'ASC']],
+                raw: true
+            });
+            const stockTransfersReject = await models.StockTransfer.findAll({
+                where: {
+                    companyId,
+                    approvalId: {
+                        [Op.in]: approvals.map(app => app.id)
+                    },
+                    isRejected: true
+                },
+                attributes: ['approvalId', 'quantity'],
+                raw: true
+            });
+            const stockTransfersRejectMap = stockTransfersReject.reduce((acc, curr) => {
+                acc[curr.approvalId] = curr.quantity;
+                return acc;
+            }, {});
+            for (const element of stockTransfers) {
+                element.store = storeMap?.[element.toStoreId]
+                element.itemName = itemsMap[element.itemId]?.itemName;
+                element.category = categorysMap?.[itemsMap[element.itemId]?.category];
+                element.subCategory = categorysMap?.[itemsMap[element.itemId]?.subCategory];
+                element.microCategory = categorysMap?.[itemsMap[element.itemId]?.microCategory];
+                element.itemId = itemsMap[element.itemId]?.itemId;
+                element.documentNumber = element.id;
+                element.user = userMap[element.transferredBy] || '';
+                element.passedQuantity = element.quantity;
+                element.rejectQuantity = stockTransfersRejectMap?.[element.approvalId] || 0;
+                element.testingQuantity = element.quantity + (stockTransfersRejectMap?.[element.approvalId] || 0),
+                element.comment = element.comment || '';
             }
 
             return res.status(200).json({

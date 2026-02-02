@@ -1193,7 +1193,13 @@ async function updateProcess(req, res) {
                     actionType: 'Process Logged',
                     summary: `${element.todayProcessQuantity} Process Logged under ${element.processName} by ${by}. Total time recorded ${element?.currentTime || element?.currentPlannedTime} at ₹${element.amount || element?.currentAverage} /hour cost.`
                 });
+
             }
+            element?.remark && await models.ProductionHistory.create({
+                productionId: element?.productionId,
+                actionType: 'comments',
+                summary: `${element.remark}. Remarked by ${by}.`
+            });
         }
         return res.status(200).json({ message: 'Process Updated' });
     } catch (error) {
@@ -1381,7 +1387,8 @@ async function saveFinishedGoods(req, res) {
             batchData,
             userId,
             by,
-            rejectQuantityCostPerUnit
+            rejectQuantityCostPerUnit,
+            comments
         } = req.body;
 
         const uoms = await models.UOM.findAll({
@@ -1479,13 +1486,14 @@ async function saveFinishedGoods(req, res) {
             quantity: settings?.['productionFinishedGood'] == 'manual' ? null : (passedQty * (finishedGoods[0]?.conversionFactor || 1)),
             toStoreId: stores.id,
             transferDate: new Date().toISOString(),
-            transferredBy: companyId,
+            transferredBy: userId,
             companyId,
             price: costPerUnit,
             productionId: production.productionId,
             productionNavigationId: production.id,
             approvalId: approval.id,
-            quantityForApproval: passedQty * (finishedGoods[0]?.conversionFactor || 1)
+            quantityForApproval: passedQty * (finishedGoods[0]?.conversionFactor || 1),
+            comment: comments || ''
         }, { transaction });
 
         await models.ProductionHistory.create({
@@ -1520,14 +1528,15 @@ async function saveFinishedGoods(req, res) {
                 quantity: settings?.['productionFinishedGood'] == 'manual' ? null : (rejectQty * (finishedGoods[0]?.conversionFactor || 1)),
                 toStoreId: rejectStores.id,
                 transferDate: new Date().toISOString(),
-                transferredBy: companyId,
+                transferredBy: userId,
                 companyId,
                 price: rejectQuantityCostPerUnit || 0,
                 isRejected: true,
                 productionId: production.productionId,
                 productionNavigationId: production.id,
                 approvalId: approval.id,
-                quantityForApproval: rejectQty * (finishedGoods[0]?.conversionFactor || 1)
+                quantityForApproval: rejectQty * (finishedGoods[0]?.conversionFactor || 1),
+                comment: comments || ''
             }, { transaction });
         }
 
