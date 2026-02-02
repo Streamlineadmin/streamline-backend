@@ -21,35 +21,44 @@ async function getReports(req, res) {
             const { toStore, dateRange, itemType, quickRange } = req.body;
             let startDate = null, endDate = null;
 
+            const IST_OFFSET = 5.5 * 60 * 60 * 1000;
+
+            // ---------- DATE RANGE ----------
             if (dateRange?.length === 2) {
-                const IST_OFFSET = 5.5 * 60 * 60 * 1000;
-                const startIst = new Date(new Date(dateRange[0]).getTime());
-                const endIst = new Date(new Date(dateRange[1]).getTime());
-                startIst.setHours(0, 0, 0, 0);
+                const startIst = new Date(dateRange[0]);
+                const endIst = new Date(dateRange[1]);
                 endIst.setHours(23, 59, 59, 999);
-                startDate = new Date(startIst.getTime() - IST_OFFSET);
-                endDate = new Date(endIst.getTime());
-            } else if (quickRange) {
-                const nowIst = new Date(new Date().getTime() + 5.5 * 60 * 60 * 1000);
-                const startIst = new Date(nowIst);
-                startIst.setDate(nowIst.getDate() - quickRange);
-                startDate = istToUtc(startIst);
-                endDate = istToUtc(nowIst);
+                startDate = startIst;
+                endDate = endIst;
             }
 
-            const nowIst = new Date(new Date().getTime() + 5.5 * 60 * 60 * 1000);
+            // ---------- QUICK RANGE ----------
+            else if (quickRange) {
+                const nowIst = new Date(Date.now() + IST_OFFSET);
+                const startIst = new Date(nowIst);
+                startIst.setDate(nowIst.getDate() - quickRange);
+
+                startDate = startIst;   // IST
+                endDate = nowIst;       // IST
+            }
+
+            // ---------- DEFAULT (LAST 1 MONTH) ----------
+            const nowIst = new Date(Date.now() + IST_OFFSET);
             const oneMonthAgoIst = new Date(nowIst);
             oneMonthAgoIst.setMonth(nowIst.getMonth() - 1);
 
-            const startUtc = istToUtc(startDate || oneMonthAgoIst);
-            const endUtc = istToUtc(endDate || nowIst);
+            // ✅ SINGLE conversion point (IST → UTC)
+            const startUtc = startDate || istToUtc(oneMonthAgoIst);
+            const endUtc = endDate || istToUtc(nowIst);
 
+            // ---------- QUERY ----------
             const whereClause = {
                 companyId: Number(companyId),
                 productionId: { [Op.ne]: null },
                 createdAt: { [Op.between]: [startUtc, endUtc] },
                 quantity: { [Op.gt]: 0 }
             };
+
             if (toStore?.length) {
                 whereClause.toStoreId = { [Op.in]: toStore };
             }
@@ -59,17 +68,20 @@ async function getReports(req, res) {
                 raw: true
             });
 
-            const itemIds = StockTransfers.map(t => t.itemId);
+            const itemIds = [...new Set(StockTransfers.map(t => t.itemId))];
 
+            // ---------- UOM ----------
             const uoms = await models.UOM.findAll({
                 where: { companyId: { [Op.or]: [null, Number(companyId)] } },
                 raw: true
             });
+
             const uomMap = uoms.reduce((acc, curr) => {
                 acc[curr.id] = curr.code;
                 return acc;
             }, {});
 
+            // ---------- ITEMS ----------
             const items = await models.Items.findAll({
                 where: {
                     companyId: Number(companyId),
@@ -77,15 +89,17 @@ async function getReports(req, res) {
                 },
                 raw: true
             });
+
             const itemsMap = items.reduce((acc, curr) => {
                 acc[curr.id] = curr;
                 return acc;
             }, {});
 
+            // ---------- ALTERNATE UNITS ----------
             const alternateUnits = await models.AlternateUnits.findAll({
                 where: { itemId: itemIds },
-                attributes: ['itemId', 'alternateUnits', 'conversionfactor',],
-                raw: true,
+                attributes: ['itemId', 'alternateUnits', 'conversionfactor'],
+                raw: true
             });
 
             const alternateUnitMap = {};
@@ -93,9 +107,13 @@ async function getReports(req, res) {
                 if (!alternateUnitMap[unit.itemId]) {
                     alternateUnitMap[unit.itemId] = [];
                 }
-                alternateUnitMap[unit.itemId].push({ ...unit, alternateUnits: uomMap[unit.alternateUnits] });
+                alternateUnitMap[unit.itemId].push({
+                    ...unit,
+                    alternateUnits: uomMap[unit.alternateUnits]
+                });
             }
 
+            // ---------- DAILY AGGREGATION ----------
             const itemDailyData = {};
             StockTransfers.forEach(transfer => {
                 const itemId = transfer.itemId;
@@ -105,15 +123,11 @@ async function getReports(req, res) {
                 if (!itemDailyData[itemId]) {
                     itemDailyData[itemId] = { totalQuantity: 0 };
                 }
-                if (!itemDailyData[itemId][dateKey]) {
-                    itemDailyData[itemId][dateKey] = 0;
-                }
 
-                itemDailyData[itemId][dateKey] += qty;
+                itemDailyData[itemId][dateKey] = (itemDailyData[itemId][dateKey] || 0) + qty;
                 itemDailyData[itemId].totalQuantity += qty;
             });
 
-            // build list of all dates between start and end
             const allDates = getAllDatesInRange(startUtc, endUtc);
 
             const finalReport = Object.keys(itemDailyData).map(itemId => {
@@ -123,7 +137,7 @@ async function getReports(req, res) {
                     uom: uomMap[itemsMap[itemId]?.metricsUnit] || null,
                     totalQuantity: itemDailyData[itemId].totalQuantity,
                     documentNumber: itemId,
-                    alternateUnits: alternateUnitMap[itemId] || [],
+                    alternateUnits: alternateUnitMap[itemId] || []
                 };
 
                 allDates.forEach(dateKey => {
@@ -134,10 +148,11 @@ async function getReports(req, res) {
             });
 
             return res.status(200).json({
-                message: 'reports fetched.',
+                message: "reports fetched.",
                 data: finalReport
             });
         }
+
         if (documentType === "productionSummary") {
             const items = await models.Items.findAll({
                 where: {
@@ -1464,7 +1479,7 @@ async function getReports(req, res) {
                 element.passedQuantity = element.quantity;
                 element.rejectQuantity = stockTransfersRejectMap?.[element.approvalId] || 0;
                 element.testingQuantity = element.quantity + (stockTransfersRejectMap?.[element.approvalId] || 0),
-                element.comment = element.comment || '';
+                    element.comment = element.comment || '';
             }
 
             return res.status(200).json({
