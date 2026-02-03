@@ -544,7 +544,7 @@ async function getProductions(req, res) {
         }
         const manualProductions = [];
         for (const element of productions) {
-            if (!element.documentNumber) {
+            if (!element.documentNumber || element.parentProductionId) {
                 manualProductions.push({
                     items: [{ production: element }]
                 });
@@ -3341,6 +3341,27 @@ async function bulkIssue(req, res) {
     }
 }
 
+async function updateStartDate(req, res) {
+    try {
+        const { productionId, startDate } = req.body;
+        await models.Production.update({ productionStartDate: startDate }, {
+            where: {
+                id: productionId
+            }
+        });
+        return res.status(200).json({
+            message: "Start Date Updated."
+        });
+
+    } catch (error) {
+        console.error("Discard Error:", error);
+        return res.status(500).json({
+            message: "Something Went Wrong.",
+            error: error.message,
+        });
+    }
+}
+
 module.exports = {
     startProduction: startProduction,
     getProductions: getProductions,
@@ -3365,5 +3386,6 @@ module.exports = {
     getBulkProductions: getBulkProductions,
     remainingProduction: remainingProduction,
     discardProduction: discardProduction,
-    bulkIssue: bulkIssue
+    bulkIssue: bulkIssue,
+    updateStartDate: updateStartDate
 }
