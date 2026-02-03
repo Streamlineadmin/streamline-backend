@@ -544,7 +544,7 @@ async function getProductions(req, res) {
         }
         const manualProductions = [];
         for (const element of productions) {
-            if (!element.documentNumber) {
+            if (!element.documentNumber || element.parentProductionId) {
                 manualProductions.push({
                     items: [{ production: element }]
                 });
