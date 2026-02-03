@@ -152,7 +152,6 @@ async function getReports(req, res) {
                 data: finalReport
             });
         }
-
         if (documentType === "productionSummary") {
             const items = await models.Items.findAll({
                 where: {
@@ -202,7 +201,10 @@ async function getReports(req, res) {
             }, {})
             const productions = await models.Production.findAll({
                 where: {
-                    companyId: Number(companyId)
+                    companyId: Number(companyId),
+                    status: {
+                        [Op.ne]: 0
+                    }
                 },
                 raw: true
             });
@@ -328,7 +330,10 @@ async function getReports(req, res) {
             }, {})
             const productions = await models.Production.findAll({
                 where: {
-                    companyId: Number(companyId)
+                    companyId: Number(companyId),
+                    status: {
+                        [Op.ne]: 0
+                    }
                 },
                 raw: true
             });
@@ -1385,7 +1390,6 @@ async function getReports(req, res) {
                 total: enrichedFinishedGoods.length
             });
         }
-
         if (documentType === 'Testing Report Ledger') {
             const approvals = await models.InventoryApproval.findAll({
                 where: {
@@ -1681,7 +1685,7 @@ async function getReports(req, res) {
                 attributes: ['id', 'documentNumber', 'orderConfirmationNumber'],
                 raw: true
             });
-            const challanToSalesOrderMap = invoices.reduce((acc, curr) => {
+            const challanToSalesOrderMap = challans.reduce((acc, curr) => {
                 acc[curr.documentNumber] = curr.orderConfirmationNumber;
                 return acc;
             }, {});
