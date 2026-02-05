@@ -2657,6 +2657,7 @@ async function returnRawMaterial(req, res) {
             }
 
         }
+
         res.status(200).json({ message: settings?.['productionRawMaterial'] != 'manual' ? 'Raw Material Returned.' : 'Raw material return request generated.' });
 
     } catch (error) {
@@ -2994,8 +2995,9 @@ async function remainingProduction(req, res) {
 }
 
 async function discardProduction(req, res) {
+    const t = await models.sequelize.transaction();
     try {
-        const { id } = req.body;
+        const { id, companyId } = req.body;
 
         const idsToDiscard = new Set();
         const fetchChildren = async (parentIds) => {
@@ -3005,7 +3007,8 @@ async function discardProduction(req, res) {
                 attributes: ['id'],
                 where: {
                     parentProductionId: parentIds
-                }
+                },
+                transaction: t
             });
 
             const childIds = children.map(c => c.id);
@@ -3020,7 +3023,8 @@ async function discardProduction(req, res) {
         // find bul
         const bulkProductions = await models.Production.findAll({
             attributes: ['id'],
-            where: { bulkProductionId: id }
+            where: { bulkProductionId: id },
+            transaction: t
         });
 
         const bulkIds = bulkProductions.map(p => p.id);
@@ -3035,15 +3039,264 @@ async function discardProduction(req, res) {
             {
                 where: {
                     id: [...idsToDiscard]
+                },
+                transaction: t
+            },
+        );
+
+        const addApprovals = await models.InventoryApproval.findAll({
+            where: {
+                companyId,
+                documentNumber: {
+                    [Op.in]: [...idsToDiscard]
+                },
+                documentType: 'Finished Good',
+            },
+            transaction: t,
+            attributes: ['id'],
+            raw: true
+        });
+
+        const stockTransfers = await models.StockTransfer.findAll({
+            where: {
+                companyId,
+                approvalId: {
+                    [Op.in]: addApprovals.map(app => app.id)
+                }
+            },
+            transaction: t
+        });
+
+        for (const element of stockTransfers) {
+            if (element.quantity > 0) {
+                let remainingQuantity = element.quantity;
+                const existingStock = await models.StoreItems.findAll({
+                    where: { storeId: element.toStoreId, itemId: element.itemId, isRejected: element.isRejected || false },
+                    transaction: t,
+                    order: [['createdAt', 'ASC']],
+                });
+                for (const stock of existingStock) {
+                    if (remainingQuantity <= 0) break;
+                    if (stock.quantity <= 0) continue;
+                    const deductQty = Math.min(stock.quantity, remainingQuantity);
+                    remainingQuantity -= deductQty;
+
+                    await models.StoreItems.update(
+                        { quantity: (stock.quantity - deductQty) },
+                        { where: { id: stock.id }, transaction: t }
+                    );
+                    await models.StockTransfer.create({
+                        transferNumber: generateTransferNumber(),
+                        fromStoreId: element.toStoreId,
+                        itemId: element.itemId,
+                        quantity: deductQty * -1,
+                        toStoreId: null,
+                        transferDate: new Date().toISOString(),
+                        transferredBy: element.transferredBy,
+                        comment: 'Production Discarded',
+                        companyId,
+                        price: element.price,
+                        actualPrice: stock.price,
+                        productionId: element.productionId,
+                        productionNavigationId: element.productionNavigationId,
+                        isRejected: element.isRejected
+                        // approvalId: approval.id,
+                        // quantityForApproval: element.quantity
+                    }, { transaction: t });
                 }
             }
-        );
+        }
+
+        const scrapApprovals = await models.InventoryApproval.findAll({
+            where: {
+                companyId,
+                documentNumber: {
+                    [Op.in]: [...idsToDiscard]
+                },
+                documentType: 'Scrap Material',
+            },
+            transaction: t,
+            attributes: ['id'],
+            raw: true
+        });
+
+        const scrapStockTransfers = await models.StockTransfer.findAll({
+            where: {
+                companyId,
+                approvalId: {
+                    [Op.in]: scrapApprovals.map(app => app.id)
+                }
+            },
+            transaction: t
+        });
+
+        for (const element of scrapStockTransfers) {
+            if (element.quantity > 0) {
+                let remainingQuantity = element.quantity;
+                const existingStock = await models.StoreItems.findAll({
+                    where: { storeId: element.toStoreId, itemId: element.itemId, isRejected: element.isRejected || false },
+                    transaction: t,
+                    order: [['createdAt', 'ASC']],
+                });
+                for (const stock of existingStock) {
+                    if (remainingQuantity <= 0) break;
+                    if (stock.quantity <= 0) continue;
+                    const deductQty = Math.min(stock.quantity, remainingQuantity);
+                    remainingQuantity -= deductQty;
+
+                    await models.StoreItems.update(
+                        { quantity: (stock.quantity - deductQty) },
+                        { where: { id: stock.id }, transaction: t }
+                    );
+                    await models.StockTransfer.create({
+                        transferNumber: generateTransferNumber(),
+                        fromStoreId: element.toStoreId,
+                        itemId: element.itemId,
+                        quantity: deductQty * -1,
+                        toStoreId: null,
+                        transferDate: new Date().toISOString(),
+                        transferredBy: element.transferredBy,
+                        comment: 'Production Discarded',
+                        companyId,
+                        price: element.price,
+                        actualPrice: stock.price,
+                        productionId: element.productionId,
+                        productionNavigationId: element.productionNavigationId,
+                        isRejected: element.isRejected
+                        // approvalId: approval.id,
+                        // quantityForApproval: element.quantity
+                    }, { transaction: t });
+                }
+            }
+        }
+
+        const returnApprovals = await models.InventoryApproval.findAll({
+            where: {
+                companyId,
+                documentNumber: {
+                    [Op.in]: [...idsToDiscard]
+                },
+                documentType: 'Raw Material Return',
+            },
+            transaction: t,
+            attributes: ['id'],
+            raw: true
+        });
+
+        const returnStockTransfers = await models.StockTransfer.findAll({
+            where: {
+                companyId,
+                approvalId: {
+                    [Op.in]: returnApprovals.map(app => app.id)
+                }
+            },
+            transaction: t
+        });
+
+        for (const element of returnStockTransfers) {
+            if (element.quantity > 0) {
+                let remainingQuantity = element.quantity;
+                const existingStock = await models.StoreItems.findAll({
+                    where: { storeId: element.toStoreId, itemId: element.itemId, isRejected: element.isRejected || false },
+                    transaction: t,
+                    order: [['createdAt', 'ASC']],
+                });
+                for (const stock of existingStock) {
+                    if (remainingQuantity <= 0) break;
+                    if (stock.quantity <= 0) continue;
+                    const deductQty = Math.min(stock.quantity, remainingQuantity);
+                    remainingQuantity -= deductQty;
+
+                    await models.StoreItems.update(
+                        { quantity: (stock.quantity - deductQty) },
+                        { where: { id: stock.id }, transaction: t }
+                    );
+                    await models.StockTransfer.create({
+                        transferNumber: generateTransferNumber(),
+                        fromStoreId: element.toStoreId,
+                        itemId: element.itemId,
+                        quantity: deductQty * -1,
+                        toStoreId: null,
+                        transferDate: new Date().toISOString(),
+                        transferredBy: element.transferredBy,
+                        comment: 'Production Discarded',
+                        companyId,
+                        price: element.price,
+                        actualPrice: stock.price,
+                        productionId: element.productionId,
+                        productionNavigationId: element.productionNavigationId,
+                        isRejected: element.isRejected
+                        // approvalId: approval.id,
+                        // quantityForApproval: element.quantity
+                    }, { transaction: t });
+                }
+            }
+        }
+
+        const rawApprovals = await models.InventoryApproval.findAll({
+            where: {
+                companyId,
+                documentNumber: {
+                    [Op.in]: [...idsToDiscard]
+                },
+                documentType: 'Raw Material',
+            },
+            transaction: t,
+            attributes: ['id'],
+            raw: true
+        });
+
+        const rawStockTransfers = await models.StockTransfer.findAll({
+            where: {
+                companyId,
+                approvalId: {
+                    [Op.in]: rawApprovals.map(app => app.id)
+                }
+            },
+            transaction: t
+        });
+
+        for (const element of rawStockTransfers) {
+            if (element.quantity) {
+                await models.StockTransfer.create({
+                    transferNumber: generateTransferNumber(),
+                    fromStoreId: null,
+                    itemId: element.itemId,
+                    quantity: Math.abs(element.quantity),
+                    toStoreId: element.fromStoreId,
+                    transferDate: new Date().toISOString(),
+                    transferredBy: element.transferredBy,
+                    comment: 'Production Discarded',
+                    companyId,
+                    price: element.price,
+                    actualPrice: element.price,
+                    productionId: element.productionId,
+                    productionNavigationId: element.productionNavigationId,
+                    isRejected: element.isRejected
+                    // approvalId: approval.id,
+                    // quantityForApproval: element.quantity
+                }, { transaction: t });
+                await models.StoreItems.create({
+                    storeId: element.fromStoreId,
+                    itemId: element.itemId,
+                    quantity: Math.abs(element.quantity),
+                    status: 1,
+                    addedBy: Number(companyId),
+                    price: element.price,
+                    isRejected: element?.isReject || false,
+                }, { transaction: t });
+            }
+        }
+
+        await t.commit();
+        // await t.rollback();
 
         return res.status(200).json({
             message: 'Production and all related productions discarded.'
         });
 
     } catch (error) {
+        await t.rollback();
         console.error("Discard Error:", error);
         return res.status(500).json({
             message: "Failed to Discard Production",
@@ -3362,6 +3615,121 @@ async function updateStartDate(req, res) {
     }
 }
 
+async function minStockMaterialPlanning(req, res) {
+    try {
+        const { companyId } = req.body;
+        const items = await models.Items.findAll({
+            where: {
+                companyId,
+                minStock: {
+                    [Op.gt]: 0
+                }
+            },
+            raw: true
+        });
+        const itemToPIdMap = items?.reduce((acc, curr) => {
+            acc[curr.id] = curr.itemId;
+            return acc;
+        }, {});
+        const storeItems = await models.StoreItems.findAll({
+            where: {
+                itemId: {
+                    [Op.in]: items.map(item => item.id)
+                },
+                isRejected: false,
+            },
+            attributes: ['itemId', 'quantity'],
+            raw: true,
+        });
+
+        const availableStockMap = storeItems?.reduce((acc, curr) => {
+            if (curr.quantity > 0) acc[itemToPIdMap[curr.itemId]] = (acc[itemToPIdMap[curr.itemId]] ?? 0) + curr.quantity;
+            return acc;
+        }, {});
+
+        const productions = await models.Production.findAll({
+            where: {
+                companyId: Number(companyId),
+                status: {
+                    [Op.ne]: 0
+                }
+            },
+            attributes: ['id'],
+            raw: true
+        });
+
+        const productionIds = productions.map(prod => prod.id);
+        const productionRawmaterials = await models.ProductionRawMaterials.findAll({
+            where: {
+                productionId: productionIds,
+                itemId: {
+                    [Op.in]: items.map(item => item.itemId)
+                }
+            },
+            attributes: ['itemId', 'quantity', 'conversionFactor'],
+            raw: true
+        });
+
+        const rawMaterialQueueMap = productionRawmaterials?.reduce((acc, curr) => {
+            acc[curr.itemId] = (acc[curr.itemId] || 0) + Math.max(((curr.quantity * (curr?.conversionFactor || 1)) - (((curr.consumedQuantity * (curr?.conversionFactor || 1)) || 0) + ((curr.issuedQuantity * (curr?.conversionFactor || 1)) || 0))), 0);
+            return acc;
+        }, {});
+
+        const purchaseOrders = await models.Documents.findAll({
+            where: {
+                documentType: documentTypes.purchaseOrder,
+                companyId: Number(companyId),
+                status: {
+                    [Op.in]: [1, 4]
+                }
+            },
+            raw: true
+        });
+
+        const purchaseOrdersNumber = purchaseOrders.map(po => po.documentNumber);
+        const grns = await models.Documents.findAll({
+            where: {
+                companyId: Number(companyId),
+                documentType: documentTypes.goodsReceive,
+                purchaseOrderNumber: purchaseOrdersNumber
+            },
+            raw: true
+        });
+
+        const latestGrnsMap = {};
+        for (const element of grns) {
+            latestGrnsMap[element.purchaseOrderNumber] = element;
+        }
+
+        const grnNumbers = Object.values(latestGrnsMap)?.map(grn => grn.documentNumber);
+        const documentItems = await models.DocumentItems.findAll({
+            where: {
+                companyId: Number(companyId),
+                documentNumber: grnNumbers
+            }
+        });
+
+        const purchaseQuantityInQueue = documentItems?.reduce((acc, curr) => {
+            acc[curr.itemId] = (acc?.[curr.itemId] || 0) + Math.max(((curr.pendingQuantity || 0) * (curr?.conversionFactor || 1)), 0);
+            return acc;
+        }, {});
+
+        for (const item of items) {
+            item.currentStock = (availableStockMap[item.itemId] || 0)?.toFixed(2);
+            item.wip = (rawMaterialQueueMap[item.itemId] || 0)?.toFixed(2);
+            item.poQuantityInQueue = (purchaseQuantityInQueue[item.itemId] || 0)?.toFixed(2);
+        }
+
+        return res.status(200).json({ materialPlanningData: items });
+
+    } catch (error) {
+        console.error("Transaction Error:", error);
+        return res.status(500).json({
+            message: "Failed to Get Material Planning Production.",
+        });
+    }
+}
+
 module.exports = {
     startProduction: startProduction,
     getProductions: getProductions,
@@ -3387,5 +3755,6 @@ module.exports = {
     remainingProduction: remainingProduction,
     discardProduction: discardProduction,
     bulkIssue: bulkIssue,
-    updateStartDate: updateStartDate
+    updateStartDate: updateStartDate,
+    minStockMaterialPlanning: minStockMaterialPlanning
 }
