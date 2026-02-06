@@ -2997,7 +2997,7 @@ async function remainingProduction(req, res) {
 async function discardProduction(req, res) {
     const t = await models.sequelize.transaction();
     try {
-        const { id, companyId } = req.body;
+        const { id, companyId, userId } = req.body;
 
         const idsToDiscard = new Set();
         const fetchChildren = async (parentIds) => {
@@ -3067,7 +3067,27 @@ async function discardProduction(req, res) {
             transaction: t
         });
 
+        let approvalMap = {};
+
         for (const element of stockTransfers) {
+            if (!approvalMap?.[element.productionNavigationId]) {
+                const approvalCount = await models.InventoryApproval.count({
+                    where: {
+                        companyId
+                    }
+                });
+                const approval = await models.InventoryApproval.create({
+                    approvalId: `INA${approvalCount + 1}`,
+                    documentType: 'Production Discarded - Finished Good',
+                    documentNumber: element.productionNavigationId,
+                    approvalStatus: 'Auto Approved',
+                    requestedBy: userId,
+                    companyId: companyId,
+                    status: 1,
+                    approvedBy: null
+                }, { transaction: t });
+                approvalMap[element.productionNavigationId] = approval.id;
+            }
             if (element.quantity > 0) {
                 let remainingQuantity = element.quantity;
                 const existingStock = await models.StoreItems.findAll({
@@ -3099,13 +3119,14 @@ async function discardProduction(req, res) {
                         actualPrice: stock.price,
                         productionId: element.productionId,
                         productionNavigationId: element.productionNavigationId,
-                        isRejected: element.isRejected
-                        // approvalId: approval.id,
-                        // quantityForApproval: element.quantity
+                        isRejected: element.isRejected,
+                        approvalId: approvalMap?.[element.productionNavigationId],
+                        quantityForApproval: element.quantity
                     }, { transaction: t });
                 }
             }
         }
+        approvalMap = {};
 
         const scrapApprovals = await models.InventoryApproval.findAll({
             where: {
@@ -3131,6 +3152,24 @@ async function discardProduction(req, res) {
         });
 
         for (const element of scrapStockTransfers) {
+            if (!approvalMap?.[element.productionNavigationId]) {
+                const approvalCount = await models.InventoryApproval.count({
+                    where: {
+                        companyId
+                    }
+                });
+                const approval = await models.InventoryApproval.create({
+                    approvalId: `INA${approvalCount + 1}`,
+                    documentType: 'Production Discarded - Scrap Material',
+                    documentNumber: element.productionNavigationId,
+                    approvalStatus: 'Auto Approved',
+                    requestedBy: userId,
+                    companyId: companyId,
+                    status: 1,
+                    approvedBy: null
+                }, { transaction: t });
+                approvalMap[element.productionNavigationId] = approval.id;
+            }
             if (element.quantity > 0) {
                 let remainingQuantity = element.quantity;
                 const existingStock = await models.StoreItems.findAll({
@@ -3162,13 +3201,15 @@ async function discardProduction(req, res) {
                         actualPrice: stock.price,
                         productionId: element.productionId,
                         productionNavigationId: element.productionNavigationId,
-                        isRejected: element.isRejected
-                        // approvalId: approval.id,
-                        // quantityForApproval: element.quantity
+                        isRejected: element.isRejected,
+                        approvalId: approvalMap?.[element.productionNavigationId],
+                        quantityForApproval: element.quantity
                     }, { transaction: t });
                 }
             }
         }
+
+        approvalMap = {};
 
         const returnApprovals = await models.InventoryApproval.findAll({
             where: {
@@ -3194,6 +3235,24 @@ async function discardProduction(req, res) {
         });
 
         for (const element of returnStockTransfers) {
+            if (!approvalMap?.[element.productionNavigationId]) {
+                const approvalCount = await models.InventoryApproval.count({
+                    where: {
+                        companyId
+                    }
+                });
+                const approval = await models.InventoryApproval.create({
+                    approvalId: `INA${approvalCount + 1}`,
+                    documentType: 'Production Discarded - Return Raw Material',
+                    documentNumber: element.productionNavigationId,
+                    approvalStatus: 'Auto Approved',
+                    requestedBy: userId,
+                    companyId: companyId,
+                    status: 1,
+                    approvedBy: null
+                }, { transaction: t });
+                approvalMap[element.productionNavigationId] = approval.id;
+            }
             if (element.quantity > 0) {
                 let remainingQuantity = element.quantity;
                 const existingStock = await models.StoreItems.findAll({
@@ -3225,13 +3284,15 @@ async function discardProduction(req, res) {
                         actualPrice: stock.price,
                         productionId: element.productionId,
                         productionNavigationId: element.productionNavigationId,
-                        isRejected: element.isRejected
-                        // approvalId: approval.id,
-                        // quantityForApproval: element.quantity
+                        isRejected: element.isRejected,
+                        approvalId: approvalMap?.[element.productionNavigationId],
+                        quantityForApproval: element.quantity
                     }, { transaction: t });
                 }
             }
         }
+
+        approvalMap = {};
 
         const rawApprovals = await models.InventoryApproval.findAll({
             where: {
@@ -3257,6 +3318,24 @@ async function discardProduction(req, res) {
         });
 
         for (const element of rawStockTransfers) {
+            if (!approvalMap?.[element.productionNavigationId]) {
+                const approvalCount = await models.InventoryApproval.count({
+                    where: {
+                        companyId
+                    }
+                });
+                const approval = await models.InventoryApproval.create({
+                    approvalId: `INA${approvalCount + 1}`,
+                    documentType: 'Production Discarded - Raw Material',
+                    documentNumber: element.productionNavigationId,
+                    approvalStatus: 'Auto Approved',
+                    requestedBy: userId,
+                    companyId: companyId,
+                    status: 1,
+                    approvedBy: null
+                }, { transaction: t });
+                approvalMap[element.productionNavigationId] = approval.id;
+            }
             if (element.quantity) {
                 await models.StockTransfer.create({
                     transferNumber: generateTransferNumber(),
@@ -3272,9 +3351,9 @@ async function discardProduction(req, res) {
                     actualPrice: element.price,
                     productionId: element.productionId,
                     productionNavigationId: element.productionNavigationId,
-                    isRejected: element.isRejected
-                    // approvalId: approval.id,
-                    // quantityForApproval: element.quantity
+                    isRejected: element.isRejected,
+                    approvalId: approvalMap?.[element.productionNavigationId],
+                    quantityForApproval: element.quantity
                 }, { transaction: t });
                 await models.StoreItems.create({
                     storeId: element.fromStoreId,
@@ -3304,7 +3383,6 @@ async function discardProduction(req, res) {
         });
     }
 }
-
 
 async function bulkIssue(req, res) {
     try {

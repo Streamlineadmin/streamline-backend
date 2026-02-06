@@ -4163,7 +4163,8 @@ async function editDocument(req, res) {
             additionalDetails: item?.additionalDetails,
             customFields: item?.customFields,
             imageUrl: item?.imageUrl,
-            category: item?.category
+            category: item?.category,
+            store: item?.store
           })
         })
       ),
