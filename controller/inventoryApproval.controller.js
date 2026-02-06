@@ -37,22 +37,50 @@ async function getApprovalById(req, res) {
 
     const storeItemMap = {}, storeItems = [];
 
-    for (const element of storeItem) {
-      element.quantity = Math.abs(element.quantity) || 0;
-      element.quantityForApproval = Math.abs(element.quantityForApproval) || 0;
-      if (!storeItemMap[element?.itemId]) {
-        storeItems.push(element);
-        if (approval.documentType != 'Finished Good' &&
-          approval.documentType != 'Quality Report' &&
-          approval.documentType != 'Service Qr' &&
-          approval.documentType != 'Service Confirmation Qr'
-        )
-          storeItemMap[element.itemId] = element;
-      } else {
-        storeItemMap[element.itemId].quantity += (element.quantity || 0);
-        // storeItemMap[element.itemId].quantityForApproval += Math.abs(element.quantityForApproval) || 0;
+    if (!approval.documentType?.includes('Production Discarded')) {
+      for (const element of storeItem) {
+        element.quantity = Math.abs(element.quantity) || 0;
+        element.quantityForApproval = Math.abs(element.quantityForApproval) || 0;
+        if (!storeItemMap[element?.itemId]) {
+          storeItems.push(element);
+          if (approval.documentType != 'Finished Good' &&
+            approval.documentType != 'Quality Report' &&
+            approval.documentType != 'Service Qr' &&
+            approval.documentType != 'Service Confirmation Qr'
+          )
+            storeItemMap[element.itemId] = element;
+        } else {
+          storeItemMap[element.itemId].quantity += (element.quantity || 0);
+          // storeItemMap[element.itemId].quantityForApproval += Math.abs(element.quantityForApproval) || 0;
+        }
       }
     }
+
+    else {
+      for (const element of storeItem) {
+        element.quantity = Math.abs(element.quantity) || 0;
+        element.quantityForApproval = Math.abs(element.quantityForApproval) || 0;
+        const storeId = element?.toStoreId || element?.fromStoreId;
+        const isRejected = element.isRejected || false;
+        if (!storeItemMap?.[storeId]) {
+          storeItemMap[storeId] = {};
+        }
+        if (!storeItemMap?.[storeId]?.[element.itemId]) {
+          storeItemMap[storeId][element.itemId] = {};
+        }
+        if (!storeItemMap?.[storeId]?.[element.itemId]?.[isRejected]) {
+          storeItemMap[storeId][element.itemId][isRejected] = element;
+          storeItems.push(element);
+        }
+        else {
+          storeItemMap[storeId][element.itemId][isRejected].quantity += (element.quantity || 0);
+        }
+      }
+      storeItems.forEach(item => {
+        item.quantityForApproval = item.quantity;
+      });
+    }
+
 
     const itemIds = [...new Set(storeItems.map(store => store.itemId))];
     const storeIds = [...new Set(storeItems.flatMap(s => [s.fromStoreId, s.toStoreId]))];
