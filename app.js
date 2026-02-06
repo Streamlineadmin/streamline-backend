@@ -489,7 +489,6 @@ app.use("/labels", labelsRoute);
 app.use("/inventoryApproval", inventoryApprovalRoutes);
 app.use("/eInvoice", eInvoiceRoutes);
 app.use("/email", eMailRoutes);
-
 app.use("/amy", amyRoutes);
 
 module.exports = app;
