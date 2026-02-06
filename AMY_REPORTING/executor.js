@@ -56,6 +56,7 @@ async function executePlan(plan, db) {
       ],
       where,
       group: [col(plan.groupBy)],
+      limit: 10,
       raw: true
     });
     return res;
