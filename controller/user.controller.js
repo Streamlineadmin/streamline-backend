@@ -19,7 +19,7 @@ const transporter = nodemailer.createTransport({
 
 
 async function addUser(req, res) {
-    const { email, username, contactNo, name, companyName } = req.body;
+    const { email, username, contactNo, name, companyName , signature} = req.body;
 
     try {
         // Execute all checks in parallel
@@ -53,6 +53,7 @@ async function addUser(req, res) {
         const newUser = await models.Users.create({
             name,
             email,
+            signature,
             contactNo,
             username,
             password: hashedPassword,  // Save encrypted password
@@ -126,7 +127,9 @@ function editUser(req, res) {
         username,
         name,
         role,
-        website } = req.body;
+        website,
+        signature 
+        } = req.body;
 
     const updatedUserData = {
         companyName,
@@ -135,7 +138,8 @@ function editUser(req, res) {
         username,
         name,
         role,
-        website
+        website,
+        signature
     };
 
     // Check if email, username, or contactNo exists for another user (exclude current user)
@@ -478,6 +482,7 @@ async function updateProfileURL(req, res) {
             gstNumber: user.gstNumber,
             cin: user.cin,
             permissions: rolesAccess,
+            signature: user.signature,
             logoUrl
         };
 
@@ -492,6 +497,116 @@ async function updateProfileURL(req, res) {
 
     } catch (error) {
         console.error("Error updating profile URL:", error);
+        res.status(500).json({
+            message: "Something went wrong, please try again later!",
+            error: error.message
+        });
+    }
+}
+
+async function updateSignature(req, res) {
+    try {
+        const { userId, signature } = req.body;
+
+        if (!userId || !signature) {
+            return res.status(400).json({ message: "User ID and Signature are required" });
+        }
+
+        // First, check if the user exists
+        const user = await models.Users.findOne({ where: { id: userId } });
+
+        if (!user) {
+            return res.status(404).json({ message: "User not found" });
+        }
+
+        // Update the signature
+        await models.Users.update(
+            { signature: signature },
+            { where: { id: userId } }
+        );
+
+        const rolePermissionsData = await models.RolePermissions.findAll({
+            where: { companyId: user.companyId, role: user.role },
+            raw: true
+        });
+
+        let rolesAccess = [];
+        if (rolePermissionsData.length) {
+            // Collect unique IDs
+            const permissionIds = [...new Set(rolePermissionsData.map(rp => rp.permission))];
+            const subpermissionIds = [...new Set(rolePermissionsData.map(rp => rp.subpermission))];
+
+            // Fetch all features & subfeatures in one go
+            const [features, subfeatures] = await Promise.all([
+                models.PermissionsFeatures.findAll({
+                    where: { id: { [Op.in]: permissionIds } },
+                    attributes: ["id", "feature"],
+                    raw: true
+                }),
+                models.PermissionsSubFeatures.findAll({
+                    where: { id: { [Op.in]: subpermissionIds } },
+                    attributes: ["id", "subfeature"],
+                    raw: true
+                })
+            ]);
+
+            const featureMap = Object.fromEntries(features.map(f => [f.id, f.feature]));
+            const subfeatureMap = Object.fromEntries(subfeatures.map(s => [s.id, s.subfeature]));
+
+            // Build access array
+            rolesAccess = rolePermissionsData.map(rp => ({
+                feature: featureMap[rp.permission] || null,
+                subfeature: subfeatureMap[rp.subpermission] || null,
+                create: rp.create,
+                edit: rp.edit,
+                view: Number(rp.view),
+                delete: rp.delete
+            }));
+        }
+
+        // Attach admin logo if needed
+        let logoUrl = user.profileURL || "";
+        if (user.role !== 1 && !logoUrl) {
+            const admin = await models.Users.findOne({
+                where: { role: 1, companyId: user.companyId },
+                attributes: ["profileURL"],
+                raw: true
+            });
+            logoUrl = admin?.profileURL || "";
+        }
+
+        // JWT payload
+        const payload = {
+            userId: user.id,
+            username: user.username,
+            email: user.email,
+            companyId: user.companyId,
+            companyName: user.companyName,
+            businessType: user.businessType,
+            profileURL: user.profileURL,
+            website: user.website,
+            name: user.name,
+            contactPersonNumber: user.contactNo,
+            role: user.role,
+            pan: user.pan,
+            gstNumber: user.gstNumber,
+            cin: user.cin,
+            signature: signature,
+            permissions: rolesAccess,
+            logoUrl
+        };
+
+        const token = jwt.sign(payload, process.env.JWT_SECRET || "secret", { expiresIn: "1h" });
+
+        // Return the updated user data
+        res.status(200).json({
+            message: "Signature updated successfully",
+            token,
+            email: user.email
+        });
+
+    } catch (error) {
+        console.error("Error updating signature:", error);
         res.status(500).json({
             message: "Something went wrong, please try again later!",
             error: error.message
@@ -546,6 +661,7 @@ module.exports = {
     deleteUser: deleteUser,
     updateProfile: updateProfile,
     updateProfileURL: updateProfileURL,
+    updateSignature: updateSignature,
     partialUser: partialUser,
     getCompanies: getCompanies
 }

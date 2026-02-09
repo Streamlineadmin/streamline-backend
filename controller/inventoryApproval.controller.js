@@ -85,7 +85,7 @@ async function getApprovalById(req, res) {
     const itemIds = [...new Set(storeItems.map(store => store.itemId))];
     const storeIds = [...new Set(storeItems.flatMap(s => [s.fromStoreId, s.toStoreId]))];
 
-    const [items, uoms, categories, stores, users] = await Promise.all([
+    const [items, uoms, categories, stores, users, alternateUnits] = await Promise.all([
       models.Items.findAll({
         where: { id: { [Op.in]: itemIds } },
         raw: true
@@ -110,8 +110,22 @@ async function getApprovalById(req, res) {
       models.Users.findAll({
         where: { id: { [Op.in]: [approval.requestedBy, approval.approvedBy] } },
         raw: true
+      }),
+      models.AlternateUnits.findAll({
+        where: {
+          itemId: {
+            [Op.in]: itemIds
+          }
+        },
+        raw: true
       })
     ]);
+
+    const altenateUnitMap = alternateUnits.reduce((acc, curr) => {
+      if (!acc[curr.itemId]) acc[curr.itemId] = [];
+      acc[curr.itemId].push(curr);
+      return acc;
+    }, {});
 
     const itemsMap = Object.fromEntries(items.map(i => [i.id, i]));
     const uomMap = Object.fromEntries(uoms.map(u => [u.id, u.code]));
@@ -132,6 +146,7 @@ async function getApprovalById(req, res) {
             subCategory: categoryMap[itemsMap?.[data.itemId]?.subCategory] || null,
             microCategory: categoryMap[itemsMap?.[data.itemId]?.microCategory] || null,
             metricsUnit: uomMap[itemsMap?.[data.itemId]?.metricsUnit] || null,
+            alternateUnits: (altenateUnitMap?.[data.itemId] || []).map(unit => ({ ...unit, alternateUnit: uomMap?.[unit.alternateUnits] }))
           },
           fromStore: storeMap?.[data?.fromStoreId] || null,
           toStore: storeMap?.[data?.toStoreId] || null,
