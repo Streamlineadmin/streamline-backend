@@ -23,7 +23,7 @@ const transporter = nodemailer.createTransport({
  * ================================
  */
 const CLIENT_IP_RESTRICTIONS = {
-    "Satvij International": [
+    "SATVIJ INTERNATIONAL": [
         "122.176.135.194",
         // add more if needed
         // "122.176.135.195"
@@ -158,6 +158,7 @@ async function login(req, res) {
         const rawIp = getClientIp(req);
         const userIp = normalizeIp(rawIp);
 
+
         // 1️⃣ Fetch user
         const user = await models.Users.findOne({
             where: {
@@ -178,7 +179,7 @@ async function login(req, res) {
             console.warn(
                 `Blocked login for ${user.companyName} from IP ${userIp}`
             );
-            return res.status(401).json({ message: "Invalid credentials!" });
+            return res.status(401).json({ message: "Logic is Blocked by this IP" });
         }
 
         // 2️⃣ Verify password
