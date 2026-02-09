@@ -17,6 +17,48 @@ const transporter = nodemailer.createTransport({
     },
 });
 
+/**
+ * ================================
+ * CLIENT IP RESTRICTIONS
+ * ================================
+ */
+const CLIENT_IP_RESTRICTIONS = {
+    "Satvij International": [
+        "122.176.135.194",
+        // add more if needed
+        // "122.176.135.195"
+    ]
+};
+
+/**
+ * Get real client IP (proxy-safe)
+ */
+function getClientIp(req) {
+    const xForwardedFor = req.headers["x-forwarded-for"];
+    if (xForwardedFor) {
+        return xForwardedFor.split(",")[0].trim();
+    }
+
+    return (
+        req.headers["x-real-ip"] ||
+        req.socket?.remoteAddress ||
+        req.connection?.remoteAddress ||
+        null
+    );
+}
+
+/**
+ * Normalize IPv6 → IPv4
+ * Example: ::ffff:103.21.244.0 → 103.21.244.0
+ */
+function normalizeIp(ip) {
+    if (!ip) return null;
+    if (ip.startsWith("::ffff:")) {
+        return ip.replace("::ffff:", "");
+    }
+    return ip;
+}
+
 async function signUp(req, res) {
     try {
         const { companyName, businessType, email, username, password, contactNo, name, role } = req.body;
@@ -112,6 +154,10 @@ async function login(req, res) {
     try {
         const { email, password } = req.body;
 
+        // 🌐 Get client IP
+        const rawIp = getClientIp(req);
+        const userIp = normalizeIp(rawIp);
+
         // 1️⃣ Fetch user
         const user = await models.Users.findOne({
             where: {
@@ -122,6 +168,16 @@ async function login(req, res) {
         });
 
         if (!user) {
+            return res.status(401).json({ message: "Invalid credentials!" });
+        }
+
+        // 🚨 2️⃣ IP restriction for Satvij International
+        const allowedIps = CLIENT_IP_RESTRICTIONS[user.companyName];
+
+        if (allowedIps && !allowedIps.includes(userIp)) {
+            console.warn(
+                `Blocked login for ${user.companyName} from IP ${userIp}`
+            );
             return res.status(401).json({ message: "Invalid credentials!" });
         }
 
