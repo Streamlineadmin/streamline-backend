@@ -199,7 +199,8 @@ async function login(req, res) {
             gstNumber: user.gstNumber,
             cin: user.cin,
             permissions: rolesAccess,
-            logoUrl
+            logoUrl,
+            signature: user.signature
         };
 
         const token = jwt.sign(payload, process.env.JWT_SECRET || "secret", { expiresIn: "1h" });

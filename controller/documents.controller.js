@@ -2298,6 +2298,52 @@ async function createDocument(req, res) {
 
     if (status) {
 
+      //SALES QUOTATION
+
+      if (
+        ["Sales Quotation"]
+          .includes(documentType) &&
+        enquiryNumber
+      ) {
+        const salesLead = await models.Documents.findOne({
+          where: {
+            companyId,
+            documentNumber: enquiryNumber,
+            documentType: 'Sales Lead'
+          }
+        });
+
+        if (salesLead) {
+          const linkedDocuments = isValidJSON(salesLead.linkedDocuments) || [];
+          if (!linkedDocuments.includes(documentNumber)) {
+            linkedDocuments.push(documentNumber);
+            await salesLead.update({ linkedDocuments });
+          }
+        }
+      }
+
+      if (
+        ["Sales Order"]
+          .includes(documentType) &&
+        quotationNumber
+      ) {
+        const salesQuotation = await models.Documents.findOne({
+          where: {
+            companyId,
+            documentNumber: quotationNumber,
+            documentType: 'Sales Quotation'
+          }
+        });
+
+        if (salesQuotation) {
+          const linkedDocuments = isValidJSON(salesQuotation.linkedDocuments) || [];
+          if (!linkedDocuments.includes(documentNumber)) {
+            linkedDocuments.push(documentNumber);
+            await salesQuotation.update({ linkedDocuments });
+          }
+        }
+      }
+
       // SALES FLOW
       if (
         ["Invoice", "Sales Return", "Credit Note", "Debit Note", "Delivery Challan", "Proforma Invoice"]
@@ -2429,6 +2475,112 @@ async function createDocument(req, res) {
           }
         }
 
+      }
+    }
+
+    if (status && documentType === "Sales Return" && challan_number) {
+      const challan = await models.Documents.findOne({
+        where: {
+          companyId,
+          documentNumber: challan_number
+        },
+        attributes: ['status', 'id']
+      });
+      if (challan) {
+        const challanItems = await models.DocumentItems.findAll({
+          where: {
+            companyId,
+            documentNumber: challan_number
+          }
+        });
+        const challanItemsMap = challanItems.reduce((acc, curr) => {
+          acc[curr.itemId] = curr.quantity;
+          return acc;
+        }, {});
+        const previousSalesReturn = await models.Documents.findAll({
+          where: {
+            companyId,
+            documentType: 'Sales Return',
+            challan_number,
+          },
+          raw: true,
+          attributes: ['documentNumber']
+        });
+        const previousSalesReturnItems = await models.DocumentItems.findAll({
+          where: {
+            companyId,
+            documentNumber: {
+              [Op.in]: previousSalesReturn.map(doc => doc.documentNumber)
+            }
+          },
+          raw: true
+        });
+        const salesItemsMap = [...previousSalesReturnItems, ...items].reduce((acc, curr) => {
+          acc[curr.itemId] = (acc[curr.itemId] || 0) + Number(curr.quantity);
+          return acc;
+        }, {});
+
+        let partial = false;
+        for (const key in challanItemsMap) {
+          if (!salesItemsMap[key] || salesItemsMap[key] < challanItemsMap[key]) {
+            partial = true;
+            break;
+          }
+        }
+        await challan.update({ status: partial ? 31 : 32 });
+      }
+    }
+
+    if (status && documentType === "Sales Return" && invoiceNumber) {
+      const challan = await models.Documents.findOne({
+        where: {
+          companyId,
+          documentNumber: invoiceNumber
+        },
+        attributes: ['status', 'id']
+      });
+      if (challan) {
+        const challanItems = await models.DocumentItems.findAll({
+          where: {
+            companyId,
+            documentNumber: invoiceNumber
+          }
+        });
+        const challanItemsMap = challanItems.reduce((acc, curr) => {
+          acc[curr.itemId] = curr.quantity;
+          return acc;
+        }, {});
+        const previousSalesReturn = await models.Documents.findAll({
+          where: {
+            companyId,
+            documentType: 'Sales Return',
+            invoiceNumber,
+          },
+          raw: true,
+          attributes: ['documentNumber']
+        });
+        const previousSalesReturnItems = await models.DocumentItems.findAll({
+          where: {
+            companyId,
+            documentNumber: {
+              [Op.in]: previousSalesReturn.map(doc => doc.documentNumber)
+            }
+          },
+          raw: true
+        });
+        const salesItemsMap = [...previousSalesReturnItems, ...items].reduce((acc, curr) => {
+          acc[curr.itemId] = (acc[curr.itemId] || 0) + Number(curr.quantity);
+          return acc;
+        }, {});
+
+        let partial = false;
+        for (const key in challanItemsMap) {
+          if (!salesItemsMap[key] || salesItemsMap[key] < challanItemsMap[key]) {
+            partial = true;
+            break;
+          }
+        }
+        await challan.update({ status: partial ? 31 : 32 });
       }
     }
 
@@ -3383,6 +3535,53 @@ async function discardDocument(req, res) {
     }
 
     if (
+      ["Sales Quotation"]
+        .includes(document.documentType) &&
+      document.enquiryNumber
+    ) {
+      const salesLead = await models.Documents.findOne({
+        where: {
+          companyId,
+          documentNumber: document.enquiryNumber,
+          documentType: 'Sales Lead'
+        }
+      });
+
+      if (salesLead && Array.isArray(isValidJSON(salesLead.linkedDocuments))) {
+        const updatedLinkedDocuments = isValidJSON(salesLead.linkedDocuments)
+          .filter(docNo => docNo !== document.documentNumber);
+
+        // Update only if something changed
+        if (updatedLinkedDocuments.length !== isValidJSON(salesLead.linkedDocuments).length) {
+          await salesLead.update({ linkedDocuments: updatedLinkedDocuments });
+        }
+      }
+    }
+
+    if (
+      ["Sales Order"]
+        .includes(document.documentType) &&
+      document.quotationNumber
+    ) {
+      const salesQuotation = await models.Documents.findOne({
+        where: {
+          companyId,
+          documentNumber: document.quotationNumber,
+          documentType: 'Sales Quotation'
+        }
+      });
+
+      if (salesQuotation && Array.isArray(isValidJSON(salesQuotation.linkedDocuments))) {
+        const updatedLinkedDocuments = isValidJSON(salesQuotation.linkedDocuments)
+          .filter(docNo => docNo !== document.documentNumber);
+
+        // Update only if something changed
+        if (updatedLinkedDocuments.length !== isValidJSON(salesQuotation.linkedDocuments).length) {
+          await salesQuotation.update({ linkedDocuments: updatedLinkedDocuments });
+        }
+      }
+    }
+    if (
       ["Invoice", "Sales Return", "Credit Note", "Debit Note", "Delivery Challan", "Proforma Invoice"]
         .includes(document.documentType) &&
       document.orderConfirmationNumber
@@ -3671,6 +3870,7 @@ async function getSalesDocumentItems(req, res) {
         documentType,
         orderConfirmationNumber: documentNumber
       },
+      attributes: ['id', 'documentNumber'],
       raw: true
     });
 
@@ -3690,8 +3890,22 @@ async function getSalesDocumentItems(req, res) {
       return acc;
     }, {});
 
+    const salesOrderItems = await models.DocumentItems.findAll({
+      where: {
+        companyId: Number(companyId),
+        documentNumber
+      },
+      raw: true
+    });
+
+    const salesOrderItemsMap = salesOrderItems?.reduce((acc, curr) => {
+      acc[curr.itemId] = (acc[curr.itemId] || 0) + curr.quantity;
+      return acc;
+    }, {});
+
     return res.status(200).json({
       itemsData: itemsmap,
+      salesOrderItems: salesOrderItemsMap,
       message: 'Data Fetched Successfully.'
     });
 

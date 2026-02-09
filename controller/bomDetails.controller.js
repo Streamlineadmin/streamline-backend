@@ -261,15 +261,88 @@ async function getBOMById(req, res) {
       });
     }
 
+    const finishedGoods = bom.finishedGoods.map(r => r.get({ plain: true }));
     const rawMaterials = bom.rawMaterials.map(r => r.get({ plain: true }));
     const scrapMaterials = bom.scrapMaterials.map(s => s.get({ plain: true }));
     const alternateMap = {}, alternateScrapMap = {};
+    const itemIds = [...new Set([
+      ...finishedGoods.map(item => item.itemId),
+      ...rawMaterials
+        .filter(item => !item.alternateFor)
+        .map(item => item.itemId),
+      ...scrapMaterials
+        .filter(item => !item.alternateFor)
+        .map(item => item.itemId),
+    ])];
+    const items = await models.Items.findAll({
+      where: {
+        companyId,
+        itemId: {
+          [Op.in]: itemIds
+        }
+      },
+      attributes: ['id', 'itemId', 'metricsUnit'],
+      raw: true
+    });
+    const itemsMap = items.reduce((acc, curr) => {
+      acc[curr.itemId] = curr;
+      return acc;
+    }, {});
+
+    const alternateUnits = await models.AlternateUnits.findAll({
+      where: {
+        itemId: {
+          [Op.in]: items.map(item => item.id)
+        }
+      },
+      raw: true
+    });
+
+    const altenateUnitMap = alternateUnits.reduce((acc, curr) => {
+      if (!acc[curr.itemId]) acc[curr.itemId] = [];
+      acc[curr.itemId].push(curr);
+      return acc;
+    }, {});
+
+    finishedGoods.forEach((item) => {
+      item.alternateUnits = altenateUnitMap?.[itemsMap?.[item.itemId]?.id] || [];
+      item.baseUnit = itemsMap?.[item.itemId]?.metricsUnit;
+      if (itemsMap?.[item.itemId]?.metricsUnit == item.uom) {
+        item.conversionFactor = 1;
+      }
+      else {
+        for (const element of item.alternateUnits) {
+          if (item.uom == element.alternateUnits) {
+            item.conversionFactor = element.conversionfactor;
+            break;
+          }
+        }
+      }
+      item.baseUnitQuantity = item.quantity * (item.conversionFactor || 1);
+    })
+
     rawMaterials.forEach(item => {
       if (item.alternateFor) {
         if (!alternateMap[item.alternateFor]) {
           alternateMap[item.alternateFor] = [];
         }
         alternateMap[item.alternateFor].push(item);
+      }
+      if (!item.alternateFor) {
+        item.alternateUnits = altenateUnitMap?.[itemsMap?.[item.itemId]?.id] || [];
+        item.baseUnit = itemsMap?.[item.itemId]?.metricsUnit;
+        if (itemsMap?.[item.itemId]?.metricsUnit == item.uom) {
+          item.conversionFactor = 1;
+        }
+        else {
+          for (const element of item.alternateUnits) {
+            if (item.uom == element.alternateUnits) {
+              item.conversionFactor = element.conversionfactor;
+              break;
+            }
+          }
+        }
+        item.baseUnitQuantity = item.quantity * (item.conversionFactor || 1);
       }
     });
     scrapMaterials.forEach(item => {
@@ -278,6 +351,22 @@ async function getBOMById(req, res) {
           alternateScrapMap[item.alternateFor] = [];
         }
         alternateScrapMap[item.alternateFor].push(item);
+      }
+      if (!item.alternateFor) {
+        item.alternateUnits = altenateUnitMap?.[itemsMap?.[item.itemId]?.id] || [];
+        item.baseUnit = itemsMap?.[item.itemId]?.metricsUnit;
+        if (itemsMap?.[item.itemId]?.metricsUnit == item.uom) {
+          item.conversionFactor = 1;
+        }
+        else {
+          for (const element of item.alternateUnits) {
+            if (item.uom == element.alternateUnits) {
+              item.conversionFactor = element.conversionfactor;
+              break;
+            }
+          }
+        }
+        item.baseUnitQuantity = item.quantity * (item.conversionFactor || 1);
       }
     });
     const newScrap = scrapMaterials.filter(item => !item.alternateFor).map(item => {
@@ -297,6 +386,7 @@ async function getBOMById(req, res) {
     const plainBOM = bom.get({ plain: true });
     plainBOM.rawMaterials = treeWithLevel;
     plainBOM.scrapMaterials = newScrap;
+    plainBOM.finishedGoods = finishedGoods;
 
     return res.status(200).json({
       message: "BOM details retrieved successfully.",

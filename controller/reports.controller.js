@@ -1495,6 +1495,9 @@ async function getReports(req, res) {
         const documents = await models.Documents.findAndCountAll({
             where: {
                 companyId,
+                status: {
+                    [Op.notIn]: [0, 2]
+                },
                 ...(documentType && {
                     documentType: {
                         [Op.in]: [documentType]

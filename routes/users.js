@@ -11,5 +11,6 @@ router.post('/updateProfileURL', userController.updateProfileURL);
 router.post('/', userController.getUsers);
 router.post('/partialUser', userController.partialUser);
 router.post('/getCompanies', userController.getCompanies);
+router.post('/updateSignature' , userController.updateSignature);
 
 module.exports = router;
