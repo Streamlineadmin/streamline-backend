@@ -43,6 +43,7 @@ node_modules/
 jspm_packages/
 
 # Config files
+/config
 config/
 
 # Snowpack dependency directory (https://snowpack.dev/)
