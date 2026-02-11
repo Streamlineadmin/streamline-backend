@@ -492,7 +492,6 @@ app.use("/inventoryApproval", inventoryApprovalRoutes);
 app.use("/eInvoice", eInvoiceRoutes);
 app.use("/email", eMailRoutes);
 app.use("/showHideColumns", ShowHideColumnRoutes);
-
 app.use("/amy", amyRoutes);
 
 module.exports = app;

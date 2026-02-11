@@ -6,7 +6,7 @@ const client = new OpenAI({
 });
 
 // 👇 PASTE THE REAL FILE ID FROM UPLOAD STEP
-const trainingFileId = "file-UbibCj4caEemas8CSfYfky";
+const trainingFileId = "file-Psij9RFpqeJkBeyKXiWVqK";
 
 async function createFineTune() {
   try {
@@ -22,4 +22,14 @@ async function createFineTune() {
   }
 }
 
+async function getModelName() {
+  const job = await client.fineTuning.jobs.retrieve(
+    "ftjob-9nzY5a13yBSwQTpl91tHKd6Y"
+  );
+
+  console.log("Status:", job.status);
+  console.log("Model:", job.fine_tuned_model);
+}
+
 createFineTune();
+getModelName();
