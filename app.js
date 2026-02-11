@@ -138,8 +138,10 @@ const labelsRoute = require("./routes/labels");
 const inventoryApprovalRoutes = require("./routes/inventoryApproval");
 const eInvoiceRoutes = require("./routes/eInvoiceCredentials");
 const eMailRoutes = require("./routes/emailCredentials");
+const ShowHideColumnRoutes = require("./routes/showHideColumns");
 const { mode } = require("simple-statistics");
 const amyRoutes = require("./routes/amy");
+const showhidecolumns = require("./models/showhidecolumns");
 const app = express();
 
 // Apply body-parser middleware to handle JSON request bodies
@@ -489,6 +491,7 @@ app.use("/labels", labelsRoute);
 app.use("/inventoryApproval", inventoryApprovalRoutes);
 app.use("/eInvoice", eInvoiceRoutes);
 app.use("/email", eMailRoutes);
+app.use("/showHideColumns", ShowHideColumnRoutes);
 
 app.use("/amy", amyRoutes);
 

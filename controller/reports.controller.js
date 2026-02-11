@@ -684,7 +684,7 @@ async function getReports(req, res) {
             const items = await models.Items.findAll({
                 where: {
                     companyId: Number(companyId),
-                    ...(itemType.length && { itemType: { [Op.in]: itemType } })
+                    // ...(itemType.length && { itemType: { [Op.in]: itemType } })
                 },
                 raw: true
             });
@@ -748,7 +748,7 @@ async function getReports(req, res) {
                     ...(toStore?.length > 0 ? { [Op.in]: toStore } : {}),
                     [Op.not]: null
                 },
-                isRejected: isReject,
+                isRejected: isReject || false,
                 ...(Array.isArray(dateRange) && dateRange.length === 2 && dateRange[0] && dateRange[1] && {
                     createdAt: {
                         [Op.between]: [
@@ -769,7 +769,6 @@ async function getReports(req, res) {
                 item.subCategory = categoryMap[item.subCategory];
                 item.microCategory = categoryMap[item.microCategory];
                 data.push({
-                    documentNumber: element.id,
                     ...element,
                     fromStore: storesMap[element.fromStoreId],
                     toStore: storesMap[element.toStoreId],
@@ -777,7 +776,8 @@ async function getReports(req, res) {
                     customFields: isValidJSON(item.customFields) || {},
                     price: element.price,
                     metricsUnit: uomMap[item.metricsUnit],
-                    user: usersMap[element.transferredBy]
+                    user: usersMap[element.transferredBy],
+                    documentNumber: element.id,
                 });
 
             }
@@ -798,7 +798,7 @@ async function getReports(req, res) {
             const items = await models.Items.findAll({
                 where: {
                     companyId: Number(companyId),
-                    ...(itemType.length && { itemType: { [Op.in]: itemType } })
+                    // ...(itemType.length && { itemType: { [Op.in]: itemType } })
                 },
                 raw: true
             });
@@ -839,15 +839,24 @@ async function getReports(req, res) {
             }, {});
 
             let startDate, endDate;
+            const IST_OFFSET = 5.5 * 60 * 60 * 1000;
 
             if (dateRange?.length === 2) {
-                const IST_OFFSET = 5.5 * 60 * 60 * 1000;
                 const startIst = new Date(new Date(dateRange[0]).getTime());
                 const endIst = new Date(new Date(dateRange[1]).getTime());
                 startIst.setHours(0, 0, 0, 0);
                 endIst.setHours(23, 59, 59, 999);
                 startDate = new Date(startIst.getTime() - IST_OFFSET);
                 endDate = new Date(endIst.getTime());
+            } else {
+                const nowIst = new Date(Date.now() + IST_OFFSET);
+                const endIst = new Date(nowIst);
+                endIst.setHours(23, 59, 59, 999);
+                const startIst = new Date(nowIst);
+                startIst.setMonth(startIst.getMonth() - 1);
+                startIst.setHours(0, 0, 0, 0);
+                startDate = new Date(startIst.getTime() - IST_OFFSET);
+                endDate = new Date(endIst.getTime() - IST_OFFSET);
             }
             const whereCondition = {
                 companyId: Number(companyId),
@@ -855,17 +864,17 @@ async function getReports(req, res) {
                     [Op.in]: itemsIds
                 },
                 fromStoreId: null,
-                toStoreId: {
-                    [Op.in]: toStore
-                },
-                isRejected: isReject,
-                ...(Array.isArray(dateRange) && dateRange.length === 2 && dateRange[0] && dateRange[1] && {
-                    createdAt: {
-                        [Op.between]: [
-                            startDate, endDate
-                        ]
+                ...(toStore && toStore?.length ? {
+                    toStoreId: {
+                        [Op.in]: toStore
                     }
-                })
+                } : {}),
+                isRejected: isReject || false,
+                createdAt: {
+                    [Op.between]: [
+                        startDate, endDate
+                    ]
+                }
             };
 
             const transferHistory = await models.StockTransfer.findAll({
@@ -879,14 +888,14 @@ async function getReports(req, res) {
                 item.subCategory = categoryMap[item.subCategory];
                 item.microCategory = categoryMap[item.microCategory];
                 data.push({
-                    documentNumber: element.id,
                     ...element,
                     toStore: storesMap[element.toStoreId],
                     ...item,
                     customFields: isValidJSON(item.customFields) || {},
                     price: element.price,
                     metricsUnit: uomMap[item.metricsUnit],
-                    user: usersMap[element.transferredBy]
+                    user: usersMap[element.transferredBy],
+                    documentNumber: element.id,
                 });
 
             }
