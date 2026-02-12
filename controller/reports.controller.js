@@ -51,10 +51,21 @@ async function getReports(req, res) {
             const startUtc = startDate || istToUtc(oneMonthAgoIst);
             const endUtc = endDate || istToUtc(nowIst);
 
+            const productions = await models.Production.findAll({
+                where: {
+                    companyId: Number(companyId),
+                    status: {
+                        [Op.ne]: 0
+                    }
+                },
+                raw: true,
+                attributes: ['productionId']
+            });
+
             // ---------- QUERY ----------
             const whereClause = {
                 companyId: Number(companyId),
-                productionId: { [Op.ne]: null },
+                productionId: { [Op.in]: productions.map(prod => prod.productionId) },
                 createdAt: { [Op.between]: [startUtc, endUtc] },
                 quantity: { [Op.gt]: 0 }
             };
@@ -1454,11 +1465,24 @@ async function getReports(req, res) {
                 acc[curr.id] = curr.name;
                 return acc;
             }, {});
+            const productions = await models.Production.findAll({
+                where: {
+                    companyId,
+                    status: {
+                        [Op.ne]: 0
+                    }
+                },
+                attributes: ['productionId'],
+                raw: true,
+            });
             const stockTransfers = await models.StockTransfer.findAll({
                 where: {
                     companyId,
                     approvalId: {
                         [Op.in]: approvals.map(app => app.id)
+                    },
+                    productionId: {
+                        [Op.in]: productions.map(prod => prod.productionId)
                     },
                     isRejected: false
                 },
@@ -1470,6 +1494,9 @@ async function getReports(req, res) {
                     companyId,
                     approvalId: {
                         [Op.in]: approvals.map(app => app.id)
+                    },
+                    productionId: {
+                        [Op.in]: productions.map(prod => prod.productionId)
                     },
                     isRejected: true
                 },
