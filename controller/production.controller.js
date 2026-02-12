@@ -3813,6 +3813,7 @@ async function minStockMaterialPlanning(req, res) {
 }
 
 async function saveReworkQuantity(req, res) {
+    const t = await models.sequelize.transaction();
     try {
         const {
             store,
@@ -3865,7 +3866,7 @@ async function saveReworkQuantity(req, res) {
             approvedBy: null
         });
 
-        const costPerUnit = total / ((passedQty || 1) + (reworkQty || 0));
+        const costPerUnit = (finishedGoods[0]?.reworkQuantityCost || 0);
 
         const stores = await models.Store.findOne({
             where: {
@@ -3956,12 +3957,13 @@ async function saveReworkQuantity(req, res) {
         }
 
         await models.ProductionFinishedGoods.update({
-            passedQuantity: (finishedGoods[0]?.passedQuantity || 0) + (settings?.['productionFinishedGood'] == 'manual' ? 0 : passedQty),
+            passedQuantity: (finishedGoods[0]?.passedQuantity || 0) + (settings?.['productionFinishedGood'] == 'manual' ? 0 : (passedQty || 0)),
             rejectQuantity: (finishedGoods[0]?.rejectQuantity || 0) + (settings?.['productionFinishedGood'] == 'manual' ? 0 : (rejectQty || 0)),
-            cost: (finishedGoods[0]?.cost || 0) + total,
+            // cost: (finishedGoods[0]?.cost || 0),
             quantityToTest: 0,
-            pendingReworkQuantity: (finishedGoods[0]?.pendingReworkQuantity || 0) + (Number(reworkQty) || 0),
-            reworkQuantityCost: (finishedGoods[0]?.reworkQuantityCost || 0) + (reworkQty ? total / (reworkQty) : 0),
+            pendingReworkQuantity: 0,
+            reworkQuantityCost: 0,
+            completedReworkQuantity: (finishedGoods[0]?.completedReworkQuantity || 0) + ((Number(passedQty) || 0) + (Number(rejectQty || 0)))
         }, {
             where: {
                 id: finishedGoods[0].id

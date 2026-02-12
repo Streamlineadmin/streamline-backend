@@ -28,5 +28,6 @@ router.post('/discardProduction', productionController.discardProduction);
 router.post('/bulkIssue', productionController.bulkIssue);
 router.post('/updateStartDate', productionController.updateStartDate);
 router.post('/minStockMaterialPlanning', productionController.minStockMaterialPlanning);
+router.post('/saveReworkQuantity', productionController.saveReworkQuantity);
 
 module.exports = router;
