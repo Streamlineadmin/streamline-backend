@@ -3813,7 +3813,7 @@ async function minStockMaterialPlanning(req, res) {
 }
 
 async function saveReworkQuantity(req, res) {
-    const t = await models.sequelize.transaction();
+    const transaction = await models.sequelize.transaction();
     try {
         const {
             store,
@@ -3866,7 +3866,7 @@ async function saveReworkQuantity(req, res) {
             approvedBy: null
         });
 
-        const costPerUnit = (finishedGoods[0]?.reworkQuantityCost || 0);
+        const costPerUnit = (finishedGoods[0]?.reworkQuantityCost || 0) / (passedQty == 0 ? 1 : passedQty);
 
         const stores = await models.Store.findOne({
             where: {
@@ -3882,6 +3882,13 @@ async function saveReworkQuantity(req, res) {
                 name: rejectStore
             },
             transaction
+        });
+
+        const item = await models.Items.findOne({
+            where: {
+                companyId,
+                itemId: finishedGoods[0]?.itemId
+            }
         });
 
         await models.StoreItems.create({
@@ -3956,9 +3963,9 @@ async function saveReworkQuantity(req, res) {
             }, { transaction });
         }
 
-        await models.ProductionFinishedGoods.update({
-            passedQuantity: (finishedGoods[0]?.passedQuantity || 0) + (settings?.['productionFinishedGood'] == 'manual' ? 0 : (passedQty || 0)),
-            rejectQuantity: (finishedGoods[0]?.rejectQuantity || 0) + (settings?.['productionFinishedGood'] == 'manual' ? 0 : (rejectQty || 0)),
+        const update = await models.ProductionFinishedGoods.update({
+            passedQuantity: (finishedGoods[0]?.passedQuantity || 0) + (settings?.['productionFinishedGood'] == 'manual' ? 0 : (Number(passedQty) || 0)),
+            rejectQuantity: (finishedGoods[0]?.rejectQuantity || 0) + (settings?.['productionFinishedGood'] == 'manual' ? 0 : (Number(rejectQty) || 0)),
             // cost: (finishedGoods[0]?.cost || 0),
             quantityToTest: 0,
             pendingReworkQuantity: 0,
@@ -4010,6 +4017,8 @@ async function saveReworkQuantity(req, res) {
                 await models.BatchItems.bulkCreate(batchItems);
             }
         }
+
+        await transaction.commit();
 
         res.status(200).json({
             message: "Quantity Saved."
