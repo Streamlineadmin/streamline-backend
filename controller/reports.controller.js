@@ -1492,6 +1492,98 @@ async function getReports(req, res) {
             });
         }
 
+        if (documentType === 'Process Ledger') {
+            const { productionId } = req.body;
+
+            const processLogs = await models.ProcessLogs.findAll({
+                where: { productionId },
+                order: [['createdAt', 'ASC']],
+                raw: true
+            });
+
+            if (!processLogs.length) {
+                return res.json({
+                    data: [],
+                    total: 0
+                });
+            }
+
+            // 2. Fetch process names
+            const process = await models.ProductionSalesProcess.findAll({
+                where: {
+                    id: {
+                        [Op.in]: processLogs.map(p => p.processId)
+                    }
+                },
+                raw: true
+            });
+
+            const processMap = process.reduce((acc, curr) => {
+                acc[curr.id] = curr.processName;
+                return acc;
+            }, {});
+
+            // 3. Get first & last date
+            const firstDate = new Date(processLogs[0].createdAt);
+            const lastDate = processLogs.length > 1 ? new Date(
+                processLogs[processLogs.length - 1].createdAt
+            ) : new Date(processLogs[0].createdAt);
+
+            // 4. Create full date range
+            const dateRange = [];
+            let d = new Date(firstDate);
+
+            while (d <= lastDate) {
+                dateRange.push(d.toISOString().slice(0, 10));
+                d.setDate(d.getDate() + 1);
+            }
+
+            // 5. Group quantity by date + process
+            const grouped = {};
+
+            processLogs.forEach(log => {
+                const date = new Date(log.createdAt)
+                    .toISOString()
+                    .slice(0, 10);
+
+                if (!grouped[date]) grouped[date] = {};
+                if (!grouped[date][log.processId])
+                    grouped[date][log.processId] = 0;
+
+                grouped[date][log.processId] += Number(log.quantity || 0);
+            });
+
+            // 6. Build ledger
+            const cumulative = {};
+            const ledger = [];
+
+            dateRange.forEach(date => {
+                const row = {
+                    date,
+                    processes: {}
+                };
+
+                Object.keys(processMap).forEach(pid => {
+                    const processName = processMap[pid];
+                    const todayQty = grouped?.[date]?.[pid] || 0;
+
+                    cumulative[pid] = (cumulative[pid] || 0) + todayQty;
+
+                    row.processes[processName] = {
+                        todayProduction: todayQty,
+                        totalProduction: cumulative[pid]
+                    };
+                });
+
+                ledger.push(row);
+            });
+
+            return res.json({
+                data: ledger.reverse(),
+                total: ledger.length
+            });
+        }
+
         const documents = await models.Documents.findAndCountAll({
             where: {
                 companyId,
@@ -1700,7 +1792,7 @@ async function getReports(req, res) {
                     }
                 },
                 raw: true,
-                attributes: ['itemId', 'quantity','documentNumber']
+                attributes: ['itemId', 'quantity', 'documentNumber']
             });
 
             for (const element of salesInvoiceReturnItems) {
@@ -1779,8 +1871,6 @@ async function getReports(req, res) {
             }
 
         }
-
-
 
         if (documentType === documentTypes.creditNote || documentType === documentTypes.debitNote ||
             documentType === documentTypes.purchaseCreditNote || documentType === documentTypes.purchaseDebitNote
