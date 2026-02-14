@@ -1542,6 +1542,13 @@ async function saveFinishedGoods(req, res) {
                 comment: comments || ''
             }, { transaction });
         }
+        if (reworkQty) {
+            await models.ProductionHistory.create({
+                productionId: production?.id,
+                actionType: 'Quantity Send for rework.',
+                summary: `${finishedGoods[0]?.itemName} - ${reworkQty} ${uomMap[finishedGoods[0]?.uom]} send for rework by ${by}.`
+            });
+        }
 
         await models.ProductionFinishedGoods.update({
             passedQuantity: (finishedGoods[0]?.passedQuantity || 0) + (settings?.['productionFinishedGood'] == 'manual' ? 0 : passedQty),
@@ -3921,7 +3928,7 @@ async function saveReworkQuantity(req, res) {
 
         await models.ProductionHistory.create({
             productionId: production?.id,
-            actionType: 'Finished Good Tested.',
+            actionType: 'Rework Quantity Tested.',
             summary: `${finishedGoods[0]?.itemName} - ${passedQty} ${uomMap[finishedGoods[0]?.uom]} passed by ${by}.`
         });
 
@@ -3929,7 +3936,7 @@ async function saveReworkQuantity(req, res) {
         if (rejectQty) {
             await models.ProductionHistory.create({
                 productionId: production?.id,
-                actionType: 'Finished Good Tested.',
+                actionType: 'Rework Quantity Tested.',
                 summary: `${finishedGoods[0]?.itemName} - ${rejectQty} ${uomMap[finishedGoods[0]?.uom]} rejected by ${by}.`
             });
             await models.StoreItems.create({
@@ -3963,7 +3970,7 @@ async function saveReworkQuantity(req, res) {
             }, { transaction });
         }
 
-        const update = await models.ProductionFinishedGoods.update({
+        await models.ProductionFinishedGoods.update({
             passedQuantity: (finishedGoods[0]?.passedQuantity || 0) + (settings?.['productionFinishedGood'] == 'manual' ? 0 : (Number(passedQty) || 0)),
             rejectQuantity: (finishedGoods[0]?.rejectQuantity || 0) + (settings?.['productionFinishedGood'] == 'manual' ? 0 : (Number(rejectQty) || 0)),
             // cost: (finishedGoods[0]?.cost || 0),
