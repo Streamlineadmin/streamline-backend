@@ -1677,6 +1677,40 @@ async function getReports(req, res) {
                 }
                 salesItemsMap[invToSalesOrderMap[element.documentNumber]][element.itemId] = (salesItemsMap[invToSalesOrderMap[element.documentNumber]][element.itemId] || 0) + (element.quantity || 0)
             }
+            const salesInvoiceReturn = await models.Documents.findAll({
+                where: {
+                    companyId,
+                    documentType: 'Sales Return',
+                    invoiceNumber: {
+                        [Op.in]: invoices.map(inv => inv.documentNumber)
+                    }
+                },
+                raw: true,
+                attributes: ['documentNumber', 'invoiceNumber']
+            });
+            const invoiceToReturnMap = salesInvoiceReturn?.reduce((acc, curr) => {
+                acc[curr.documentNumber] = curr.invoiceNumber;
+                return acc;
+            }, {});
+            const salesInvoiceReturnItems = await models.DocumentItems.findAll({
+                where: {
+                    companyId,
+                    documentNumber: {
+                        [Op.in]: salesInvoiceReturn.map(doc => doc.documentNumber)
+                    }
+                },
+                raw: true,
+                attributes: ['itemId', 'quantity','documentNumber']
+            });
+
+            for (const element of salesInvoiceReturnItems) {
+                const soNumber = invToSalesOrderMap?.[invoiceToReturnMap[element.documentNumber]];
+                if (!salesReturnItemsMap[soNumber]) {
+                    salesReturnItemsMap[soNumber] = {};
+                }
+                salesReturnItemsMap[soNumber][element.itemId] =
+                    (salesReturnItemsMap[soNumber][element.itemId] || 0) + element.quantity;
+            }
             const challans = await models.Documents.findAll({
                 where: {
                     companyId: companyId,
@@ -1708,7 +1742,45 @@ async function getReports(req, res) {
                 }
                 deliveryChallanItemsMap[challanToSalesOrderMap[element.documentNumber]][element.itemId] = (deliveryChallanItemsMap[challanToSalesOrderMap[element.documentNumber]][element.itemId] || 0) + (element.quantity || 0)
             }
+            const salesChallanReturn = await models.Documents.findAll({
+                where: {
+                    companyId,
+                    documentType: 'Sales Return',
+                    challan_number: {
+                        [Op.in]: challans.map(inv => inv.documentNumber)
+                    }
+                },
+                raw: true,
+                attributes: ['documentNumber', 'challan_number']
+            });
+            const challanToReturnMap = salesChallanReturn?.reduce((acc, curr) => {
+                acc[curr.documentNumber] = curr.challan_number;
+                return acc;
+            }, {});
+            const salesChallanReturnItems = await models.DocumentItems.findAll({
+                where: {
+                    companyId,
+                    documentNumber: {
+                        [Op.in]: salesChallanReturn.map(doc => doc.documentNumber)
+                    }
+                },
+                raw: true,
+                attributes: ['itemId', 'quantity', 'documentNumber']
+            });
+            for (const element of salesChallanReturnItems) {
+                const challanNumber = challanToReturnMap[element.documentNumber];
+                const soNumber = challanToSalesOrderMap?.[challanNumber];
+                if (!soNumber) continue;
+                if (!salesReturnItemsMap[soNumber]) {
+                    salesReturnItemsMap[soNumber] = {};
+                }
+                salesReturnItemsMap[soNumber][element.itemId] =
+                    (salesReturnItemsMap[soNumber][element.itemId] || 0) + (element.quantity || 0);
+            }
+
         }
+
+
 
         if (documentType === documentTypes.creditNote || documentType === documentTypes.debitNote ||
             documentType === documentTypes.purchaseCreditNote || documentType === documentTypes.purchaseDebitNote
@@ -2140,8 +2212,9 @@ async function getReports(req, res) {
                 itemToSend = itemToSend.map(item => {
                     const challanQuantity = (deliveryChallanItemsMap?.[document.documentNumber]?.[item?.itemId] || 0)?.toFixed(2);
                     const invoiceQuantity = (salesItemsMap?.[document.documentNumber]?.[item?.itemId] || 0)?.toFixed(2);
-                    const pendingQuantity = Math.max((item.quantity - (Number(challanQuantity) + Number(invoiceQuantity))), 0)?.toFixed(2);
-                    return { ...item, challanQuantity, invoiceQuantity, pendingQuantity };
+                    const salesReturnQuantity = (salesReturnItemsMap?.[document.documentNumber]?.[item.itemId] || 0)?.toFixed(2);
+                    const pendingQuantity = Math.max(((item.quantity + Number(salesReturnQuantity)) - (Number(challanQuantity) + Number(invoiceQuantity))), 0)?.toFixed(2);
+                    return { ...item, challanQuantity, invoiceQuantity, pendingQuantity, salesReturnQuantity };
                 })
             }
             return ({

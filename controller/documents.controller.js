@@ -275,7 +275,7 @@ async function createDocument(req, res) {
       signature,
       companyId,
       createdBy,
-      status,
+      status: requestForApproval ? 29 : status,
       ip_address,
       paymentDate,
       POCName,
@@ -338,7 +338,7 @@ async function createDocument(req, res) {
       }
     });
 
-    if (documentType != documentTypes.purchaseInvoice) {
+    if (documentType != documentTypes.purchaseInvoice && !isDraft) {
       if (seriesId) {
         const documentSeries = await models.DocumentSeries.findOne({
           where: {
