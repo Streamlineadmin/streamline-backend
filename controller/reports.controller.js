@@ -1491,9 +1491,14 @@ async function getReports(req, res) {
                 total: stockTransfers.length
             });
         }
-
         if (documentType === 'Process Ledger') {
             const { productionId } = req.body;
+            if (!productionId) {
+                return res.json({
+                    data: [],
+                    total: 0
+                });
+            }
 
             const processLogs = await models.ProcessLogs.findAll({
                 where: { productionId },
