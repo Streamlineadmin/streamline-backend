@@ -6,6 +6,7 @@ const { Op } = require("sequelize");
 require("dotenv").config();
 
 const crypto = require('crypto');
+const { AllDocuments } = require('../helpers/document-type');
 
 const transporter = nodemailer.createTransport({
     host: process.env.SMTP_HOST,
@@ -60,6 +61,7 @@ function normalizeIp(ip) {
 }
 
 async function signUp(req, res) {
+    const t = await models.sequelize.transaction();
     try {
         const { companyName, businessType, email, username, password, contactNo, name, role } = req.body;
 
@@ -88,13 +90,114 @@ async function signUp(req, res) {
             name,
             role,
             status: 1
-        });
+        }, { transaction: t });
 
         // Update the same row with companyId
         await models.Users.update(
             { companyId: newUser.id }, // Set companyId as the newly created user’s id
-            { where: { id: newUser.id } }
+            {
+                where: { id: newUser.id },
+                transaction: t
+            }
         );
+
+        const documentSeries = Object.keys(AllDocuments).map((doctype) => {
+            return {
+                DocType: doctype,
+                seriesName: doctype + ' Series',
+                prefix: AllDocuments[doctype],
+                number: 1,
+                companyId: newUser.id,
+                default: 1,
+                nextNumber: 1,
+                status: 1,
+                ip_address: req.body.ip_address,
+                createdBy: newUser.id
+            }
+        });
+
+        const bomSeries = {
+            seriesName: 'BOM Series',
+            prefix: 'BOM',
+            number: 1,
+            companyId: newUser.id,
+            default: 1,
+            nextNumber: 1,
+            status: 1,
+            ip_address: req.body.ip_address,
+            userId: newUser.id,
+        }
+
+        const itemSeries = {
+            seriesName: 'Item Series',
+            prefix: 'ITEM',
+            number: 1,
+            companyId: newUser.id,
+            default: 1,
+            nextNumber: 2,
+            status: 1,
+            ip_address: req.body.ip_address,
+            userId: newUser.id,
+        }
+
+        const item = {
+            itemId: 'ITEM1',
+            itemName: "Test Item",
+            itemType: 3,
+            metricsUnit: 1,
+            companyId: newUser.id
+        }
+
+        const store = {
+            companyId: newUser.id,
+            name: 'Test Store',
+            ip_address: req.body.ip_address,
+            addressLineOne: 'Test Address',
+            addressLineTwo: '',
+            pincode: '453442',
+            storeType: "1,2",
+            city: 'Jabalpur',
+            state: 'Madhya Pradesh',
+            country: 'India',
+            status: 1,
+            default: 1
+        }
+
+        const buyerSupplier = await models.BuyerSupplier.create({
+            name: "Test",
+            companyId: newUser.id,
+            email: "test@gmail.com",
+            phone: "7778889990",
+            companyName: "Test Company",
+            companyEmail: "test@gmail.com",
+            companyType: 3,
+            ip_address: req.body.ip_address,
+            status: 1,
+            customerType: "company",
+            pocDetails: [{ name: "Test", email: "test@gmail.com", phone: "7778889990" }]
+        }, { transaction: t });
+
+        const address = {
+            buyerSupplierId: buyerSupplier.id,
+            addressLineOne: "New Town",
+            addressLineTwo: "",
+            city: "Indore",
+            country: "India",
+            pincode: "453442",
+            state: "Madhya Pradesh",
+            ip_address: req.body.ip_address,
+            status: 1
+        }
+
+        await models.BuyerSupplierAddress.bulkCreate([{ ...address, addressType: 1 }, { ...address, addressType: 2 }], { transaction: t });
+
+        await Promise.all([
+            models.DocumentSeries.bulkCreate(documentSeries, { transaction: t }),
+            models.BOMSeries.create(bomSeries, { transaction: t }),
+            models.ItemSeries.create(itemSeries, { transaction: t }),
+            models.Items.create(item, { transaction: t }),
+            models.Store.create(store, { transaction: t })
+        ]);
 
         // Send response
         res.status(201).json({ message: "Signed up successfully" });
@@ -140,9 +243,11 @@ async function signUp(req, res) {
             html: emailTemplate,
         };
         await transporter.sendMail(mailOptions);
+        await t.commit();
 
     } catch (error) {
         console.error("Error:", error);
+        await t.rollback();
         res.status(500).json({
             message: "Something went wrong! Please try again later.",
             error: error.message,

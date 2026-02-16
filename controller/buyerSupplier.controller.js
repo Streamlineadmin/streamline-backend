@@ -52,7 +52,7 @@ function addBuyerSupplier(req, res) {
 }
 
 async function editBuyerSupplier(req, res) {
-    const { id, name, companyId, email, phone, companyName, companyEmail, companyType, gstNumber, gstType, ip_address, addresses } = req.body;
+    const { id, name, companyId, email, phone, companyName, companyEmail, companyType, gstNumber, pan, gstType, ip_address, addresses } = req.body;
 
     try {
         const buyerSupplier = await models.BuyerSupplier.findByPk(id);
@@ -71,6 +71,7 @@ async function editBuyerSupplier(req, res) {
             GSTNumber: gstNumber,
             GSTType: gstType,
             ip_address,
+            PAN: pan,
             pocDetails: req.body?.pocDetails || []
         });
 
@@ -291,6 +292,7 @@ async function bulkUploadBuyerSuppliers(req, res) {
                 "Pin Code": pinCode,
                 "* City": city,
                 "* State": state,
+                "PAN Number": PAN
             } = row;
 
             if (existingBuyerSupplierMap[companyName?.toLowerCase?.()]) {
@@ -326,6 +328,7 @@ async function bulkUploadBuyerSuppliers(req, res) {
                 status: 1,
                 customerType: "company",
                 pocDetails: personName?.trim() ? [{ name: personName?.trim(), email: personEmail?.trim(), phone: phone || "" }] : [],
+                PAN: PAN?.trim?.()?.toUpperCase?.()
             });
 
             addressPayload.push({

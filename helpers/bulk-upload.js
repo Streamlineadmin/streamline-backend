@@ -8,7 +8,7 @@ const requiredColumnsFun = (key) => {
         bulkEdit: ['Item ID', 'Item Name', 'Item type', 'Category', 'Sub Category', 'Micro Category', 'HSN', 'Price', 'Tax Type', 'Tax', 'Min Stock', 'Max Stock', 'Description'],
         reconcileStock: ['Item ID', 'Item Name', 'Current Stock', 'Final Stock', 'Price/Unit', 'comment'],
         alternateUnit: ['* Item ID', 'Item Name', '* Base Unit', '* Alternate Unit', '* Conversion Factor'],
-        bulkUploadCompany: ["Person Name", "Person Email", "Phone", "* Company Name", "Company Email", "* Company Type", "GST Number", "GST Type", "* Address", "* Address Type", "Pin Code", "* City", "* State"],
+        bulkUploadCompany: ["Person Name", "Person Email", "Phone", "* Company Name", "Company Email", "* Company Type", "GST Number", "GST Type", "* Address", "* Address Type", "Pin Code", "* City", "* State","PAN Number"],
 
     }
     return colsObject[key] || [];
