@@ -1454,6 +1454,94 @@ async function createDocument(req, res) {
       }
     }
 
+    if (status && documentType === documentTypes.salesReturn && orderConfirmationNumber) {
+      const salesOrder = await models.Documents.findOne({
+        where: {
+          companyId,
+          documentNumber: orderConfirmationNumber
+        },
+        attributes: ['status', 'id']
+      });
+      const salesItems = await models.DocumentItems.findAll({
+        where: {
+          companyId,
+          documentNumber: orderConfirmationNumber
+        },
+        raw: true,
+        attributes: ['quantity', 'itemId']
+      });
+      const salesItemsMap = salesItems.reduce((acc, curr) => {
+        acc[curr.itemId] = (acc[curr.itemId] || 0) + curr.quantity;
+        return acc;
+      }, {});
+      const previousSalesReturn = await models.Documents.findAll({
+        where: {
+          companyId,
+          documentType: 'Sales Return',
+          orderConfirmationNumber,
+          status: {
+            [Op.notIn]: [0, 2]
+          }
+        },
+        raw: true,
+        attributes: ['documentNumber']
+      });
+      const previousSalesReturnItems = await models.DocumentItems.findAll({
+        where: {
+          documentNumber: {
+            [Op.in]: previousSalesReturn.map(doc => doc.documentNumber)
+          },
+          companyId,
+
+        },
+        raw: true,
+        attributes: ['quantity', 'itemId']
+      });
+      const previousSalesReturnItemsMap = previousSalesReturnItems.reduce((acc, curr) => {
+        acc[curr.itemId] = (acc[curr.itemId] || 0) + curr.quantity;
+        return acc;
+      }, {});
+      const itemsMap = items.reduce((acc, curr) => {
+        acc[curr.itemId] = (acc[curr.itemId] || 0) + Number(curr.quantity);
+        return acc;
+      }, {});
+      let partial = false;
+
+      for (const key of Object.keys(salesItemsMap)) {
+        if (salesItemsMap[key] > ((previousSalesReturnItemsMap?.[key] || 0) + Number(itemsMap?.[key] || 0))) {
+          partial = true;
+          console.log(key, 'mapmapmap')
+          break;
+        }
+      }
+      let status = 1;
+      if (salesOrder.status == 10) {
+        status = !partial ? 37 : 33;
+      }
+      else if (salesOrder.status == 11 || salesOrder.status == 34) {
+        status = !partial ? 38 : 34;
+      }
+      else if (salesOrder.status == 12 || salesOrder.status == 35) {
+        status = !partial ? 39 : 35;
+      }
+      else if (salesOrder.status == 13 || salesOrder.status == 36) {
+        status = !partial ? 40 : 36;
+      }
+      else if (salesOrder.status == 19 || salesOrder.status == 41) {
+        status = !partial ? 45 : 41;
+      }
+      else if (salesOrder.status == 20 || salesOrder.status == 42) {
+        status = !partial ? 46 : 42;
+      }
+      else if (salesOrder.status == 21 || salesOrder.status == 43) {
+        status = !partial ? 47 : 43;
+      }
+      else if (salesOrder.status == 22 || salesOrder.status == 44) {
+        status = !partial ? 48 : 44;
+      }
+      await salesOrder.update({ status });
+    }
+
     if (status && documentType === documentTypes.goodsReceive) {
       // find purchase order against grn
       const purchase_order = await models.Documents.findOne({
