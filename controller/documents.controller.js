@@ -118,7 +118,8 @@ async function createDocument(req, res) {
       serviceOrderNumber = '',
       serviceOrderDate = '',
       contactPerson = '',
-      storeInItemLevel = false
+      storeInItemLevel = false,
+      hideColumns = []
     } = req.body;
 
     let message = '';
@@ -228,7 +229,8 @@ async function createDocument(req, res) {
       supplyState,
       customFields,
       serviceOrderDate,
-      serviceOrderNumber
+      serviceOrderNumber,
+      hideColumns
     });
 
     else {
@@ -330,7 +332,8 @@ async function createDocument(req, res) {
       supplyState,
       customFields,
       serviceOrderDate,
-      serviceOrderNumber
+      serviceOrderNumber,
+      hideColumns
     }, {
       where: {
         companyId,
