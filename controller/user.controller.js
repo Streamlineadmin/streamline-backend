@@ -19,7 +19,7 @@ const transporter = nodemailer.createTransport({
 
 
 async function addUser(req, res) {
-    const { email, username, contactNo, name, companyName , signature} = req.body;
+    const { email, username, contactNo, name, companyName, signature } = req.body;
 
     try {
         // Execute all checks in parallel
@@ -128,8 +128,8 @@ function editUser(req, res) {
         name,
         role,
         website,
-        signature 
-        } = req.body;
+        signature
+    } = req.body;
 
     const updatedUserData = {
         companyName,
@@ -295,7 +295,7 @@ async function updateProfile(req, res) {
         // Fetch the updated user details
         const updatedUser = await models.Users.findOne({
             where: { id: userId },
-            attributes: ['id', 'name', 'email', 'companyName', 'companyId', 'contactNo', 'role', 'website', 'businessType', 'pan', 'gstNumber', 'cin']
+            attributes: ['id', 'name', 'email', 'companyName', 'companyId', 'contactNo', 'role', 'website', 'businessType', 'pan', 'gstNumber', 'cin', 'profileURL', 'signature']
         });
 
         const rolePermissionsData = await models.RolePermissions.findAll({
@@ -365,7 +365,8 @@ async function updateProfile(req, res) {
             gstNumber: updatedUser.gstNumber,
             cin: updatedUser.cin,
             permissions: rolesAccess,
-            logoUrl
+            logoUrl,
+            signature
         };
 
         const token = jwt.sign(payload, process.env.JWT_SECRET || "secret", { expiresIn: "1h" });

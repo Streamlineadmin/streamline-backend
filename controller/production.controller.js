@@ -1,10 +1,8 @@
-const { Op, where } = require('sequelize');
+const { Op } = require('sequelize');
 const { documentTypes } = require('../helpers/document-type');
 const { generateProductionId, generateTransferNumber } = require('../helpers/transfer-number');
 const models = require('../models');
 const { buildMultiLevelProductionTree, isValidJSON, secondsToTime, timeToSeconds } = require('../helpers/add-level');
-const e = require('express');
-const { raw } = require('body-parser');
 
 async function startProduction(req, res) {
     try {
@@ -415,7 +413,7 @@ async function startProduction(req, res) {
 
 async function getProductions(req, res) {
     try {
-        const { companyId, endDate, startDate } = req.body;
+        const { companyId, endDate, startDate, isDiscard } = req.body;
         let finalStartDate;
         let finalEndDate;
 
@@ -465,7 +463,7 @@ async function getProductions(req, res) {
                 companyId: Number(companyId),
                 bulkProductionId: null,
                 status: {
-                    [Op.ne]: 0
+                    [Op.in]: isDiscard ? [0] : [1, 2, 3, 4]
                 },
                 createdAt: {
                     [Op.between]: [finalStartDate, finalEndDate]
@@ -540,7 +538,7 @@ async function getProductions(req, res) {
                     items.push(item);
                 }
             }
-            salesDocument.items = items;
+            salesDocument.items = isDiscard ? [] : items;
         }
         const manualProductions = [];
         for (const element of productions) {
@@ -562,7 +560,7 @@ async function getProductions(req, res) {
 
 async function getBulkProductions(req, res) {
     try {
-        const { companyId, startDate, endDate } = req.body;
+        const { companyId, startDate, endDate, isDiscard } = req.body;
         let finalStartDate;
         let finalEndDate;
 
@@ -583,7 +581,11 @@ async function getBulkProductions(req, res) {
                 companyId,
                 createdAt: {
                     [Op.between]: [finalStartDate, finalEndDate]
+                },
+                status: {
+                    [Op.in]: isDiscard ? [0] : [1, 2, 3, 4]
                 }
+
             },
             raw: true
         });
@@ -1389,6 +1391,7 @@ async function saveFinishedGoods(req, res) {
             finishedGoods,
             passedQty,
             rejectQty,
+            reworkQty,
             companyId,
             batchData,
             userId,
@@ -1456,7 +1459,7 @@ async function saveFinishedGoods(req, res) {
             transaction
         });
 
-        const costPerUnit = total / (passedQty || 1);
+        const costPerUnit = total / ((passedQty || 1) + (reworkQty || 0));
 
         const stores = await models.Store.findOne({
             where: {
@@ -1545,12 +1548,21 @@ async function saveFinishedGoods(req, res) {
                 comment: comments || ''
             }, { transaction });
         }
+        if (reworkQty) {
+            await models.ProductionHistory.create({
+                productionId: production?.id,
+                actionType: 'Quantity Send for rework.',
+                summary: `${finishedGoods[0]?.itemName} - ${reworkQty} ${uomMap[finishedGoods[0]?.uom]} send for rework by ${by}.`
+            });
+        }
 
         await models.ProductionFinishedGoods.update({
             passedQuantity: (finishedGoods[0]?.passedQuantity || 0) + (settings?.['productionFinishedGood'] == 'manual' ? 0 : passedQty),
             rejectQuantity: (finishedGoods[0]?.rejectQuantity || 0) + (settings?.['productionFinishedGood'] == 'manual' ? 0 : (rejectQty || 0)),
             cost: (finishedGoods[0]?.cost || 0) + total,
-            quantityToTest: 0
+            quantityToTest: 0,
+            pendingReworkQuantity: (finishedGoods[0]?.pendingReworkQuantity || 0) + (Number(reworkQty) || 0),
+            reworkQuantityCost: (finishedGoods[0]?.reworkQuantityCost || 0) + (reworkQty ? total / (reworkQty) : 0),
         }, {
             where: {
                 id: finishedGoods[0].id
@@ -2907,9 +2919,13 @@ async function startBulkProduction(req, res) {
 
 async function remainingProduction(req, res) {
     try {
-        const { companyId, startDate, endDate } = req.body;
+        const { companyId, startDate, endDate, isDiscard } = req.body;
         let finalStartDate;
         let finalEndDate;
+
+        if (isDiscard) {
+            return res.status(200).json({ remainingProduction: [] });
+        }
 
         if (startDate && endDate) {
             finalStartDate = new Date(startDate);
@@ -3809,6 +3825,227 @@ async function minStockMaterialPlanning(req, res) {
     }
 }
 
+async function saveReworkQuantity(req, res) {
+    const transaction = await models.sequelize.transaction();
+    try {
+        const {
+            store,
+            rejectStore,
+            finishedGoods,
+            passedQty,
+            rejectQty,
+            companyId,
+            batchData,
+            userId,
+            by,
+            rejectQuantityCostPerUnit,
+            comments
+        } = req.body;
+
+        const uoms = await models.UOM.findAll({
+            where: {
+                [Op.or]: [
+                    { companyId: companyId, status: 1 },
+                    { companyId: null, status: 0 }
+                ]
+            },
+            raw: true
+        });
+        const uomMap = uoms.reduce((acc, curr) => {
+            acc[curr.id] = curr.code;
+            return acc;
+        }, {});
+
+        const production = await models.Production.findOne({
+            where: {
+                id: finishedGoods[0]?.productionId
+            }
+        });
+
+        const settings = isValidJSON(production?.isManual) || {}
+        const approvalCount = await models.InventoryApproval.count({
+            where: {
+                companyId
+            }
+        });
+        const approval = await models.InventoryApproval.create({
+            approvalId: `INA${approvalCount + 1}`,
+            documentType: 'Finished Good',
+            documentNumber: production.id,
+            approvalStatus: settings?.['productionFinishedGood'] == 'manual' ? 'Pending' : 'Auto Approved',
+            requestedBy: userId,
+            companyId: companyId,
+            status: 1,
+            approvedBy: null
+        });
+
+        const costPerUnit = (finishedGoods[0]?.reworkQuantityCost || 0) / (passedQty == 0 ? 1 : passedQty);
+
+        const stores = await models.Store.findOne({
+            where: {
+                companyId,
+                name: store
+            },
+            transaction
+        });
+
+        const rejectStores = await models.Store.findOne({
+            where: {
+                companyId,
+                name: rejectStore
+            },
+            transaction
+        });
+
+        const item = await models.Items.findOne({
+            where: {
+                companyId,
+                itemId: finishedGoods[0]?.itemId
+            }
+        });
+
+        await models.StoreItems.create({
+            storeId: stores.id,
+            itemId: item.id,
+            quantity: settings?.['productionFinishedGood'] == 'manual' ? 0 : (passedQty * (finishedGoods[0]?.conversionFactor || 1)),
+            status: 1,
+            addedBy: companyId,
+            price: costPerUnit,
+            approvalId: approval.id,
+            quantityForApproval: passedQty * (finishedGoods[0]?.conversionFactor || 1)
+        }, { transaction });
+
+        await models.StockTransfer.create({
+            transferNumber: generateTransferNumber(),
+            fromStoreId: null,
+            itemId: item.id,
+            quantity: settings?.['productionFinishedGood'] == 'manual' ? null : (passedQty * (finishedGoods[0]?.conversionFactor || 1)),
+            toStoreId: stores.id,
+            transferDate: new Date().toISOString(),
+            transferredBy: userId,
+            companyId,
+            price: costPerUnit,
+            productionId: production.productionId,
+            productionNavigationId: production.id,
+            approvalId: approval.id,
+            quantityForApproval: passedQty * (finishedGoods[0]?.conversionFactor || 1),
+            comment: comments || ''
+        }, { transaction });
+
+        await models.ProductionHistory.create({
+            productionId: production?.id,
+            actionType: 'Rework Quantity Tested.',
+            summary: `${finishedGoods[0]?.itemName} - ${passedQty} ${uomMap[finishedGoods[0]?.uom]} passed by ${by}.`
+        });
+
+
+        if (rejectQty) {
+            await models.ProductionHistory.create({
+                productionId: production?.id,
+                actionType: 'Rework Quantity Tested.',
+                summary: `${finishedGoods[0]?.itemName} - ${rejectQty} ${uomMap[finishedGoods[0]?.uom]} rejected by ${by}.`
+            });
+            await models.StoreItems.create({
+                storeId: rejectStores.id,
+                itemId: item.id,
+                quantity: settings?.['productionFinishedGood'] == 'manual' ? 0 : (rejectQty * (finishedGoods[0]?.conversionFactor || 1)),
+                status: 1,
+                addedBy: companyId,
+                price: rejectQuantityCostPerUnit || 0,
+                isRejected: true,
+                approvalId: approval.id,
+                quantityForApproval: rejectQty * (finishedGoods[0]?.conversionFactor || 1)
+            }, { transaction });
+
+            await models.StockTransfer.create({
+                transferNumber: generateTransferNumber(),
+                fromStoreId: null,
+                itemId: item.id,
+                quantity: settings?.['productionFinishedGood'] == 'manual' ? null : (rejectQty * (finishedGoods[0]?.conversionFactor || 1)),
+                toStoreId: rejectStores.id,
+                transferDate: new Date().toISOString(),
+                transferredBy: userId,
+                companyId,
+                price: rejectQuantityCostPerUnit || 0,
+                isRejected: true,
+                productionId: production.productionId,
+                productionNavigationId: production.id,
+                approvalId: approval.id,
+                quantityForApproval: rejectQty * (finishedGoods[0]?.conversionFactor || 1),
+                comment: comments || ''
+            }, { transaction });
+        }
+
+        await models.ProductionFinishedGoods.update({
+            passedQuantity: (finishedGoods[0]?.passedQuantity || 0) + (settings?.['productionFinishedGood'] == 'manual' ? 0 : (Number(passedQty) || 0)),
+            rejectQuantity: (finishedGoods[0]?.rejectQuantity || 0) + (settings?.['productionFinishedGood'] == 'manual' ? 0 : (Number(rejectQty) || 0)),
+            // cost: (finishedGoods[0]?.cost || 0),
+            quantityToTest: 0,
+            pendingReworkQuantity: 0,
+            reworkQuantityCost: 0,
+            completedReworkQuantity: (finishedGoods[0]?.completedReworkQuantity || 0) + ((Number(passedQty) || 0) + (Number(rejectQty || 0)))
+        }, {
+            where: {
+                id: finishedGoods[0].id
+            },
+            transaction
+        });
+
+        const finishedGood = await models.ProductionFinishedGoods.findOne({
+            where: {
+                id: finishedGoods[0].id
+            }
+        });
+        if (finishedGood?.passedQuantity >= finishedGood?.quantity) {
+            await production.update({
+                status: 4, ...(production.productionCompletionDate
+                    ? {}
+                    : { productionCompletionDate: new Date().toISOString() })
+            });
+        }
+
+        if (batchData && Array.isArray(batchData) && batchData?.length) {
+            const batchItems = [];
+            for (const element of batchData) {
+                for (const batch of element.batchItems) {
+                    batchItems.push({
+                        companyId: Number(companyId),
+                        createdBy: Number(companyId),
+                        documentNumber: production?.productionId,
+                        documentType: 'Production',
+                        item: batch.item,
+                        iterationCount: batch?.iterationCount,
+                        barCodeNumber: batch?.barCodeNumber,
+                        manufacturingDate: batch.manufacturingDate,
+                        expiryDate: batch.expiryDate,
+                        quantity: batch.quantity,
+                        outQuantity: 0,
+                        store: batch?.isRejected ? rejectStores.name : stores.name,
+                        status: 1,
+                        isRejected: batch?.isRejected || false
+                    });
+                }
+            }
+            if (batchItems.length) {
+                await models.BatchItems.bulkCreate(batchItems);
+            }
+        }
+
+        await transaction.commit();
+
+        res.status(200).json({
+            message: "Quantity Saved."
+        });
+    } catch (error) {
+        await transaction.rollback();
+        console.error("Transaction Error:", error);
+        return res.status(500).json({
+            message: "Failed to save finished goods.",
+            error: error.message,
+        });
+    }
+}
+
 async function getAllProductions(req, res) {
     try {
         const { companyId } = req.body;
@@ -3860,5 +4097,6 @@ module.exports = {
     bulkIssue: bulkIssue,
     updateStartDate: updateStartDate,
     minStockMaterialPlanning: minStockMaterialPlanning,
+    saveReworkQuantity: saveReworkQuantity,
     getAllProductions: getAllProductions
 }
