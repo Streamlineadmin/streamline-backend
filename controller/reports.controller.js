@@ -1398,6 +1398,7 @@ async function getReports(req, res) {
                         ? 'Pending'
                         : 'Completed'
                 ),
+                quantityForRework: (element.pendingReworkQuantity || 0),
                 ...productionMap?.[element.productionId],
                 category: categorysMap?.[itemsMap?.[element.itemId]?.category],
                 subCategory: categorysMap?.[itemsMap?.[element.itemId]?.subCategory],
@@ -1552,9 +1553,7 @@ async function getReports(req, res) {
             // 2. Fetch process names
             const process = await models.ProductionSalesProcess.findAll({
                 where: {
-                    id: {
-                        [Op.in]: processLogs.map(p => p.processId)
-                    }
+                    productionId: productionId
                 },
                 raw: true
             });
