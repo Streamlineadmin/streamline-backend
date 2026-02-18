@@ -1527,6 +1527,103 @@ async function getReports(req, res) {
                 total: stockTransfers.length
             });
         }
+        if (documentType === 'Process Ledger') {
+            const { productionId } = req.body;
+            if (!productionId) {
+                return res.json({
+                    data: [],
+                    total: 0
+                });
+            }
+
+            const processLogs = await models.ProcessLogs.findAll({
+                where: { productionId },
+                order: [['createdAt', 'ASC']],
+                raw: true
+            });
+
+            if (!processLogs.length) {
+                return res.json({
+                    data: [],
+                    total: 0
+                });
+            }
+
+            // 2. Fetch process names
+            const process = await models.ProductionSalesProcess.findAll({
+                where: {
+                    id: {
+                        [Op.in]: processLogs.map(p => p.processId)
+                    }
+                },
+                raw: true
+            });
+
+            const processMap = process.reduce((acc, curr) => {
+                acc[curr.id] = curr.processName;
+                return acc;
+            }, {});
+
+            // 3. Get first & last date
+            const firstDate = new Date(processLogs[0].createdAt);
+            const lastDate = processLogs.length > 1 ? new Date(
+                processLogs[processLogs.length - 1].createdAt
+            ) : new Date(processLogs[0].createdAt);
+
+            // 4. Create full date range
+            const dateRange = [];
+            let d = new Date(firstDate);
+
+            while (d <= lastDate) {
+                dateRange.push(d.toISOString().slice(0, 10));
+                d.setDate(d.getDate() + 1);
+            }
+
+            // 5. Group quantity by date + process
+            const grouped = {};
+
+            processLogs.forEach(log => {
+                const date = new Date(log.createdAt)
+                    .toISOString()
+                    .slice(0, 10);
+
+                if (!grouped[date]) grouped[date] = {};
+                if (!grouped[date][log.processId])
+                    grouped[date][log.processId] = 0;
+
+                grouped[date][log.processId] += Number(log.quantity || 0);
+            });
+
+            // 6. Build ledger
+            const cumulative = {};
+            const ledger = [];
+
+            dateRange.forEach(date => {
+                const row = {
+                    date,
+                    processes: {}
+                };
+
+                Object.keys(processMap).forEach(pid => {
+                    const processName = processMap[pid];
+                    const todayQty = grouped?.[date]?.[pid] || 0;
+
+                    cumulative[pid] = (cumulative[pid] || 0) + todayQty;
+
+                    row.processes[processName] = {
+                        todayProduction: todayQty,
+                        totalProduction: cumulative[pid]
+                    };
+                });
+
+                ledger.push(row);
+            });
+
+            return res.json({
+                data: ledger.reverse(),
+                total: ledger.length
+            });
+        }
 
         const documents = await models.Documents.findAndCountAll({
             where: {
@@ -1713,6 +1810,40 @@ async function getReports(req, res) {
                 }
                 salesItemsMap[invToSalesOrderMap[element.documentNumber]][element.itemId] = (salesItemsMap[invToSalesOrderMap[element.documentNumber]][element.itemId] || 0) + (element.quantity || 0)
             }
+            const salesInvoiceReturn = await models.Documents.findAll({
+                where: {
+                    companyId,
+                    documentType: 'Sales Return',
+                    invoiceNumber: {
+                        [Op.in]: invoices.map(inv => inv.documentNumber)
+                    }
+                },
+                raw: true,
+                attributes: ['documentNumber', 'invoiceNumber']
+            });
+            const invoiceToReturnMap = salesInvoiceReturn?.reduce((acc, curr) => {
+                acc[curr.documentNumber] = curr.invoiceNumber;
+                return acc;
+            }, {});
+            const salesInvoiceReturnItems = await models.DocumentItems.findAll({
+                where: {
+                    companyId,
+                    documentNumber: {
+                        [Op.in]: salesInvoiceReturn.map(doc => doc.documentNumber)
+                    }
+                },
+                raw: true,
+                attributes: ['itemId', 'quantity', 'documentNumber']
+            });
+
+            for (const element of salesInvoiceReturnItems) {
+                const soNumber = invToSalesOrderMap?.[invoiceToReturnMap[element.documentNumber]];
+                if (!salesReturnItemsMap[soNumber]) {
+                    salesReturnItemsMap[soNumber] = {};
+                }
+                salesReturnItemsMap[soNumber][element.itemId] =
+                    (salesReturnItemsMap[soNumber][element.itemId] || 0) + element.quantity;
+            }
             const challans = await models.Documents.findAll({
                 where: {
                     companyId: companyId,
@@ -1744,6 +1875,42 @@ async function getReports(req, res) {
                 }
                 deliveryChallanItemsMap[challanToSalesOrderMap[element.documentNumber]][element.itemId] = (deliveryChallanItemsMap[challanToSalesOrderMap[element.documentNumber]][element.itemId] || 0) + (element.quantity || 0)
             }
+            const salesChallanReturn = await models.Documents.findAll({
+                where: {
+                    companyId,
+                    documentType: 'Sales Return',
+                    challan_number: {
+                        [Op.in]: challans.map(inv => inv.documentNumber)
+                    }
+                },
+                raw: true,
+                attributes: ['documentNumber', 'challan_number']
+            });
+            const challanToReturnMap = salesChallanReturn?.reduce((acc, curr) => {
+                acc[curr.documentNumber] = curr.challan_number;
+                return acc;
+            }, {});
+            const salesChallanReturnItems = await models.DocumentItems.findAll({
+                where: {
+                    companyId,
+                    documentNumber: {
+                        [Op.in]: salesChallanReturn.map(doc => doc.documentNumber)
+                    }
+                },
+                raw: true,
+                attributes: ['itemId', 'quantity', 'documentNumber']
+            });
+            for (const element of salesChallanReturnItems) {
+                const challanNumber = challanToReturnMap[element.documentNumber];
+                const soNumber = challanToSalesOrderMap?.[challanNumber];
+                if (!soNumber) continue;
+                if (!salesReturnItemsMap[soNumber]) {
+                    salesReturnItemsMap[soNumber] = {};
+                }
+                salesReturnItemsMap[soNumber][element.itemId] =
+                    (salesReturnItemsMap[soNumber][element.itemId] || 0) + (element.quantity || 0);
+            }
+
         }
 
         if (documentType === documentTypes.creditNote || documentType === documentTypes.debitNote ||
@@ -2176,8 +2343,9 @@ async function getReports(req, res) {
                 itemToSend = itemToSend.map(item => {
                     const challanQuantity = (deliveryChallanItemsMap?.[document.documentNumber]?.[item?.itemId] || 0)?.toFixed(2);
                     const invoiceQuantity = (salesItemsMap?.[document.documentNumber]?.[item?.itemId] || 0)?.toFixed(2);
-                    const pendingQuantity = Math.max((item.quantity - (Number(challanQuantity) + Number(invoiceQuantity))), 0)?.toFixed(2);
-                    return { ...item, challanQuantity, invoiceQuantity, pendingQuantity };
+                    const salesReturnQuantity = (salesReturnItemsMap?.[document.documentNumber]?.[item.itemId] || 0)?.toFixed(2);
+                    const pendingQuantity = Math.max(((item.quantity + Number(salesReturnQuantity)) - (Number(challanQuantity) + Number(invoiceQuantity))), 0)?.toFixed(2);
+                    return { ...item, challanQuantity, invoiceQuantity, pendingQuantity, salesReturnQuantity };
                 })
             }
             return ({

@@ -685,7 +685,14 @@ async function addBulkItem(req, res) {
         const subCategoryMap = new Map(subCategories.map(sub => [sub.name, sub]));
         const microCategoryMap = new Map(microCategories.map(micro => [micro.name, micro]));
 
-        const uoms = await models.UOM.findAll({});
+        const uoms = await models.UOM.findAll({
+            where: {
+                [Op.or]: [
+                    { companyId: Number(companyId), status: 1 },
+                    { companyId: null, status: 0 }
+                ]
+            }
+        });
         const uomMap = new Map(uoms.map(uom => [uom.code, uom.id]));
 
         const itemsData = [];

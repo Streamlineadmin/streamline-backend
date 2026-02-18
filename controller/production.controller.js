@@ -1135,7 +1135,7 @@ async function issueRawMaterial(req, res) {
 
 async function updateProcess(req, res) {
     try {
-        const { processData, by } = req.body;
+        const { processData, by, userId } = req.body;
         const production = await models.Production.findOne({
             where: { id: processData?.[0]?.productionId }
         });
@@ -1195,7 +1195,13 @@ async function updateProcess(req, res) {
                     actionType: 'Process Logged',
                     summary: `${element.todayProcessQuantity} Process Logged under ${element.processName} by ${by}. Total time recorded ${element?.currentTime || element?.currentPlannedTime} at ₹${element.amount || element?.currentAverage} /hour cost.`
                 });
-
+                await models.ProcessLogs.create({
+                    companyId: production.companyId,
+                    productionId: production.id,
+                    processId: element.id,
+                    quantity: element.todayProcessQuantity,
+                    userId
+                });
             }
             element?.remark && await models.ProductionHistory.create({
                 productionId: element?.productionId,
@@ -4040,6 +4046,30 @@ async function saveReworkQuantity(req, res) {
     }
 }
 
+async function getAllProductions(req, res) {
+    try {
+        const { companyId } = req.body;
+        const productions = await models.Production.findAll({
+            where: {
+                companyId,
+                status: {
+                    [Op.ne]: 0
+                }
+            },
+            order: [['createdAt', 'DESC']],
+            attributes: ['id', 'productionId'],
+            raw: true
+        });
+        res.status(200).json({
+            productionsIds: productions
+        });
+    } catch (error) {
+        res.status(500).json({
+            message: 'Something went wrong'
+        });
+    }
+}
+
 module.exports = {
     startProduction: startProduction,
     getProductions: getProductions,
@@ -4067,5 +4097,6 @@ module.exports = {
     bulkIssue: bulkIssue,
     updateStartDate: updateStartDate,
     minStockMaterialPlanning: minStockMaterialPlanning,
-    saveReworkQuantity: saveReworkQuantity
+    saveReworkQuantity: saveReworkQuantity,
+    getAllProductions: getAllProductions
 }

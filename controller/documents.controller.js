@@ -118,7 +118,8 @@ async function createDocument(req, res) {
       serviceOrderNumber = '',
       serviceOrderDate = '',
       contactPerson = '',
-      storeInItemLevel = false
+      storeInItemLevel = false,
+      hideColumns = []
     } = req.body;
 
     let message = '';
@@ -228,7 +229,8 @@ async function createDocument(req, res) {
       supplyState,
       customFields,
       serviceOrderDate,
-      serviceOrderNumber
+      serviceOrderNumber,
+      hideColumns
     });
 
     else {
@@ -275,7 +277,7 @@ async function createDocument(req, res) {
       signature,
       companyId,
       createdBy,
-      status,
+      status: requestForApproval ? 29 : status,
       ip_address,
       paymentDate,
       POCName,
@@ -330,7 +332,8 @@ async function createDocument(req, res) {
       supplyState,
       customFields,
       serviceOrderDate,
-      serviceOrderNumber
+      serviceOrderNumber,
+      hideColumns
     }, {
       where: {
         companyId,
@@ -338,7 +341,7 @@ async function createDocument(req, res) {
       }
     });
 
-    if (documentType != documentTypes.purchaseInvoice) {
+    if (documentType != documentTypes.purchaseInvoice && !isDraft) {
       if (seriesId) {
         const documentSeries = await models.DocumentSeries.findOne({
           where: {
