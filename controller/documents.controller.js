@@ -512,7 +512,34 @@ async function createDocument(req, res) {
           else deliveryChallanItemsMap[item.itemId] = Number(item.quantity);
         }
 
-        let statusCode = 0, handleStatus = existingDocument.status;
+        let statusCode = 0, handleStatus = existingDocument.status, returned = false, existingDocStatus = existingDocument.status;
+        if (handleStatus > 32) {
+          returned = handleStatus;
+          if (handleStatus == 33 || handleStatus == 37) {
+            existingDocStatus = 10;
+          }
+          else if (handleStatus == 34 || handleStatus == 38) {
+            existingDocStatus = 11;
+          }
+          else if (handleStatus == 35 || handleStatus == 39) {
+            existingDocStatus = 12;
+          }
+          else if (handleStatus == 36 || handleStatus == 40) {
+            existingDocStatus = 13;
+          }
+          else if (handleStatus == 41 || handleStatus == 45) {
+            existingDocStatus = 19;
+          }
+          else if (handleStatus == 42 || handleStatus == 46) {
+            existingDocStatus = 20;
+          }
+          else if (handleStatus == 43 || handleStatus == 47) {
+            existingDocStatus = 21;
+          }
+          else if (handleStatus == 44 || handleStatus == 48) {
+            existingDocStatus = 22;
+          }
+        }
 
         // comapare documentsItem map and delivery challam items map 
         for (const elem of Object.keys(documentsItemMap)) {
@@ -525,28 +552,28 @@ async function createDocument(req, res) {
         if (!statusCode) {
           if (documentType === documentTypes.invoice) {
             // handle completely billing status
-            if (existingDocument.status === 1 || existingDocument.status === 12) {
+            if (existingDocStatus === 1 || existingDocStatus === 12) {
               handleStatus = 13;
             }
             // handle partially delivered completely billed
-            if (existingDocument.status === 10 || existingDocument.status == 19) {
+            if (existingDocStatus === 10 || existingDocStatus == 19) {
               handleStatus = 20;
             }
             // handle completely delivered completely billed
-            if (existingDocument.status === 11 || existingDocument.status === 21) {
+            if (existingDocStatus === 11 || existingDocStatus === 21) {
               handleStatus = 22;
             }
           } else {
             // handle completely deliver status
-            if (existingDocument.status === 1 || existingDocument.status === 10) {
+            if (existingDocStatus === 1 || existingDocStatus === 10) {
               handleStatus = 11;
             }
             // handle partially billed completely deliver
-            if (existingDocument.status === 12 || existingDocument.status == 19) {
+            if (existingDocStatus === 12 || existingDocStatus == 19) {
               handleStatus = 21;
             }
             // handle completely delivered completely billed
-            if (existingDocument.status === 13 || existingDocument.status === 20) {
+            if (existingDocStatus === 13 || existingDocStatus === 20) {
               handleStatus = 22;
             }
           }
@@ -554,29 +581,100 @@ async function createDocument(req, res) {
         else {
           if (documentType === documentTypes.invoice) {
             // handle partially billing status
-            if (existingDocument.status === 1 || existingDocument.status === 12) {
+            if (existingDocStatus === 1 || existingDocStatus === 12) {
               handleStatus = 12;
             }
             // handle partially delivered partially billed
-            if (existingDocument.status === 10) {
+            if (existingDocStatus === 10) {
               handleStatus = 19;
             }
             // handle completely delivered partially billed
-            if (existingDocument.status === 11) {
+            if (existingDocStatus === 11) {
               handleStatus = 21;
             }
           } else {
             // handle partially deliver status
-            if (existingDocument.status === 1 || existingDocument.status === 10) {
+            if (existingDocStatus === 1 || existingDocStatus === 10) {
               handleStatus = 10;
             }
             // handle partially billed partially deliver
-            if (existingDocument.status === 12) {
+            if (existingDocStatus === 12) {
               handleStatus = 19;
             }
             // handle partially delivered completely billed
-            if (existingDocument.status === 13) {
+            if (existingDocStatus === 13) {
               handleStatus = 20;
+            }
+          }
+        }
+
+        if (returned) {
+          let partial = false;
+          if (returned == 33 || returned == 34 || returned == 35 || returned == 36 ||
+            returned == 41 || returned == 42 || returned == 43 || returned == 44
+          ) partial = true;
+          if (handleStatus == 10) {
+            if (partial) {
+              handleStatus = 33;
+            }
+            else {
+              handleStatus = 37;
+            }
+          }
+          else if (handleStatus == 11) {
+            if (partial) {
+              handleStatus = 34;
+            }
+            else {
+              handleStatus = 38;
+            }
+          }
+          else if (handleStatus == 12) {
+            if (partial) {
+              handleStatus = 35;
+            }
+            else {
+              handleStatus = 39;
+            }
+          }
+          else if (handleStatus == 13) {
+            if (partial) {
+              handleStatus = 36;
+            }
+            else {
+              handleStatus = 40;
+            }
+          }
+          else if (handleStatus == 19) {
+            if (partial) {
+              handleStatus = 41;
+            }
+            else {
+              handleStatus = 45;
+            }
+          }
+          else if (handleStatus == 20) {
+            if (partial) {
+              handleStatus = 42;
+            }
+            else {
+              handleStatus = 46;
+            }
+          }
+          else if (handleStatus == 21) {
+            if (partial) {
+              handleStatus = 43;
+            }
+            else {
+              handleStatus = 47;
+            }
+          }
+          else if (handleStatus == 22) {
+            if (partial) {
+              handleStatus = 44;
+            }
+            else {
+              handleStatus = 48;
             }
           }
         }
