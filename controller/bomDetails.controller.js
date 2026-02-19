@@ -2,6 +2,7 @@ const { raw } = require("body-parser");
 const { buildRawMaterialTreeWithLevel } = require("../helpers/add-level");
 const models = require("../models");
 const { Op } = require('sequelize');
+const convertXlsxToJson = require("../helpers/bulk-upload");
 
 async function createBOMDetails(req, res) {
   const t = await models.sequelize.transaction();
@@ -89,7 +90,13 @@ async function getBOMDetails(req, res) {
       ],
     });
 
-    return res.status(200).json(result || []);
+    const plainResult = (result || []).map(bom => {
+      const plain = bom.get({ plain: true });
+      plain.attachments = (plain.attachments || []).map(a => a.attachmentName);
+      return plain;
+    });
+
+    return res.status(200).json(plainResult);
   } catch (error) {
     console.error("Error:", error);
     return res.status(500).json({
@@ -102,7 +109,7 @@ async function getBOMDetails(req, res) {
 async function updateBOMDetails(req, res) {
   const t = await models.sequelize.transaction();
   try {
-    const { bomId, bomName, status, bomDescription, companyId, userId } =
+    const { bomId, bomName, status, bomDescription, companyId, userId, attachments = [] } =
       req.body;
 
     if (!bomId || !companyId) {
@@ -141,6 +148,21 @@ async function updateBOMDetails(req, res) {
     // }
 
     // Update BOM
+    await models.BOMAttachments.destroy({
+      where: { BOMID: bomId },
+      transaction: t
+    });
+
+    // Then, if new attachments provided, insert them
+    if (attachments.length) {
+      const bulkData = attachments.map((name) => ({
+        BOMID: bomId,
+        attachmentName: name,
+        companyId,
+        userId,
+      }));
+      await models.BOMAttachments.bulkCreate(bulkData, { transaction: t });
+    }
     await models.BOMDetails.update(
       {
         bomName,
@@ -161,10 +183,14 @@ async function updateBOMDetails(req, res) {
       transaction: t,
     });
 
+    const attachmentNames = updatedDetail.attachments.map(a => a.attachmentName);
+    const plainUpdatedDetail = updatedDetail.get({ plain: true });
+    plainUpdatedDetail.attachments = attachmentNames;
+
     await t.commit();
     return res.status(200).json({
       message: "BOM details updated successfully",
-      post: updatedDetail,
+      post: plainUpdatedDetail,
     });
   } catch (error) {
     await t.rollback();
@@ -387,10 +413,17 @@ async function getBOMById(req, res) {
     plainBOM.rawMaterials = treeWithLevel;
     plainBOM.scrapMaterials = newScrap;
     plainBOM.finishedGoods = finishedGoods;
+    plainBOM.attachments = (plainBOM.attachments || []).map(a => a.attachmentName);
+
+    const plainResult = (result || []).map(bom => {
+      const plain = bom.get({ plain: true });
+      plain.attachments = (plain.attachments || []).map(a => a.attachmentName);
+      return plain;
+    });
 
     return res.status(200).json({
       message: "BOM details retrieved successfully.",
-      data: plainBOM,
+      data: plainResult,
     });
   } catch (error) {
     console.error("Get BOM Error:", error);
@@ -748,6 +781,107 @@ async function duplicateBom(req, res) {
   }
 }
 
+async function bulkUploadBom(req, res) {
+  try {
+    const file = req.file;
+    const { companyId } = req.body;
+    const data = await convertXlsxToJson(file.filename, 'bulkUploadBom');
+    const ids = [];
+    for (const element of data['FG']) {
+      if (!element["FG Item ID"]) continue;
+      ids.push(element["FG Item ID"]);
+    }
+    for (const element of data['RM']) {
+      if (!element["Item ID"]) continue;
+      ids.push(element["Item Id"]);
+    }
+    for (const element of data['Leftover']) {
+      if (!element["Item ID"]) continue;
+      ids.push(element["Item ID"]);
+    }
+    const items = await models.Items.findAll({
+      where: {
+        companyId,
+        itemId: {
+          [Op.in]: ids
+        }
+      },
+      attributes: ['metricsUnit', 'id', 'itemId', 'itemName'],
+      raw: true
+    });
+    const itemsMap = items.reduce((acc, curr) => {
+      acc[curr.itemId] = curr;
+      return acc;
+    }, {})
+    const unitMap = items.reduce((acc, curr) => {
+      if (!acc[curr.id]) {
+        acc[curr.id] = [];
+      }
+      acc[curr.id].push(Number(curr.metricsUnit));
+    }, {});
+
+    const alternateUnits = await models.AlternateUnits.findAll({
+      where: { itemId: items.map(item => item.id) },
+      attributes: ['itemId', 'alternateUnits'],
+      raw: true,
+    });
+
+    alternateUnits.forEach((data) => {
+      if (unitMap[data.itemId])
+        unitMap[data.itemId] = unitMap[data.itemId].push(Number(data.alternateUnits));
+    });
+
+    const uoms = await models.UOM.findAll({
+      where: {
+        [Op.or]: [
+          { companyId: companyId, status: 1 },
+          { companyId: null, status: 0 }
+        ]
+      },
+      raw: true
+    });
+    const uomMap = uoms.reduce((acc, curr) => {
+      acc[curr.code] = curr;
+      return acc;
+    }, {});
+
+    const store = await models.Store.findAll({
+      where: {
+        companyId
+      },
+      raw: true,
+      attributes: ['id', 'name']
+    });
+    const storeMap = store.reduce((acc, curr) => {
+      acc[curr.name] = curr.id;
+      return acc;
+    }, {});
+    const bomSeries = await models.BOMSeries.findAll({
+      where: {
+        companyId
+      },
+      raw: true,
+      attributes: ['nextNumber', 'prefix']
+    });
+    const bomSeriesMap = bomSeries.reduce((acc, curr) => {
+      acc[curr.prefix] = curr.nextNumber;
+      return acc;
+    }, {});
+
+    const errorIds = {};
+    const errorData = {}
+
+    return res.status(200).json({
+      data
+    })
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({
+      message: 'Something went wrong.'
+    });
+  }
+}
+
 module.exports = {
   createBOMDetails: createBOMDetails,
   updateBOMDetails: updateBOMDetails,
@@ -758,5 +892,6 @@ module.exports = {
   deleteBillOfMaterials: deleteBillOfMaterials,
   editBillOfMaterials: editBillOfMaterials,
   getAllItemsBoms: getAllItemsBoms,
-  duplicateBom: duplicateBom
+  duplicateBom: duplicateBom,
+  bulkUploadBom: bulkUploadBom
 };

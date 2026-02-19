@@ -1459,7 +1459,7 @@ async function saveFinishedGoods(req, res) {
             transaction
         });
 
-        const costPerUnit = total / ((passedQty || 1) + (reworkQty || 0));
+        const costPerUnit = total / (Number(passedQty || 1) + Number(reworkQty || 0));
 
         const stores = await models.Store.findOne({
             where: {
@@ -1562,7 +1562,7 @@ async function saveFinishedGoods(req, res) {
             cost: (finishedGoods[0]?.cost || 0) + total,
             quantityToTest: 0,
             pendingReworkQuantity: (finishedGoods[0]?.pendingReworkQuantity || 0) + (Number(reworkQty) || 0),
-            reworkQuantityCost: (finishedGoods[0]?.reworkQuantityCost || 0) + (reworkQty ? total / (reworkQty) : 0),
+            reworkQuantityCost: (finishedGoods[0]?.reworkQuantityCost || 0) + (reworkQty ? (total / (Number(reworkQty || 0) + Number(passedQty || 0))) * (Number(reworkQty || 0)) : 0),
         }, {
             where: {
                 id: finishedGoods[0].id

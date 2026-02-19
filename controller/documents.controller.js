@@ -1602,14 +1602,10 @@ async function createDocument(req, res) {
         acc[curr.itemId] = (acc[curr.itemId] || 0) + curr.quantity;
         return acc;
       }, {});
-      const itemsMap = items.reduce((acc, curr) => {
-        acc[curr.itemId] = (acc[curr.itemId] || 0) + Number(curr.quantity);
-        return acc;
-      }, {});
       let partial = false;
 
       for (const key of Object.keys(salesItemsMap)) {
-        if (salesItemsMap[key] > ((previousSalesReturnItemsMap?.[key] || 0) + Number(itemsMap?.[key] || 0))) {
+        if (salesItemsMap[key] > ((previousSalesReturnItemsMap?.[key] || 0))) {
           partial = true;
           console.log(key, 'mapmapmap')
           break;
@@ -2667,7 +2663,7 @@ async function createDocument(req, res) {
       }
     }
 
-    if (status && documentType === "Sales Return" && challan_number) {
+    if (status && documentType === "Sales Return" && challan_number && !invoiceNumber) {
       const challan = await models.Documents.findOne({
         where: {
           companyId,
@@ -2704,7 +2700,7 @@ async function createDocument(req, res) {
           },
           raw: true
         });
-        const salesItemsMap = [...previousSalesReturnItems, ...items].reduce((acc, curr) => {
+        const salesItemsMap = [...previousSalesReturnItems].reduce((acc, curr) => {
           acc[curr.itemId] = (acc[curr.itemId] || 0) + Number(curr.quantity);
           return acc;
         }, {});
@@ -2757,7 +2753,7 @@ async function createDocument(req, res) {
           },
           raw: true
         });
-        const salesItemsMap = [...previousSalesReturnItems, ...items].reduce((acc, curr) => {
+        const salesItemsMap = [...previousSalesReturnItems].reduce((acc, curr) => {
           acc[curr.itemId] = (acc[curr.itemId] || 0) + Number(curr.quantity);
           return acc;
         }, {});
