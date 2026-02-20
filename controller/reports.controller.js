@@ -1598,9 +1598,15 @@ async function getReports(req, res) {
             const ledger = [];
 
             dateRange.forEach(date => {
-                const row = {
+                const row1 = {
                     date,
-                    processes: {}
+                    processes: {},
+                    production:"Today's Production"
+                };
+                const row2 = {
+                    date,
+                    processes: {},
+                    production:"Total Production"
                 };
 
                 Object.keys(processMap).forEach(pid => {
@@ -1609,17 +1615,20 @@ async function getReports(req, res) {
 
                     cumulative[pid] = (cumulative[pid] || 0) + todayQty;
 
-                    row.processes[processName] = {
+                    row1.processes[processName] = {
                         todayProduction: todayQty,
+                    };
+                    row2.processes[processName] = {
                         totalProduction: cumulative[pid]
                     };
                 });
 
-                ledger.push(row);
+                ledger.push(row1);
+                ledger.push(row2);
             });
 
             return res.json({
-                data: ledger.reverse(),
+                data: ledger,
                 total: ledger.length
             });
         }
