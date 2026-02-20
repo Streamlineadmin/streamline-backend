@@ -415,15 +415,9 @@ async function getBOMById(req, res) {
     plainBOM.finishedGoods = finishedGoods;
     plainBOM.attachments = (plainBOM.attachments || []).map(a => a.attachmentName);
 
-    const plainResult = (result || []).map(bom => {
-      const plain = bom.get({ plain: true });
-      plain.attachments = (plain.attachments || []).map(a => a.attachmentName);
-      return plain;
-    });
-
     return res.status(200).json({
       message: "BOM details retrieved successfully.",
-      data: plainResult,
+      data: plainBOM,
     });
   } catch (error) {
     console.error("Get BOM Error:", error);
