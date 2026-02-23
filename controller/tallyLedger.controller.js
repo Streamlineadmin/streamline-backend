@@ -82,7 +82,7 @@ async function createLedger(req, res) {
         <BODY>
           <DESC>
             <STATICVARIABLES>
-              <SVCURRENTCOMPANY>${escapeXml('EaseMargin Test')}</SVCURRENTCOMPANY>
+              <SVCURRENTCOMPANY>${escapeXml('Test Company')}</SVCURRENTCOMPANY>
               <IMPORTDUPS>@@DUPIGNORE</IMPORTDUPS>
             </STATICVARIABLES>
           </DESC>
@@ -98,8 +98,59 @@ async function createLedger(req, res) {
   }
 }
 
+async function getAllLedgers(req, res) {
+  try {
+    const company = req.query.company || "Test Company";
+
+    const envelope = `<?xml version="1.0" encoding="UTF-8"?>
+    <ENVELOPE>
+      <HEADER>
+        <VERSION>1</VERSION>
+        <TALLYREQUEST>Export</TALLYREQUEST>
+        <TYPE>Collection</TYPE>
+        <ID>All Ledgers</ID>
+      </HEADER>
+      <BODY>
+        <DESC>
+          <STATICVARIABLES>
+            <SVCURRENTCOMPANY>${escapeXml(company)}</SVCURRENTCOMPANY>
+            <SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT>
+          </STATICVARIABLES>
+          <TDL>
+            <TDLMESSAGE>
+              <COLLECTION NAME="All Ledgers" ISINITIALIZE="Yes">
+                <TYPE>Ledger</TYPE>
+                <FETCH>Name,Parent,Alias,OpeningBalance,ClosingBalance,GUID</FETCH>
+              </COLLECTION>
+            </TDLMESSAGE>
+          </TDL>
+        </DESC>
+      </BODY>
+    </ENVELOPE>`;
+
+    const resp = await postToTally(envelope);
+
+    let tallyMessages = resp?.ENVELOPE?.BODY?.DATA?.TALLYMESSAGE;
+
+    let ledgers = [];
+    if (Array.isArray(tallyMessages)) {
+      ledgers = tallyMessages.map(msg => msg.LEDGER);
+    } else if (tallyMessages?.LEDGER) {
+      ledgers = [tallyMessages.LEDGER];
+    }
+
+    return res.json({ ok: true, count: ledgers.length, ledgers });
+  } catch (err) {
+    console.error("Error fetching ledgers:", err.message);
+    return res.status(500).json({ ok: false, message: "Failed to fetch ledgers", error: err.message });
+  }
+}
+
+
+
 
 module.exports = {
   connectToTally: connectToTally,
   createLedger: createLedger,
+  getAllLedgers: getAllLedgers
 }

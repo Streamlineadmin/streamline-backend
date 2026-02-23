@@ -10,15 +10,16 @@ function escapeXml(s = '') {
   return s.replace(/[<>&'"]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;',"'":'&apos;','"':'&quot;'})[c]);
 }
 
-async function postToTally(xml, host = TALLY_HOST, port = TALLY_PORT) {
-  const url = TALLY_URL(host, port);
-  const res = await axios.post(url, xml, {
-    headers: { 'Content-Type': 'application/xml' },
-    timeout: 30000
+async function postToTally(envelope) {
+  const { data } = await axios.post("http://localhost:9000", envelope, {
+    headers: { "Content-Type": "text/xml" },
   });
-  // parse response to JS object
-  const parsed = await xml2js.parseStringPromise(res.data, { explicitArray: false });
-  return parsed;
+
+  // Convert XML → JSON
+  const parser = new xml2js.Parser({ explicitArray: false });
+  const json = await parser.parseStringPromise(data);
+
+  return json;
 }
 
 module.exports = { postToTally, escapeXml };
