@@ -30,7 +30,8 @@ module.exports = (sequelize, DataTypes) => {
     userId: DataTypes.INTEGER,
     companyId: DataTypes.INTEGER,
     status: DataTypes.STRING,
-    conversionFactor: DataTypes.FLOAT
+    conversionFactor: DataTypes.FLOAT,
+    alternateFor: DataTypes.STRING
   }, {
     sequelize,
     modelName: 'BOMScrapMaterial',

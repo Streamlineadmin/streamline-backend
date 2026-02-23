@@ -33,6 +33,7 @@ module.exports = (sequelize, DataTypes) => {
     pan: DataTypes.STRING,
     gstNumber: DataTypes.STRING,
     cin: DataTypes.STRING,
+    signature: DataTypes.STRING
   }, {
     sequelize,
     modelName: 'Users',

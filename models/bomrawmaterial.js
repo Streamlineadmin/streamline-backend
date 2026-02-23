@@ -30,7 +30,8 @@ module.exports = (sequelize, DataTypes) => {
     status: DataTypes.STRING,
     parentId: DataTypes.INTEGER,
     conversionFactor: DataTypes.FLOAT,
-    finishedGoodBomId: DataTypes.INTEGER, //reference from which bom it is linked
+    finishedGoodBomId: DataTypes.INTEGER,
+    alternateFor: DataTypes.STRING
   }, {
     sequelize,
     modelName: 'BOMRawMaterial',

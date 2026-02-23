@@ -176,10 +176,26 @@ module.exports = (sequelize, DataTypes) => {
     debitSetOff: DataTypes.FLOAT,
     amountPaid: DataTypes.FLOAT,
     isBatchAssigned: DataTypes.BOOLEAN,
-    customFields: DataTypes.JSON
+    customFields: DataTypes.JSON,
+    approvedBy: DataTypes.INTEGER,
+    labels: DataTypes.JSON,
+    serviceOrderNumber: DataTypes.STRING,
+    serviceOrderDate: DataTypes.STRING,
+    irnNumber: DataTypes.STRING,
+    qrCode: DataTypes.TEXT,
+    ewayBillCreated: DataTypes.BOOLEAN,
+    contactPerson: DataTypes.STRING,
+    linkedDocuments: DataTypes.JSON,
+    hideColumns: DataTypes.JSON
   }, {
     sequelize,
     modelName: 'Documents',
+    indexes: [
+      {
+        name: 'idx_document_items_company_id',
+        fields: ['companyId'],
+      },
+    ],
   });
 
   return Documents;

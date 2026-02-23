@@ -33,10 +33,23 @@ module.exports = (sequelize, DataTypes) => {
     documentType: DataTypes.STRING,
     isRejected: DataTypes.BOOLEAN,
     productionId: DataTypes.STRING,
-    productionNavigationId: DataTypes.INTEGER
+    productionNavigationId: DataTypes.INTEGER,
+    approvalId: DataTypes.INTEGER,
+    quantityForApproval: DataTypes.FLOAT,
+    toReject: DataTypes.BOOLEAN
   }, {
     sequelize,
     modelName: 'StockTransfer',
+    indexes: [
+      {
+        name: 'idx_stock_transfer_company_id',
+        fields: ['companyId'],
+      },
+      {
+        name: 'idx_stock_transfer_item_id',
+        fields: ['itemId'],
+      },
+    ],
   });
 
   return StockTransfer;

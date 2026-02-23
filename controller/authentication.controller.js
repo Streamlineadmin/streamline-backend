@@ -6,6 +6,7 @@ const { Op } = require("sequelize");
 require("dotenv").config();
 
 const crypto = require('crypto');
+const { AllDocuments } = require('../helpers/document-type');
 
 const transporter = nodemailer.createTransport({
     host: process.env.SMTP_HOST,
@@ -17,7 +18,50 @@ const transporter = nodemailer.createTransport({
     },
 });
 
+/**
+ * ================================
+ * CLIENT IP RESTRICTIONS
+ * ================================
+ */
+const CLIENT_IP_RESTRICTIONS = {
+    "SATVIJ INTERNATIONAL": [
+        "122.176.135.194",
+        // add more if needed
+        // "122.176.135.195"
+    ]
+};
+
+/**
+ * Get real client IP (proxy-safe)
+ */
+function getClientIp(req) {
+    const xForwardedFor = req.headers["x-forwarded-for"];
+    if (xForwardedFor) {
+        return xForwardedFor.split(",")[0].trim();
+    }
+
+    return (
+        req.headers["x-real-ip"] ||
+        req.socket?.remoteAddress ||
+        req.connection?.remoteAddress ||
+        null
+    );
+}
+
+/**
+ * Normalize IPv6 → IPv4
+ * Example: ::ffff:103.21.244.0 → 103.21.244.0
+ */
+function normalizeIp(ip) {
+    if (!ip) return null;
+    if (ip.startsWith("::ffff:")) {
+        return ip.replace("::ffff:", "");
+    }
+    return ip;
+}
+
 async function signUp(req, res) {
+    const t = await models.sequelize.transaction();
     try {
         const { companyName, businessType, email, username, password, contactNo, name, role } = req.body;
 
@@ -46,13 +90,114 @@ async function signUp(req, res) {
             name,
             role,
             status: 1
-        });
+        }, { transaction: t });
 
         // Update the same row with companyId
         await models.Users.update(
             { companyId: newUser.id }, // Set companyId as the newly created user’s id
-            { where: { id: newUser.id } }
+            {
+                where: { id: newUser.id },
+                transaction: t
+            }
         );
+
+        const documentSeries = Object.keys(AllDocuments).map((doctype) => {
+            return {
+                DocType: doctype,
+                seriesName: doctype + ' Series',
+                prefix: AllDocuments[doctype],
+                number: 1,
+                companyId: newUser.id,
+                default: 1,
+                nextNumber: 1,
+                status: 1,
+                ip_address: req.body.ip_address,
+                createdBy: newUser.id
+            }
+        });
+
+        const bomSeries = {
+            seriesName: 'BOM Series',
+            prefix: 'BOM',
+            number: 1,
+            companyId: newUser.id,
+            default: 1,
+            nextNumber: 1,
+            status: 1,
+            ip_address: req.body.ip_address,
+            userId: newUser.id,
+        }
+
+        const itemSeries = {
+            seriesName: 'Item Series',
+            prefix: 'ITEM',
+            number: 1,
+            companyId: newUser.id,
+            default: 1,
+            nextNumber: 2,
+            status: 1,
+            ip_address: req.body.ip_address,
+            userId: newUser.id,
+        }
+
+        const item = {
+            itemId: 'ITEM1',
+            itemName: "Test Item",
+            itemType: 3,
+            metricsUnit: 1,
+            companyId: newUser.id
+        }
+
+        const store = {
+            companyId: newUser.id,
+            name: 'Test Store',
+            ip_address: req.body.ip_address,
+            addressLineOne: 'Test Address',
+            addressLineTwo: '',
+            pincode: '453442',
+            storeType: "1,2",
+            city: 'Jabalpur',
+            state: 'Madhya Pradesh',
+            country: 'India',
+            status: 1,
+            default: 1
+        }
+
+        const buyerSupplier = await models.BuyerSupplier.create({
+            name: "Test",
+            companyId: newUser.id,
+            email: "test@gmail.com",
+            phone: "7778889990",
+            companyName: "Test Company",
+            companyEmail: "test@gmail.com",
+            companyType: 3,
+            ip_address: req.body.ip_address,
+            status: 1,
+            customerType: "company",
+            pocDetails: [{ name: "Test", email: "test@gmail.com", phone: "7778889990" }]
+        }, { transaction: t });
+
+        const address = {
+            buyerSupplierId: buyerSupplier.id,
+            addressLineOne: "New Town",
+            addressLineTwo: "",
+            city: "Indore",
+            country: "India",
+            pincode: "453442",
+            state: "Madhya Pradesh",
+            ip_address: req.body.ip_address,
+            status: 1
+        }
+
+        await models.BuyerSupplierAddress.bulkCreate([{ ...address, addressType: 1 }, { ...address, addressType: 2 }], { transaction: t });
+
+        await Promise.all([
+            models.DocumentSeries.bulkCreate(documentSeries, { transaction: t }),
+            models.BOMSeries.create(bomSeries, { transaction: t }),
+            models.ItemSeries.create(itemSeries, { transaction: t }),
+            models.Items.create(item, { transaction: t }),
+            models.Store.create(store, { transaction: t })
+        ]);
 
         // Send response
         res.status(201).json({ message: "Signed up successfully" });
@@ -98,9 +243,11 @@ async function signUp(req, res) {
             html: emailTemplate,
         };
         await transporter.sendMail(mailOptions);
+        await t.commit();
 
     } catch (error) {
         console.error("Error:", error);
+        await t.rollback();
         res.status(500).json({
             message: "Something went wrong! Please try again later.",
             error: error.message,
@@ -110,67 +257,98 @@ async function signUp(req, res) {
 
 async function login(req, res) {
     try {
-        // Find the user by email or username
+        const { email, password } = req.body;
+
+        // 🌐 Get client IP
+        const rawIp = getClientIp(req);
+        const userIp = normalizeIp(rawIp);
+
+
+        // 1️⃣ Fetch user
         const user = await models.Users.findOne({
             where: {
-                [Op.or]: [
-                    { email: req.body.email },
-                    { username: req.body.email }
-                ]
+                [Op.or]: [{ email }, { username: email }]
             },
+            attributes: { exclude: ["createdAt", "updatedAt"] },
             raw: true
         });
 
         if (!user) {
-            return res.status(401).json({ message: "Invalid Credentials!" });
+            return res.status(401).json({ message: "Invalid credentials!" });
         }
 
-        // Compare passwords
-        const isPasswordValid = await bcryptjs.compare(req.body.password, user.password);
+        // 🚨 2️⃣ IP restriction for Satvij International
+        const allowedIps = CLIENT_IP_RESTRICTIONS[user.companyName];
+
+        if (allowedIps && !allowedIps.includes(userIp)) {
+            console.warn(
+                `Blocked login for ${user.companyName} from IP ${userIp}`
+            );
+            return res.status(401).json({ message: "Logic is Blocked by this IP" });
+        }
+
+        // 2️⃣ Verify password
+        const isPasswordValid = await bcryptjs.compare(password, user.password);
         if (!isPasswordValid) {
             return res.status(401).json({ message: "Invalid credentials!" });
         }
 
-        // Fetch RolePermissions
+        // 3️⃣ Fetch role permissions
         const rolePermissionsData = await models.RolePermissions.findAll({
             where: { companyId: user.companyId, role: user.role },
+            raw: true
         });
 
-        const rolesAccess = [];
-        for (const rolePermission of rolePermissionsData) {
-            const feature = await models.PermissionsFeatures.findOne({
-                where: { id: rolePermission.permission }
-            });
-            const subfeature = await models.PermissionsSubFeatures.findOne({
-                where: { id: rolePermission.subpermission }
-            });
+        let rolesAccess = [];
+        if (rolePermissionsData.length) {
+            // Collect unique IDs
+            const permissionIds = [...new Set(rolePermissionsData.map(rp => rp.permission))];
+            const subpermissionIds = [...new Set(rolePermissionsData.map(rp => rp.subpermission))];
 
-            rolesAccess.push({
-                feature: feature ? feature.feature : null,
-                subfeature: subfeature ? subfeature.subfeature : null,
-                create: rolePermission.create,
-                edit: rolePermission.edit,
-                view: Number(rolePermission.view),
-                delete: rolePermission.delete
-            });
+            // 4️⃣ Fetch all features & subfeatures in one go
+            const [features, subfeatures] = await Promise.all([
+                models.PermissionsFeatures.findAll({
+                    where: { id: { [Op.in]: permissionIds } },
+                    attributes: ["id", "feature"],
+                    raw: true
+                }),
+                models.PermissionsSubFeatures.findAll({
+                    where: { id: { [Op.in]: subpermissionIds } },
+                    attributes: ["id", "subfeature"],
+                    raw: true
+                })
+            ]);
+
+            const featureMap = Object.fromEntries(features.map(f => [f.id, f.feature]));
+            const subfeatureMap = Object.fromEntries(subfeatures.map(s => [s.id, s.subfeature]));
+
+            // 5️⃣ Build access array
+            rolesAccess = rolePermissionsData.map(rp => ({
+                feature: featureMap[rp.permission] || null,
+                subfeature: subfeatureMap[rp.subpermission] || null,
+                create: rp.create,
+                edit: rp.edit,
+                view: Number(rp.view),
+                delete: rp.delete
+            }));
         }
 
-        if (user.role != 1) {
+        // 6️⃣ Attach admin logo if needed
+        let logoUrl = user.profileURL || "";
+        if (user.role !== 1 && !logoUrl) {
             const admin = await models.Users.findOne({
-                where: {
-                    role: 1,
-                    companyId: user.companyId
-                },
+                where: { role: 1, companyId: user.companyId },
+                attributes: ["profileURL"],
                 raw: true
             });
-            user.logoUrl = admin?.profileURL
+            logoUrl = admin?.profileURL || "";
         }
 
-        // Generate JWT token
-        const token = jwt.sign({
+        // 7️⃣ JWT payload
+        const payload = {
+            userId: user.id,
             username: user.username,
             email: user.email,
-            userId: user.id,
             companyId: user.companyId,
             companyName: user.companyName,
             businessType: user.businessType,
@@ -183,23 +361,25 @@ async function login(req, res) {
             gstNumber: user.gstNumber,
             cin: user.cin,
             permissions: rolesAccess,
-            logoUrl: user.logoUrl || user.profileURL || ''
-        }, 'secret', { expiresIn: '1h' });
+            logoUrl,
+            signature: user.signature
+        };
 
-        res.status(200).json({
+        const token = jwt.sign(payload, process.env.JWT_SECRET || "secret", { expiresIn: "1h" });
+
+        return res.status(200).json({
             message: "Login successful.",
-            token: token
+            token
         });
 
     } catch (error) {
         console.error("Error during login:", error);
-        res.status(500).json({
-            message: "Something went wrong, Please try again later!",
+        return res.status(500).json({
+            message: "Something went wrong, please try again later.",
             error: error.message
         });
     }
 }
-
 
 async function forgotPassword(req, res) {
     try {

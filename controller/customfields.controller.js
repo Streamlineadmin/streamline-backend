@@ -1,3 +1,4 @@
+const { isValidJSON } = require("../helpers/add-level");
 const models = require("../models");
 
 async function addCustomfields(req, res) {
@@ -13,8 +14,11 @@ async function addCustomfields(req, res) {
         documentType,
         options,
         showByDefault,
-        level
+        level,
+        category,
+        unique
       } = req.body;
+
     if (!fieldName || !type || !documentType) {
       return res.status(400).json({ message: "All fields are required" });
     }
@@ -22,14 +26,16 @@ async function addCustomfields(req, res) {
     const newField = await models.CustomFields.create({
       fieldName,
       type,
-      defaultValue: defaultValue || '',
+      defaultValue: req.file ? `${req.protocol}://${req.get('host')}/uploads/${req?.file?.filename}` : (defaultValue || ''),
       companyId: Number(companyId),
       userId: Number(userId),
       documentType,
       required: required || false,
-      options: options || [],
+      options: isValidJSON(options) || [],
       showByDefault: showByDefault || false,
-      level: level || ''
+      level: level || '',
+      category,
+      unique: unique || false
     });
 
     return res.status(201).json({
@@ -49,7 +55,8 @@ async function getCustomfields(req, res) {
     const data = await models.CustomFields.findAll({
       where: {
         companyId
-      }
+      },
+      order: [['createdAt', 'DESC']]
     });
 
     return res.status(200).json({
@@ -110,10 +117,33 @@ async function editPermissions(req, res) {
   }
 }
 
+async function editCustomField(req, res) {
+  try {
+    const data = req.body;
+
+    await models.CustomFields.update({
+      ...data,
+      options: isValidJSON(data?.options) || [],
+      defaultValue: req.file ? `${req.protocol}://${req.get('host')}/uploads/${req?.file?.filename}` : (data?.defaultValue || '')
+    }, {
+      where: {
+        id: data.id
+      }
+    });
+
+    return res.status(200).json({
+      message: "CustomField Updated successfully."
+    });
+  } catch (error) {
+    console.error("Error in Fetching Custom Field.", error);
+    return res.status(500).json({ message: "Server error" });
+  }
+}
 
 module.exports = {
   addCustomfields: addCustomfields,
   getCustomfields: getCustomfields,
   deleteCustomfields: deleteCustomfields,
-  editPermissions
+  editPermissions,
+  editCustomField
 };

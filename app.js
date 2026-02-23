@@ -2,6 +2,92 @@ const express = require("express");
 const bodyParser = require("body-parser");
 const path = require("path");
 const cors = require("cors");
+const cron = require("node-cron");
+const models = require('./models');
+const { Op } = require("sequelize");
+
+cron.schedule("0 0 * * *", async () => {
+  try {
+    const production = await models.Production.findAll({
+      where: {
+        status: 2
+      },
+      attributes: ['id']
+    });
+    const productionIds = production.map(data => data.id);
+    const twoDaysAgo = new Date();
+    twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
+    const rawMaterial = await models.ProductionRawMaterials.findAll({
+      where: {
+        productionId: {
+          [Op.in]: productionIds
+        },
+        updatedAt: { [Op.gt]: twoDaysAgo }
+      },
+      attributes: ["productionId"],
+      raw: true
+    });
+    const scraps = await models.ProductionScrapMaterials.findAll({
+      where: {
+        productionId: {
+          [Op.in]: productionIds
+        },
+        updatedAt: { [Op.gt]: twoDaysAgo }
+      },
+      attributes: ["productionId"],
+      raw: true
+    });
+    const finishedgoods = await models.ProductionFinishedGoods.findAll({
+      where: {
+        productionId: {
+          [Op.in]: productionIds
+        },
+        updatedAt: { [Op.gt]: twoDaysAgo }
+      },
+      attributes: ["productionId"],
+      raw: true
+    });
+    const process = await models.ProductionSalesProcess.findAll({
+      where: {
+        productionId: {
+          [Op.in]: productionIds
+        },
+        updatedAt: { [Op.gt]: twoDaysAgo }
+      },
+      attributes: ["productionId"],
+      raw: true
+    });
+    const charges = await models.ProductionAdditionalCharges.findAll({
+      where: {
+        productionId: {
+          [Op.in]: productionIds
+        },
+        updatedAt: { [Op.gt]: twoDaysAgo }
+      },
+      attributes: ["productionId"],
+      raw: true
+    });
+
+    const finalIds = [];
+    [...rawMaterial, ...scraps, ...finishedgoods, ...process, ...charges]
+      .forEach(item => {
+        finalIds.push(item.productionId);
+      });
+
+    const uniqueFinalIds = [...new Set(finalIds)];
+
+    await models.Production.update({ status: 3 }, {
+      where: {
+        id: {
+          [Op.in]: uniqueFinalIds
+        }
+      }
+    });
+
+  } catch (error) {
+    console.log(error)
+  }
+});
 
 const authenticationRoute = require("./routes/authentication");
 const fileRoute = require("./routes/file");
@@ -47,11 +133,21 @@ const logTDSRoutes = require("./routes/logTDS");
 const itemSeriesRoutes = require("./routes/itemSeries");
 const reportRoutes = require("./routes/reports");
 const settingsRoutes = require("./routes/settings");
+const documentApprovalRoutes = require("./routes/documentApproval");
+const labelsRoute = require("./routes/labels");
+const inventoryApprovalRoutes = require("./routes/inventoryApproval");
+const eInvoiceRoutes = require("./routes/eInvoiceCredentials");
+const eMailRoutes = require("./routes/emailCredentials");
+const ShowHideColumnRoutes = require("./routes/showHideColumns");
+const { mode } = require("simple-statistics");
+const amyRoutes = require("./routes/amy");
+const showhidecolumns = require("./models/showhidecolumns");
 const tallyRoutes = require("./routes/tallyRoutes");
 const app = express();
 
 // Apply body-parser middleware to handle JSON request bodies
-app.use(bodyParser.json());
+app.use(bodyParser.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // Define the CORS options
 const corsOptions = {
@@ -69,6 +165,283 @@ app.get("/", (req, res) => {
 });
 // Serve files from the 'uploads' folder
 app.use("/uploads", express.static("uploads"), fileRoute);
+
+app.post("/deleteCompaniesData", async (req, res) => {
+  const t = await models.sequelize.transaction();
+  try {
+    const { companyId, dataToDelete } = req.body;
+
+    if (dataToDelete.includes('sales')) {
+      const documents = await models.Documents.findAll({
+        where: {
+          companyId: companyId,
+          documentType: { [Op.in]: ['Sales Lead', 'Sales Quotation', 'Credit Note', 'Debit Note', 'Delivery Challan', 'Stock Transfer Delivery Challan', 'Sales Order', 'Sales Invoice', 'Proforma Invoice', 'Sales Return'] }
+        },
+        attributes: ['id', 'documentNumber'],
+        transaction: t,
+        raw: true
+      });
+      await models.DocumentItems.destroy({
+        where: {
+          companyId: companyId,
+          documentNumber: { [Op.in]: documents.map(doc => doc.documentNumber) }
+        },
+        transaction: t,
+      });
+      await models.Documents.destroy({
+        where: {
+          companyId: companyId,
+          id: { [Op.in]: documents.map(doc => doc.id) }
+        },
+        transaction: t,
+      });
+    }
+
+    if (dataToDelete.includes('purchase')) {
+      const documents = await models.Documents.findAll({
+        where: {
+          companyId: companyId,
+          documentType: {
+            [Op.in]: [
+              'Purchase Request',
+              'Purchase Order', 'Purchase Credit Note',
+              'Purchase Debit Note', 'Goods Received Note',
+              'Quality Report', 'Purchase Invoice', 'Purchase Return']
+          }
+        },
+        transaction: t,
+        attributes: ['id', 'documentNumber'],
+        raw: true
+      });
+      await models.DocumentItems.destroy({
+        where: {
+          companyId: companyId,
+          documentNumber: { [Op.in]: documents.map(doc => doc.documentNumber) }
+        },
+        transaction: t,
+      });
+      await models.Documents.destroy({
+        where: {
+          companyId: companyId,
+          id: { [Op.in]: documents.map(doc => doc.id) }
+        },
+        transaction: t,
+      });
+    }
+
+    if (dataToDelete.includes('serviceOrder')) {
+      const documents = await models.Documents.findAll({
+        where: {
+          companyId: companyId,
+          documentType: {
+            [Op.in]: ["Service Order", "Service Challan", "Service GRN", "Service QR", "Service Debit Note", "Service Credit Note", "Service Invoice", "Service Proforma Invoice"]
+          }
+        },
+        transaction: t,
+        attributes: ['id', 'documentNumber'],
+        raw: true
+      });
+      await models.DocumentItems.destroy({
+        where: {
+          companyId: companyId,
+          documentNumber: { [Op.in]: documents.map(doc => doc.documentNumber) }
+        },
+        transaction: t,
+      });
+      await models.Documents.destroy({
+        where: {
+          companyId: companyId,
+          id: { [Op.in]: documents.map(doc => doc.id) }
+        },
+        transaction: t,
+      });
+    }
+
+    if (dataToDelete.includes('serviceConfirmation')) {
+      const documents = await models.Documents.findAll({
+        where: {
+          companyId: companyId,
+          documentType: {
+            [Op.in]: ["Service Confirmation", "Service Confirmation Challan", "Service Confirmation GRN", "Service Confirmation QR", "Service Confirmation Debit Note", "Service Confirmation Credit Note", "Service Confirmation Invoice", "Service Confirmation Proforma Invoice"]
+          }
+        },
+        transaction: t,
+        attributes: ['id', 'documentNumber'],
+        raw: true
+      });
+      await models.DocumentItems.destroy({
+        where: {
+          companyId: companyId,
+          documentNumber: { [Op.in]: documents.map(doc => doc.documentNumber) }
+        },
+        transaction: t,
+      });
+      await models.Documents.destroy({
+        where: {
+          companyId: companyId,
+          id: { [Op.in]: documents.map(doc => doc.id) }
+        },
+        transaction: t,
+      });
+    }
+
+    if (dataToDelete.includes('items')) {
+      const items = await models.Items.findAll({
+        where: {
+          companyId: companyId
+        },
+        transaction: t,
+        attributes: ['id'],
+        raw: true
+      });
+      await models.StoreItems.destroy({
+        where: {
+          itemId: { [Op.in]: items.map(item => item.id) }
+        },
+        transaction: t,
+      });
+      await models.BOMDetails.destroy({
+        where: {
+          companyId: companyId
+        },
+        transaction: t,
+      });
+      await models.StockTransfer.destroy({
+        where: {
+          companyId: companyId
+        },
+        transaction: t,
+      });
+      await models.Items.destroy({
+        where: {
+          companyId: companyId
+        },
+        transaction: t,
+      });
+      await models.DocumentItems.destroy({
+        where: {
+          companyId: companyId
+        },
+        transaction: t,
+      });
+      await models.Documents.destroy({
+        where: {
+          companyId: companyId
+        },
+        transaction: t,
+      });
+      await models.Production.destroy({
+        where: {
+          companyId: companyId
+        },
+        transaction: t,
+      });
+      await models.InventoryApproval.destroy({
+        where: {
+          companyId: companyId
+        },
+        transaction: t,
+      });
+    }
+
+    if (dataToDelete.includes('store')) {
+      const stores = await models.Store.findAll({
+        where: {
+          companyId: companyId
+        },
+        transaction: t,
+        attributes: ['id'],
+        raw: true
+      });
+      await models.StoreItems.destroy({
+        where: {
+          storeId: { [Op.in]: stores.map(store => store.id) }
+        },
+        transaction: t,
+      });
+      await models.Store.destroy({
+        where: {
+          companyId: companyId
+        },
+        transaction: t,
+      });
+      await models.StockTransfer.destroy({
+        where: {
+          companyId: companyId
+        },
+        transaction: t,
+      });
+      await models.InventoryApproval.destroy({
+        where: {
+          companyId: companyId
+        },
+        transaction: t,
+      });
+    }
+
+    if (dataToDelete.includes('storeitem')) {
+      const stores = await models.Store.findAll({
+        where: {
+          companyId: companyId
+        },
+        transaction: t,
+        attributes: ['id'],
+        raw: true
+      });
+      await models.StoreItems.destroy({
+        where: {
+          storeId: { [Op.in]: stores.map(store => store.id) }
+        },
+        transaction: t,
+      });
+      await models.StockTransfer.destroy({
+        where: {
+          companyId: companyId
+        },
+        transaction: t,
+      });
+      await models.InventoryApproval.destroy({
+        where: {
+          companyId: companyId
+        },
+        transaction: t,
+      });
+    }
+
+    if (dataToDelete.includes('production')) {
+      await models.Production.destroy({
+        where: {
+          companyId: companyId
+        },
+        transaction: t,
+      });
+    }
+
+    if (dataToDelete.includes('bom')) {
+      await models.BOMDetails.destroy({
+        where: {
+          companyId: companyId
+        },
+        transaction: t,
+      });
+      await models.Production.destroy({
+        where: {
+          companyId: companyId
+        },
+        transaction: t,
+      });
+    }
+
+    await t.commit();
+
+
+    res.status(200).json({ message: "Data deleted successfully." });
+  } catch (error) {
+    await t.rollback();
+    console.error("Error deleting data:", error);
+    res.status(500).json({ message: "Internal server error." });
+  }
+});
 
 // Use authentication routes for `/authentication` path
 app.use("/authentication", authenticationRoute);
@@ -114,6 +487,13 @@ app.use("/logTDS", logTDSRoutes);
 app.use("/itemSeries", itemSeriesRoutes);
 app.use("/reports", reportRoutes);
 app.use("/settings", settingsRoutes);
+app.use("/documentApproval", documentApprovalRoutes);
+app.use("/labels", labelsRoute);
+app.use("/inventoryApproval", inventoryApprovalRoutes);
+app.use("/eInvoice", eInvoiceRoutes);
+app.use("/email", eMailRoutes);
+app.use("/showHideColumns", ShowHideColumnRoutes);
+app.use("/amy", amyRoutes);
 app.use("/tally", tallyRoutes);
 
 module.exports = app;

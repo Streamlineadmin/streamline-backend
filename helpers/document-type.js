@@ -2,6 +2,7 @@ documentTypes = {
     goodsReceive: 'Goods Received Note',
     invoice: 'Invoice',
     deliveryChallan: 'Delivery Challan',
+    stockTransferDeliveryChallan: 'Stock Transfer Delivery Challan',
     salesQuotation: 'Sales Quotation',
     salesEnquiry: 'Sales Enquiry',
     qualityReport: 'Quality Report',
@@ -32,7 +33,8 @@ const salesDocuments = [
     "Invoice",
     "Debit Note",
     "Credit Note",
-    "Sales Return"
+    "Sales Return",
+    "Stock Transfer Delivery Challan"
 ];
 
 const serviceDocuments = [
@@ -44,6 +46,17 @@ const serviceDocuments = [
     "Service Invoice",
     "Service Debit Note",
     "Service Credit Note"
+];
+
+const serviceConfirmationDocuments = [
+    "Service Confirmation",
+    "Service Confirmation Challan",
+    "Service Confirmation Grn",
+    "Service Confirmation Qr",
+    "Service Confirmation Proforma Invoice",
+    "Service Confirmation Invoice",
+    "Service Confirmation Debit Note",
+    "Service Confirmation Credit Note"
 ];
 
 
@@ -58,4 +71,49 @@ const purchaseDocuments = [
     "Purchase Return"
 ];
 
-module.exports = { documentTypes, serviceDocuments, salesDocuments, purchaseDocuments };
+const AllDocuments = {
+    "Sales Lead": "SL",
+    "Sales Quotation": "SQ",
+    "Sales Order": "SO",
+    "Delivery Challan": "DC",
+    "Proforma Invoice": "PI",
+    "Invoice": "INV",
+    "Debit Note": "DNN",
+    "Credit Note": "CNN",
+    "Sales Return": "SR",
+    "Stock Transfer Delivery Challan": "STDC",
+    "Purchase Request": "PRQ",
+    "Purchase Order": "PO",
+    "Goods Received Note": "GRN",
+    "Quality Report": "QR",
+    "Purchase Invoice": "PUI",
+    "Purchase Debit Note": "PDNN",
+    "Purchase Credit Note": "PCNN",
+    "Purchase Return": "PR",
+    "Service Order": "SERO",
+    "Service Challan": "SERC",
+    "Service Grn": "SERGRN",
+    "Service Qr": "SERQR",
+    "Service Proforma Invoice": "SERPI",
+    "Service Invoice": "SERINV",
+    "Service Debit Note": "SERDNN",
+    "Service Credit Note": "SERCNN",
+    "Service Confirmation": "SC",
+    "Service Confirmation Challan": "SCC",
+    "Service Confirmation Grn": "SCGRN",
+    "Service Confirmation Qr": "SCQR",
+    "Service Confirmation Proforma Invoice": "SCPI",
+    "Service Confirmation Invoice": "SCINV",
+    "Service Confirmation Debit Note": "SCDNN",
+    "Service Confirmation Credit Note": "SCCNN",
+    "Production": "PROD"
+}
+
+module.exports = {
+    documentTypes,
+    serviceDocuments,
+    salesDocuments,
+    purchaseDocuments,
+    serviceConfirmationDocuments,
+    AllDocuments
+};

@@ -22,7 +22,8 @@ module.exports = (sequelize, DataTypes) => {
     state: DataTypes.STRING,
     country: DataTypes.STRING,
     addressType: DataTypes.INTEGER,
-    status: DataTypes.INTEGER
+    status: DataTypes.INTEGER,
+    gstNumber: DataTypes.STRING
   }, {
     sequelize,
     modelName: 'Addresses',

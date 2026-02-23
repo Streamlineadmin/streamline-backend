@@ -11,5 +11,6 @@ router.post('/getAllBOMs', bomDetailsController.getAllBOMs);
 router.post('/getAllItemsBoms', bomDetailsController.getAllItemsBoms);
 router.post('/deleteBillOfMaterials', bomDetailsController.deleteBillOfMaterials);
 router.post('/editBillOfMaterials', bomDetailsController.editBillOfMaterials);
+router.post('/duplicateBom', bomDetailsController.duplicateBom);
 
 module.exports = router;

@@ -24,6 +24,7 @@ module.exports = (sequelize, DataTypes) => {
     pincode: DataTypes.STRING,
     status: DataTypes.INTEGER,
     ip_address: DataTypes.STRING,
+    gstNumber: DataTypes.STRING
   }, {
     sequelize,
     modelName: 'BuyerSupplierAddress',

@@ -47,10 +47,20 @@ module.exports = (sequelize, DataTypes) => {
     customFields: {
       type: DataTypes.JSON,
       defaultValue: []
-    }
+    },
+    type: DataTypes.STRING,
+    imageUrl: DataTypes.STRING,
+    category: DataTypes.INTEGER,
+    store: DataTypes.STRING,
   }, {
     sequelize,
     modelName: 'DocumentItems',
+    indexes: [
+      {
+        name: 'idx_document_items_company_id',
+        fields: ['companyId'],
+      },
+    ],
   });
   return DocumentItems;
 };

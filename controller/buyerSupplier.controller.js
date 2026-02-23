@@ -1,5 +1,6 @@
 const { json } = require('body-parser');
 const models = require('../models');
+const axios = require('axios');
 const convertXlsxToJson = require('../helpers/bulk-upload');
 
 
@@ -17,7 +18,8 @@ function addBuyerSupplier(req, res) {
         GSTType: req.body.gstType,
         ip_address: req.body.ip_address,
         status: req.body.status,
-        customerType: req.body?.customerType || "company"
+        customerType: req.body?.customerType || "company",
+        pocDetails: req.body?.pocDetails || []
     }
 
     models.BuyerSupplier.create(buyerSupplierData).then(result => {
@@ -33,6 +35,7 @@ function addBuyerSupplier(req, res) {
                 state: elem.state,
                 ip_address: req.body.ip_address,
                 status: elem.status,
+                gstNumber: elem?.gstNumber
             }
             models.BuyerSupplierAddress.create(addressData);
         })
@@ -49,7 +52,7 @@ function addBuyerSupplier(req, res) {
 }
 
 async function editBuyerSupplier(req, res) {
-    const { id, name, companyId, email, phone, companyName, companyEmail, companyType, gstNumber, gstType, ip_address, addresses } = req.body;
+    const { id, name, companyId, email, phone, companyName, companyEmail, companyType, gstNumber, pan, gstType, ip_address, addresses } = req.body;
 
     try {
         const buyerSupplier = await models.BuyerSupplier.findByPk(id);
@@ -68,6 +71,8 @@ async function editBuyerSupplier(req, res) {
             GSTNumber: gstNumber,
             GSTType: gstType,
             ip_address,
+            PAN: pan,
+            pocDetails: req.body?.pocDetails || []
         });
 
         if (addresses && addresses.length > 0) {
@@ -89,6 +94,7 @@ async function editBuyerSupplier(req, res) {
                         state: address.state,
                         ip_address,
                         status: address.status,
+                        gstNumber: address?.gstNumber
                     });
 
                     existingAddressMap.delete(address.id);
@@ -104,6 +110,7 @@ async function editBuyerSupplier(req, res) {
                         state: address.state,
                         ip_address,
                         status: address.status || 1,
+                        gstNumber: address?.gstNumber
                     });
                 }
             }
@@ -188,7 +195,8 @@ async function getBuyerSupplier(req, res) {
     try {
         const companyId = req.body.companyId;
         const buyerSuppliers = await models.BuyerSupplier.findAll({
-            where: { companyId }
+            where: { companyId },
+            order: [['createdAt', 'DESC']]
         });
 
         if (!buyerSuppliers || buyerSuppliers.length === 0) {
@@ -236,11 +244,11 @@ async function bulkUploadBuyerSuppliers(req, res) {
             where: {
                 companyId: Number(companyId)
             },
-            raw:true
+            raw: true
         });
 
         const existingBuyerSupplierMap = existingBuyerSupplier?.reduce((acc, curr) => {
-            acc[curr?.companyName] = 1;
+            acc[curr?.companyName?.toLowerCase?.()] = 1;
             return acc;
         }, {});
 
@@ -253,7 +261,6 @@ async function bulkUploadBuyerSuppliers(req, res) {
         const errorData = [];
         const requiredFields = [
             "* Company Name",
-            "* Company Email",
             "* Company Type",
             "* Address",
             "* Address Type",
@@ -276,7 +283,7 @@ async function bulkUploadBuyerSuppliers(req, res) {
                 "Person Email": personEmail,
                 "Phone": phone,
                 "* Company Name": companyName,
-                "* Company Email": companyEmail,
+                "Company Email": companyEmail,
                 "* Company Type": companyType,
                 "GST Number": gstNumber,
                 "GST Type": gstType,
@@ -285,21 +292,22 @@ async function bulkUploadBuyerSuppliers(req, res) {
                 "Pin Code": pinCode,
                 "* City": city,
                 "* State": state,
+                "PAN Number": PAN
             } = row;
 
-            if (existingBuyerSupplierMap[companyName]) {
+            if (existingBuyerSupplierMap[companyName?.toLowerCase?.()]) {
                 row["Error"] = 'Company Name Already Exist.'
                 errorData.push(row);
                 continue;
             }
 
-            if (sheetDataBuyerSupplierMap?.[companyName]) {
+            if (sheetDataBuyerSupplierMap?.[companyName?.toLowerCase?.()]) {
                 row["Error"] = 'Company Name Already Exist in Sheet.'
                 errorData.push(row);
                 continue;
             }
 
-            sheetDataBuyerSupplierMap[companyName] = 1;
+            sheetDataBuyerSupplierMap[companyName?.toLowerCase?.()] = 1;
 
             if (missingFields.length > 0) {
                 row["Error"] = `Missing required fields: ${missingFields.join(", ")}`;
@@ -312,13 +320,15 @@ async function bulkUploadBuyerSuppliers(req, res) {
                 email: personEmail?.trim() || "",
                 phone: phone || "",
                 companyId: Number(companyId),
-                companyName: companyName.trim(),
-                companyEmail: companyEmail.trim(),
+                companyName: companyName?.trim?.(),
+                companyEmail: companyEmail?.trim?.(),
                 companyType: companyType == 'Both' ? 3 : companyType == 'Buyer' ? 1 : 2,
-                GSTNumber: gstNumber?.trim() || "",
+                GSTNumber: gstNumber?.toString()?.trim() || "",
                 GSTType: gstType?.trim() ? gstType == 'Regular' ? 1 : 2 : '',
                 status: 1,
                 customerType: "company",
+                pocDetails: personName?.trim() ? [{ name: personName?.trim(), email: personEmail?.trim(), phone: phone || "" }] : [],
+                PAN: PAN?.trim?.()?.toUpperCase?.()
             });
 
             addressPayload.push({
@@ -374,11 +384,54 @@ async function bulkUploadBuyerSuppliers(req, res) {
     }
 }
 
+async function getCompanyDetailsByGstNumber(req, res) {
+    const { gstNumber } = req.body;
+
+    try {
+        if (!gstNumber) {
+            return res.status(400).json({ message: "GST number is required" });
+        }
+
+        const response = await axios.get("https://api.whitebooks.in/public/search", {
+            params: {
+                email: "apisales@whitebooks.in",
+                gstin: gstNumber,
+            },
+            headers: {
+                "Content-Type": "application/json",
+                client_id: process.env.CLIENT_ID,
+                client_secret: process.env.CLIENT_SECRET
+            },
+        });
+
+        if (!response?.data?.error) {
+            return res.status(200).json({
+                success: true,
+                ...response?.data,
+                message: 'Data Fetched'
+            });
+        } else {
+            return res.status(400).json({
+                success: false,
+                error: response?.data?.error?.message
+            });
+        }
+    } catch (error) {
+        console.error("Error fetching company details:", error.message);
+        return res.status(500).json({
+            success: false,
+            message: "Something went wrong, please try again later!",
+            error: error.response?.data || error.message,
+        });
+    }
+}
+
 module.exports = {
     addBuyerSupplier: addBuyerSupplier,
     getBuyerSupplier: getBuyerSupplier,
     deleteBuyerSupplier: deleteBuyerSupplier,
     bulkDeleteBuyerSupplier: bulkDeleteBuyerSupplier,
     editBuyerSupplier: editBuyerSupplier,
-    bulkUploadBuyerSuppliers: bulkUploadBuyerSuppliers
+    bulkUploadBuyerSuppliers: bulkUploadBuyerSuppliers,
+    getCompanyDetailsByGstNumber: getCompanyDetailsByGstNumber
 }

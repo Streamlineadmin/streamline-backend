@@ -24,7 +24,10 @@ module.exports = (sequelize, DataTypes) => {
     passedQuantity: DataTypes.FLOAT,
     quantityToTest: DataTypes.FLOAT,
     conversionFactor: DataTypes.FLOAT,
-    cost: DataTypes.FLOAT
+    cost: DataTypes.FLOAT,
+    pendingReworkQuantity: DataTypes.FLOAT,
+    completedReworkQuantity: DataTypes.FLOAT,
+    reworkQuantityCost: DataTypes.FLOAT
   }, {
     sequelize,
     modelName: 'ProductionFinishedGoods',

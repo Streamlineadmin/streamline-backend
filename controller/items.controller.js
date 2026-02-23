@@ -1,165 +1,273 @@
+const { isValidJSON } = require('../helpers/add-level');
 const convertXlsxToJson = require('../helpers/bulk-upload');
-const { generateTransferNumber } = require('../helpers/transfer-number');
+const { generateTransferNumber, generateProductionId } = require('../helpers/transfer-number');
 const models = require('../models');
 const { Op } = require("sequelize");
 
-function addItem(req, res) {
-    const { itemId, itemName, itemType, metricsUnit, companyId, useCustomSeries } = req.body;
+async function addItem(req, res) {
+    const { itemId, itemName, itemType, metricsUnit, companyId, useCustomSeries, userId, imageObj } = req.body;
+    try {
+        let imageUrl = null;
+        let temp = isValidJSON(imageObj) || [];
+        const customFields = isValidJSON(req.body.customField);
+        if (req.files) {
+            let i = 0;
+            for (const element of temp) {
+                if (element == "imageUrl") {
+                    imageUrl = `${req.protocol}://${req.get('host')}/uploads/${req?.files[i]?.filename}`
+                }
+                else {
+                    customFields[element] = `${req.protocol}://${req.get('host')}/uploads/${req?.files[i]?.filename}`
+                }
+                i++;
+            }
+        }
+        // ✅ Mandatory field check
+        if (!itemId || !itemName || !itemType || !metricsUnit) {
+            return res.status(400).json({
+                message: "Mandatory fields are missing: itemId, itemName, itemType, and metricsUnit are required."
+            });
+        }
 
-    // Check for mandatory fields
-    if (!itemId || !itemName || !itemType || !metricsUnit) {
-        return res.status(400).json({
-            message: "Mandatory fields are missing: itemId, itemName, itemType, and metricsUnit are required."
+        const uniqueCustomField = await models.CustomFields.findOne({
+            where: {
+                documentType: 'item',
+                companyId,
+                unique: true
+            },
+            raw: true
+        });
+
+        if (uniqueCustomField) {
+            const customFieldValue = customFields?.[uniqueCustomField.fieldName];
+            if (customFieldValue !== undefined &&
+                customFieldValue !== null &&
+                customFieldValue !== '') {
+                const existingItemWithCustomField = await models.Items.findOne({
+                    where: {
+                        companyId,
+                        [Op.and]: [
+                            models.Sequelize.literal(
+                                `JSON_UNQUOTE(JSON_EXTRACT(customFields, '$."${uniqueCustomField.fieldName}"')) = '${String(customFieldValue)}'`
+                            )
+                        ]
+                    }
+                });
+
+                if (existingItemWithCustomField) {
+                    return res.status(409).json({
+                        message: `An item with the same Custom Field "${uniqueCustomField.fieldName}" value already exists.`
+                    });
+                }
+            }
+        }
+
+        // ✅ Check if item already exists
+        const itemResult = await models.Items.findOne({
+            where: {
+                companyId,
+                [models.Sequelize.Op.or]: [
+                    { itemId },
+                    // { itemName }
+                ]
+            }
+        });
+
+        if (itemResult) {
+            return res.status(409).json({ message: "Item ID already exists!" });
+        }
+
+        // ✅ Prepare item data
+        const itemData = {
+            itemId,
+            itemName,
+            itemType,
+            metricsUnit,
+            category: req.body.category,
+            subCategory: req.body.subCategory,
+            microCategory: req.body.microCategory,
+            HSNCode: req.body.HSNCode,
+            price: req.body.price,
+            taxType: req.body.taxType,
+            tax: req.body.tax || null,
+            currentStock: req.body.currentStock,
+            minStock: req.body.minStock,
+            maxStock: req.body.maxStock,
+            description: req.body.description,
+            companyId,
+            status: 1,
+            customFields: customFields || {},
+            imageUrl
+        };
+
+        // ✅ Create item
+        const result = await models.Items.create(itemData);
+        const newItemId = result.id;
+
+        // ✅ Store handling
+        let storeId = req.body.storeId, isRejected = false;
+        if (storeId) {
+            if (storeId?.toString()?.includes('-reject')) {
+                storeId = Number(storeId.split('-')[0]);
+                isRejected = true;
+            }
+        }
+
+        const settings = await models.Settings.findOne({
+            where: {
+                companyId: Number(companyId)
+            },
+            raw: true
+        });
+        const approvalCount = await models.InventoryApproval.count({
+            where: {
+                companyId
+            }
+        });
+        const approval = await models.InventoryApproval.create({
+            approvalId: `INA${approvalCount + 1}`,
+            documentType: 'New Item Added',
+            documentNumber: '',
+            approvalStatus: settings?.['stockUpdate'] == 'manual' ? 'Pending' : 'Auto Approved',
+            requestedBy: userId,
+            companyId: companyId,
+            status: 1,
+            approvedBy: null
+        });
+
+        // ✅ Add StockTransfer if currentStock exists
+        if (req.body.currentStock) {
+            await models.StockTransfer.create({
+                transferNumber: generateTransferNumber(),
+                fromStoreId: null,
+                itemId: newItemId,
+                quantity: settings?.['stockUpdate'] == 'manual' ? null : req.body.currentStock,
+                toStoreId: storeId,
+                transferDate: new Date().toISOString(),
+                transferredBy: req.body.userId,
+                comment: '',
+                companyId,
+                price: req.body.price,
+                isRejected,
+                approvalId: approval.id,
+                quantityForApproval: req.body.currentStock
+            });
+        }
+
+        // ✅ Update ItemSeries if custom series is used
+        if (useCustomSeries && useCustomSeries != "false") {
+            await models.ItemSeries.increment(
+                { nextNumber: 1 },
+                {
+                    where: {
+                        default: 1,
+                        companyId
+                    }
+                }
+            );
+        }
+
+        // ✅ Add to StoreItems
+        const storeItemData = {
+            storeId,
+            itemId: newItemId,
+            quantity: settings?.['stockUpdate'] == 'manual' ? 0 : (req.body.currentStock || 0),
+            addedBy: req.body.userId,
+            status: 1,
+            price: req.body.price || 0,
+            isRejected,
+            approvalId: approval.id,
+            quantityForApproval: req.body.currentStock || 0
+        };
+
+        req.body?.currentStock && await models.StoreItems.create(storeItemData);
+
+        return res.status(201).json({
+            message: "Item added successfully and associated with the store",
+            item: result
+        });
+
+    } catch (error) {
+        console.log(error)
+        return res.status(500).json({
+            message: "Something went wrong, please try again later!",
+            error
         });
     }
-
-    // Check if itemId or itemName already exists for the same company
-    models.Items.findOne({
-        where: {
-            companyId: companyId,
-            [models.Sequelize.Op.or]: [
-                { itemId: itemId },
-                { itemName: itemName }
-            ]
-        }
-    })
-        .then(itemResult => {
-            if (itemResult) {
-                let message = "";
-                if (itemResult.itemId === itemId && itemResult.itemName === itemName) {
-                    message = "Both Item ID and Item name already exist!";
-                } else if (itemResult.itemId === itemId) {
-                    message = "Item ID already exists!";
-                } else {
-                    message = "Item name already exists!";
-                }
-                return res.status(409).json({ message });
-            } else {
-                // Proceed to add the item if no conflicts
-                const itemData = {
-                    itemId,
-                    itemName,
-                    itemType,
-                    metricsUnit,
-                    category: req.body.category,
-                    subCategory: req.body.subCategory,
-                    microCategory: req.body.microCategory,
-                    HSNCode: req.body.HSNCode,
-                    price: req.body.price,
-                    taxType: req.body.taxType,
-                    tax: req.body.tax || null,
-                    currentStock: req.body.currentStock,
-                    minStock: req.body.minStock,
-                    maxStock: req.body.maxStock,
-                    description: req.body.description,
-                    companyId,
-                    status: 1,
-                    customFields: req.body.customField
-                };
-
-                models.Items.create(itemData)
-                    .then(async (result) => {
-                        const newItemId = result.id; // Use the primary key generated for the new item
-                        let storeId = req.body.storeId, isRejected = false;
-                        if (storeId) {
-                            if (storeId?.toString()?.includes('-reject')) {
-                                storeId = Number(storeId?.split('-')[0]);
-                                isRejected = true;
-                            }
-                        }
-                        // Add entry to StoresItem table
-                        const storeItemData = {
-                            storeId: storeId,     // storeId from req.body.store
-                            itemId: newItemId,  // Use the generated item ID
-                            quantity: req.body.currentStock || 0, // Default quantity; adjust if needed
-                            addedBy: req.body.userId,
-                            status: 1,
-                            price: req.body.price || 0,
-                            isRejected
-                        };
-
-                        req.body.currentStock && await models.StockTransfer.create({
-                            transferNumber: generateTransferNumber(),
-                            fromStoreId: null,
-                            itemId: newItemId,
-                            quantity: req.body.currentStock,
-                            toStoreId: storeId,
-                            transferDate: new Date().toISOString(),
-                            transferredBy: req.body.userId,
-                            comment: '',
-                            companyId,
-                            price: req.body.price,
-                            isRejected
-                        });
-
-                        if (useCustomSeries && itemId) {
-                            const prefixMatch = itemId.match(/^[A-Za-z\-]+/);
-                            const prefix = prefixMatch ? prefixMatch[0] : null;
-
-                            if (prefix) {
-                                await models.ItemSeries.increment(
-                                    { nextNumber: 1 },
-                                    {
-                                        where: {
-                                            prefix: prefix,
-                                            companyId: companyId
-                                        }
-                                    }
-                                );
-                            }
-                        }
-                        models.StoreItems.create(storeItemData)
-                            .then(() => {
-                                res.status(201).json({
-                                    message: "Item added successfully and associated with the store",
-                                    item: result
-                                });
-                            })
-                            .catch(storeError => {
-                                res.status(500).json({
-                                    message: "Item created, but failed to add to StoresItem.",
-                                    error: storeError
-                                });
-                            });
-                    })
-                    .catch(error => {
-                        res.status(500).json({
-                            message: "Something went wrong, please try again later!",
-                            error: error
-                        });
-                    });
-            }
-        })
-        .catch(error => {
-            res.status(500).json({
-                message: "Something went wrong, please try again later!",
-                error: error
-            });
-        });
 }
 
 async function editItem(req, res) {
-    const { id, itemId, itemName, companyId, alternateUnits } = req.body;
-
+    const { id, itemId, itemName, companyId, imageObj, removeImage } = req.body;
     try {
+        const alternateUnits = isValidJSON(req.body.alternateUnits);
+        let imageUrl = null;
+        let temp = isValidJSON(imageObj) || [];
+        const customFields = isValidJSON(req.body.customField);
+        if (req.files) {
+            let i = 0;
+            for (const element of temp) {
+                if (element == "imageUrl") {
+                    imageUrl = `${req.protocol}://${req.get('host')}/uploads/${req?.files[i]?.filename}`
+                }
+                else {
+                    customFields[element] = `${req.protocol}://${req.get('host')}/uploads/${req?.files[i]?.filename}`
+                }
+                i++;
+            }
+        }
         // Check if itemId or itemName already exists for another item in the same company
         const existingItem = await models.Items.findOne({
             where: {
                 companyId: companyId,
-                [Op.or]: [{ itemId }, { itemName }],
+                [Op.or]: [{ itemId }],
                 id: { [Op.ne]: id }, // Exclude the current item
             },
         });
 
         if (existingItem) {
-            let message = existingItem.itemId === itemId && existingItem.itemName === itemName
-                ? "Both Item ID and Item name already exist for another item!"
-                : existingItem.itemId === itemId
-                    ? "Item ID already exists for another item!"
-                    : "Item name already exists for another item!";
-
-            return res.status(409).json({ message });
+            return res.status(409).json({ message: "Item ID already exists for another item!" });
         }
+
+        const uniqueCustomField = await models.CustomFields.findOne({
+            where: {
+                documentType: 'item',
+                companyId,
+                unique: true
+            },
+            raw: true
+        });
+
+        if (uniqueCustomField) {
+            const customFieldValue = customFields?.[uniqueCustomField.fieldName];
+
+            if (
+                customFieldValue !== undefined &&
+                customFieldValue !== null &&
+                customFieldValue !== ''
+            ) {
+                const valueToCompare = String(customFieldValue);
+
+                const existingItemWithCustomField = await models.Items.findOne({
+                    where: {
+                        companyId,
+                        id: { [Op.ne]: id }, // 👈 exclude current item
+                        [Op.and]: [
+                            models.Sequelize.literal(
+                                `JSON_UNQUOTE(JSON_EXTRACT(customFields, '$."${uniqueCustomField.fieldName}"')) = '${valueToCompare}'`
+                            )
+                        ]
+                    }
+                });
+
+                if (existingItemWithCustomField) {
+                    return res.status(409).json({
+                        message: `An item with the same Custom Field "${uniqueCustomField.fieldName}" value already exists.`
+                    });
+                }
+            }
+        }
+
+
 
         // Transaction ensures atomic update
         const transaction = await models.sequelize.transaction();
@@ -183,7 +291,9 @@ async function editItem(req, res) {
                     minStock: req.body.minStock,
                     maxStock: req.body.maxStock,
                     description: req.body.description,
-                    customFields: req.body.customField,
+                    customFields: customFields || {},
+                    ...(imageUrl ? { imageUrl } : {}),
+                    ...(removeImage ? { imageUrl: "" } : {}),
                 },
                 { where: { id }, transaction }
             );
@@ -229,7 +339,31 @@ async function editItem(req, res) {
 }
 
 async function deleteItem(req, res) {
-    const itemId = req.body.itemId;  // Assuming the team ID is passed as a URL parameter
+    const itemId = req.body.itemId;
+    const item = await models.Items.findByPk(req.body.itemId);
+    const finishedGoodCount = await models.BOMFinishedGoods.count({
+        where: {
+            companyId: item.companyId,
+            itemId: item.itemId
+        }
+    });
+    const rawMaterialCount = await models.BOMRawMaterial.count({
+        where: {
+            companyId: item.companyId,
+            itemId: item.itemId
+        }
+    });
+    const scrapCount = await models.BOMScrapMaterial.count({
+        where: {
+            companyId: item.companyId,
+            itemId: item.itemId
+        }
+    });
+    if (scrapCount || finishedGoodCount || rawMaterialCount) {
+        return res.status(200).json({
+            message: "You can not delete Item, It is present in Bom."
+        });
+    }
     models.Items.destroy({ where: { id: itemId } })
         .then(async (result) => {
             if (result) {
@@ -302,6 +436,86 @@ async function deleteItems(req, res) {
     }
 }
 
+// no content issue code
+// async function getItems(req, res) {
+//     const { companyId } = req.body;
+
+//     try {
+//         // Step 1: Retrieve all items for the given company
+//         const items = await models.Items.findAll({
+//             where: { companyId },
+//             raw: true
+//         });
+
+//         if (!items || items.length === 0) {
+//             return res.status(200).json([]);
+//         }
+
+//         // Step 2: Retrieve store IDs and quantities for ALL items (rejected + non-rejected)
+//         const itemIds = items.map(item => item.id);
+
+//         const storeItems = await models.StoreItems.findAll({
+//             where: { itemId: itemIds },
+//             attributes: ['itemId', 'storeId', 'quantity', 'isRejected'],
+//             raw: true
+//         });
+
+//         // Step 3: Retrieve alternate units
+//         const alternateUnits = await models.AlternateUnits.findAll({
+//             where: { itemId: itemIds },
+//             attributes: ['itemId', 'alternateUnits', 'conversionfactor', 'ip_address'],
+//             raw: true
+//         });
+
+//         // Step 4: Structure the response
+//         const itemsWithStores = items.map(item => {
+//             const relatedStoreItems = storeItems.filter(si => si.itemId === item.id);
+
+//             // Group quantities by store and isRejected
+//             const storeDataMap = {};
+//             relatedStoreItems.forEach(({ storeId, quantity, isRejected }) => {
+//                 if (!storeDataMap[storeId]) {
+//                     storeDataMap[storeId] = { quantity: 0, rejectedQuantity: 0 };
+//                 }
+//                 if (isRejected) {
+//                     storeDataMap[storeId].rejectedQuantity += quantity;
+//                 } else {
+//                     storeDataMap[storeId].quantity += quantity;
+//                 }
+//             });
+
+//             const stores = Object.entries(storeDataMap)
+//                 .filter(([_, data]) => data.quantity > 0 || data.rejectedQuantity > 0)
+//                 .map(([storeId, data]) => ({
+//                     storeId: parseInt(storeId),
+//                     ...(data?.quantity ? { quantity: data.quantity } : {}),
+//                     rejectedQuantity: data.rejectedQuantity
+//                 }));
+
+//             const itemAlternateUnits = alternateUnits
+//                 .filter(unit => unit.itemId === item.id)
+//                 .map(({ alternateUnits, conversionfactor, ip_address }) => ({
+//                     alternateUnits,
+//                     conversionfactor,
+//                     ip_address
+//                 }));
+
+//             return {
+//                 ...item,
+//                 stores,
+//                 alternateUnits: itemAlternateUnits
+//             };
+//         });
+
+//         res.status(200).json(itemsWithStores);
+//     } catch (error) {
+//         console.error(error);
+//         res.status(500).json({
+//             message: "Something went wrong, please try again later!"
+//         });
+//     }
+// }
+
 async function getItems(req, res) {
     const { companyId } = req.body;
 
@@ -309,32 +523,35 @@ async function getItems(req, res) {
         // Step 1: Retrieve all items for the given company
         const items = await models.Items.findAll({
             where: { companyId },
-            raw: true
+            raw: true,
+            order: [['createdAt', 'DESC']]
         });
 
         if (!items || items.length === 0) {
-            return res.status(200).json([]);
+            // Explicitly send clean JSON response
+            res.setHeader('Content-Type', 'application/json');
+            return res.status(200).send('[]');
         }
 
-        // Step 2: Retrieve store IDs and quantities for ALL items (rejected + non-rejected)
-        const itemIds = items.map(item => item.id);
+        // Step 2: Retrieve store IDs and quantities
+        const itemIds = items.map((item) => item.id);
 
         const storeItems = await models.StoreItems.findAll({
             where: { itemId: itemIds },
             attributes: ['itemId', 'storeId', 'quantity', 'isRejected'],
-            raw: true
+            raw: true,
         });
 
         // Step 3: Retrieve alternate units
         const alternateUnits = await models.AlternateUnits.findAll({
             where: { itemId: itemIds },
             attributes: ['itemId', 'alternateUnits', 'conversionfactor', 'ip_address'],
-            raw: true
+            raw: true,
         });
 
         // Step 4: Structure the response
-        const itemsWithStores = items.map(item => {
-            const relatedStoreItems = storeItems.filter(si => si.itemId === item.id);
+        const itemsWithStores = items.map((item) => {
+            const relatedStoreItems = storeItems.filter((si) => si.itemId === item.id);
 
             // Group quantities by store and isRejected
             const storeDataMap = {};
@@ -354,30 +571,32 @@ async function getItems(req, res) {
                 .map(([storeId, data]) => ({
                     storeId: parseInt(storeId),
                     ...(data?.quantity ? { quantity: data.quantity } : {}),
-                    rejectedQuantity: data.rejectedQuantity
+                    rejectedQuantity: data.rejectedQuantity,
                 }));
 
             const itemAlternateUnits = alternateUnits
-                .filter(unit => unit.itemId === item.id)
+                .filter((unit) => unit.itemId === item.id)
                 .map(({ alternateUnits, conversionfactor, ip_address }) => ({
                     alternateUnits,
                     conversionfactor,
-                    ip_address
+                    ip_address,
                 }));
 
             return {
                 ...item,
                 stores,
-                alternateUnits: itemAlternateUnits
+                alternateUnits: itemAlternateUnits,
             };
         });
 
-        res.status(200).json(itemsWithStores);
+        // ✅ Safe response: avoid Content-Length mismatch
+        res.setHeader('Content-Type', 'application/json');
+        res.status(200).send(JSON.stringify(itemsWithStores));
     } catch (error) {
         console.error(error);
-        res.status(500).json({
-            message: "Something went wrong, please try again later!"
-        });
+        res
+            .status(500)
+            .json({ message: 'Something went wrong, please try again later!' });
     }
 }
 
@@ -390,10 +609,35 @@ async function addBulkItem(req, res) {
             return res.status(400).json({ message: 'Add At Least One Item.' });
         }
 
-        const { companyId } = req.body;
+        const { companyId, userId } = req.body;
         let errorArray = [];
         let err = '';
 
+        const uniqueCustomField = await models.CustomFields.findOne({
+            where: {
+                documentType: 'item',
+                companyId,
+                unique: true
+            },
+            raw: true
+        });
+
+        const uniqueCustomFieldMap = {};
+        const uniqueFieldInSheet = {};
+
+        if (uniqueCustomField) {
+            const allItems = await models.Items.findAll({
+                where: { companyId },
+                attributes: ["customFields"],
+                raw: true
+            });
+            allItems.forEach(item => {
+                const val = isValidJSON(item?.customFields)?.[uniqueCustomField.fieldName];
+                if (val !== undefined && val !== null && val !== '') {
+                    uniqueCustomFieldMap[String(val).trim()] = true;
+                }
+            });
+        }
         const itemIds = data.map(item => item['* Item ID']?.toString()?.trim());
 
         const existingItems = await models.Items.findAll({
@@ -441,12 +685,27 @@ async function addBulkItem(req, res) {
         const subCategoryMap = new Map(subCategories.map(sub => [sub.name, sub]));
         const microCategoryMap = new Map(microCategories.map(micro => [micro.name, micro]));
 
-        const uoms = await models.UOM.findAll({});
+        const uoms = await models.UOM.findAll({
+            where: {
+                [Op.or]: [
+                    { companyId: Number(companyId), status: 1 },
+                    { companyId: null, status: 0 }
+                ]
+            }
+        });
         const uomMap = new Map(uoms.map(uom => [uom.code, uom.id]));
 
         const itemsData = [];
         const storeItems = [];
         const stockTransfer = [];
+        const settings = await models.Settings.findOne({
+            where: {
+                companyId: Number(companyId)
+            },
+            raw: true
+        });
+
+        // const hsnRegex = /^(?:\d{4}|\d{6}|\d{8})$/;
 
         for (const item of data) {
             const { '* Item ID': itemId, '* Item Name': itemName, '* Item Type': itemType, '* Metrics Unit': metricsUnit } = item;
@@ -495,11 +754,25 @@ async function addBulkItem(req, res) {
                 err += 'Same ItemId found in sheet. ';
             }
 
-            itemsMap[itemId] = 1;
-
-            if (itemId?.toString()?.length > 11) {
-                err += 'Item ID must be lesser than or equal to 11 characters.'
+            if (uniqueCustomField) {
+                const val = item?.customFields?.[uniqueCustomField.fieldName];
+                if (val !== undefined && val !== null && val !== '') {
+                    const v = String(val).trim();
+                    if (uniqueCustomFieldMap?.[v]) {
+                        err += `"${uniqueCustomField.fieldName}" already exists. `;
+                    }
+                    if (uniqueFieldInSheet?.[v]) {
+                        err += `Duplicate "${uniqueCustomField.fieldName}" in sheet. `;
+                    }
+                    uniqueFieldInSheet[v] = true;
+                }
             }
+
+            // if (item['HSN'] && !hsnRegex.test(item['HSN'])) {
+            //     err += 'HSN is not Valid.'
+            // }
+
+            itemsMap[itemId] = 1;
 
             let storeName = '', storeType = '';
             if (item?.Store) {
@@ -517,23 +790,25 @@ async function addBulkItem(req, res) {
                     storeItems.push({
                         storeId: storesMap[storeName]?.id,
                         itemId: itemId?.toString(),
-                        quantity: item['Current Stock'],
+                        quantity: settings?.['stockUpdate'] == 'manual' ? 0 : item['Current Stock'],
                         status: 1,
-                        addedBy: Number(companyId),
+                        addedBy: Number(userId),
                         price: item['Price'] || 0,
-                        isRejected: storeType == '(Reject)'
+                        isRejected: storeType == '(Reject)',
+                        quantityForApproval: item['Current Stock']
                     });
                     stockTransfer.push({
                         transferNumber: generateTransferNumber(),
                         fromStoreId: null,
                         itemId: itemId?.toString(),
-                        quantity: item['Current Stock'],
+                        quantity: settings?.['stockUpdate'] == 'manual' ? null : item['Current Stock'],
                         toStoreId: storesMap[storeName]?.id,
                         transferDate: new Date().toISOString(),
-                        transferredBy: Number(companyId),
+                        transferredBy: Number(userId),
                         companyId: Number(companyId),
                         price: item['Price'] || 0,
-                        isRejected: storeType == '(Reject)'
+                        isRejected: storeType == '(Reject)',
+                        quantityForApproval: item['Current Stock']
                     });
                 }
             }
@@ -568,18 +843,37 @@ async function addBulkItem(req, res) {
         if (itemsData.length) {
             const newItems = await models.Items.bulkCreate(itemsData, { returning: true });
             if (storeItems?.length > 0) {
+                const approvalCount = await models.InventoryApproval.count({
+                    where: {
+                        companyId
+                    }
+                });
+                const approval = await models.InventoryApproval.create({
+                    approvalId: `INA${approvalCount + 1}`,
+                    documentType: 'Bulk Upload',
+                    documentNumber: '',
+                    approvalStatus: settings?.['stockUpdate'] == 'manual' ? 'Pending' : 'Auto Approved',
+                    requestedBy: userId,
+                    companyId: companyId,
+                    status: 1,
+                    approvedBy: null,
+                });
                 const newItemsMap = newItems?.reduce((acc, curr) => {
                     acc[curr.itemId] = curr.id;
                     return acc;
                 }, {});
                 for (let i = 0; i < storeItems.length; ++i) {
                     storeItems[i].itemId = newItemsMap[storeItems[i].itemId];
+                    storeItems[i].approvalId = approval.id;
                     stockTransfer[i].itemId = newItemsMap[stockTransfer[i].itemId];
+                    stockTransfer[i].approvalId = approval.id;
                 }
                 await models.StoreItems.bulkCreate(storeItems);
                 await models.StockTransfer.bulkCreate(stockTransfer);
             }
         }
+
+        console.log("mapmap", uniqueCustomFieldMap, uniqueFieldInSheet);
 
         const msg = !errorArray.length
             ? 'Bulk items uploaded successfully.'
@@ -609,6 +903,32 @@ async function bulkEditItems(req, res) {
         const existingItems = await models.Items.findAll({
             where: { companyId, itemId: { [Op.in]: itemIds } },
         });
+
+        const uniqueCustomField = await models.CustomFields.findOne({
+            where: {
+                documentType: 'item',
+                companyId,
+                unique: true
+            },
+            raw: true
+        });
+
+        const uniqueCustomFieldMap = {};
+        const uniqueFieldInSheet = {};
+
+        if (uniqueCustomField) {
+            const allItems = await models.Items.findAll({
+                where: { companyId },
+                attributes: ["customFields", "itemId"],
+                raw: true
+            });
+            allItems.forEach(item => {
+                const val = isValidJSON(item?.customFields)?.[uniqueCustomField.fieldName];
+                if (val !== undefined && val !== null && val !== '') {
+                    uniqueCustomFieldMap[String(val).trim()] = item?.itemId;
+                }
+            });
+        }
 
         const existingItemsMap = new Map(existingItems.map(item => [item.itemId, item]));
 
@@ -670,34 +990,66 @@ async function bulkEditItems(req, res) {
                 err += "Micro Category Not Found under this Sub Category."
             }
 
+            if (uniqueCustomField) {
+                const val = item?.customFields?.[uniqueCustomField.fieldName];
+                if (val !== undefined && val !== null && val !== '') {
+                    const v = String(val).trim();
+                    if (uniqueCustomFieldMap?.[v] && uniqueCustomFieldMap?.[v] !== itemId) {
+                        err += `"${uniqueCustomField.fieldName}" already exists. `;
+                    }
+                    if (uniqueFieldInSheet?.[v]) {
+                        err += `Duplicate "${uniqueCustomField.fieldName}" in sheet. `;
+                    }
+                    uniqueFieldInSheet[v] = true;
+                }
+            }
+
             if (err) {
                 errorArray.push({ ...item, Error: err });
                 continue;
             }
             const updatedObj = {
-                itemId
-            }
-            if (itemName) updatedObj.itemName = itemName;
-            if (category) updatedObj.category = category?.id || null;
-            if (subCategory) updatedObj.subCategory = subCategory?.id || null;
-            if (microCategory) updatedObj.microCategory = microCategory?.id || null;
-            if (item.Price) updatedObj.price = item.Price;
-            if (item["Min Stock"]) updatedObj.minStock = item["Min Stock"];
-            if (item["Max Stock"]) updatedObj.maxStock = item["Max Stock"];
-            if (item.Description) updatedObj.description = item.Description;
-            if (item["Tax Type"]) updatedObj.taxType = item['Tax Type'] == 'Inclusive' ? 1 : 2;
-            if (item.Tax) updatedObj.tax = item.Tax;
-            if (item["Item type"]) updatedObj.itemType = item["Item type"] === "Buy" ? 1 : item["Item type"] === "Sell" ? 2 : 3;
-            if (item?.customFields) updatedObj.customFields = item.customFields
+                id: existingItem.id,
+                companyId,
+                itemId,
+                ...(itemName && { itemName }),
+                ...(category && { category: category.id }),
+                ...(subCategory && { subCategory: subCategory.id }),
+                ...(microCategory && { microCategory: microCategory.id }),
+                ...(item.Price && { price: item.Price }),
+                ...(item["Min Stock"] && { minStock: item["Min Stock"] }),
+                ...(item["Max Stock"] && { maxStock: item["Max Stock"] }),
+                ...(item.Description && { description: item.Description }),
+                ...(item["Tax Type"] && { taxType: item['Tax Type'] === 'Inclusive' ? 1 : 2 }),
+                ...(item.Tax && { tax: item.Tax }),
+                ...(item["Item type"] && {
+                    itemType:
+                        item["Item type"] === "Buy" ? 1 :
+                            item["Item type"] === "Sell" ? 2 : 3,
+                }),
+                ...(item?.customFields && { customFields: item.customFields }),
+            };
             updateData.push(updatedObj);
         }
 
         if (updateData.length) {
-            await Promise.all(
-                updateData.map(data =>
-                    models.Items.update(data, { where: { itemId: data.itemId, companyId } })
-                )
-            );
+            await models.Items.bulkCreate(updateData, {
+                updateOnDuplicate: [
+                    'itemName',
+                    'category',
+                    'subCategory',
+                    'microCategory',
+                    'price',
+                    'minStock',
+                    'maxStock',
+                    'description',
+                    'taxType',
+                    'tax',
+                    'itemType',
+                    'customFields',
+                    'updatedAt'
+                ],
+            });
         }
 
         let msg =
@@ -717,6 +1069,7 @@ async function bulkEditItems(req, res) {
 async function stockReconcilation(req, res) {
     try {
         const file = req.file;
+        const { userId, companyId } = req.body;
         const items = await convertXlsxToJson(file.filename, 'reconcileStock');
         let isRejected = false;
         if (req.body?.storeId?.toString()?.includes('-reject')) isRejected = true;
@@ -732,8 +1085,10 @@ async function stockReconcilation(req, res) {
             },
             raw: true
         });
+        const itemIdMap = {};
         const existingItemsMap = existingItems.reduce((acc, curr) => {
             acc[curr.id] = curr;
+            itemIdMap[curr.itemId] = curr;
             return acc;
         }, {});
 
@@ -753,16 +1108,40 @@ async function stockReconcilation(req, res) {
             return acc;
         }, {});
 
+        const settings = await models.Settings.findOne({
+            where: {
+                companyId: Number(companyId)
+            },
+            raw: true
+        });
+        const approvalCount = await models.InventoryApproval.count({
+            where: {
+                companyId
+            }
+        });
+        const approval = await models.InventoryApproval.create({
+            approvalId: `INA${approvalCount + 1}`,
+            documentType: 'Physical Stock Reconcilation',
+            documentNumber: '',
+            approvalStatus: settings?.['stockReconcilation'] == 'manual' ? 'Pending' : 'Auto Approved',
+            requestedBy: userId,
+            companyId: companyId,
+            status: 1,
+            approvedBy: null
+        });
+
+        const bulkStockTransfers = [], bulkStoreItems = [], itemIds = [], finalStock = {};
+
         for (const item of items) {
             const { 'Item ID': itemId, 'Price/Unit': price } = item;
-            if (item['Final Stock'] === '') continue;
+            if (
+                String(item['Final Stock'] ?? '').trim() === '' ||
+                Number.isNaN(Number(String(item['Final Stock'] ?? '').trim()))
+            ) continue;
+
+            if (!item['Final Stock'] && item['Final Stock'] != 0) continue;
             let err = '';
-            const existingItem = await models.Items.findOne({
-                where: {
-                    itemId: itemId,
-                    companyId: Number(req.body.companyId)
-                }
-            });
+            const existingItem = itemIdMap[itemId?.toString()]
             if (!existingItem) {
                 err += 'Item Not Found. ';
             }
@@ -788,116 +1167,147 @@ async function stockReconcilation(req, res) {
                         },
                         storeId: Number(req.body.storeId?.toString()?.replaceAll('-reject', '')),
                         isRejected
-                    }
+                    },
+                    raw: true
                 });
 
                 const transferNumber = generateTransferNumber()
 
-                const transfers = [];
-                transfers.push({
+                bulkStockTransfers.push({
                     transferNumber,
                     fromStoreId: null,
                     itemId: existingItem.id,
                     quantity: item['Final Stock'],
                     toStoreId: Number(req.body.storeId?.toString()?.replaceAll('-reject', '')),
                     transferDate: new Date().toISOString(),
-                    transferredBy: Number(req.body.companyId),
+                    transferredBy: userId,
                     comment: '',
                     companyId: Number(req.body.companyId),
                     price: price,
-                    isRejected
+                    isRejected,
+                    comment: 'physical-stock-reconciled'
                 });
                 for (const element of storeItems) {
-                    transfers.push({
+                    bulkStockTransfers.push({
                         transferNumber,
                         fromStoreId: Number(req.body.storeId?.toString()?.replaceAll('-reject', '')),
                         itemId: existingItem.id,
                         quantity: element.quantity * -1,
                         toStoreId: null,
                         transferDate: new Date().toISOString(),
-                        transferredBy: Number(req.body.companyId),
+                        transferredBy: userId,
                         comment: '',
                         companyId: Number(req.body.companyId),
                         price: element.price,
-                        isRejected: element?.isRejected || false
-                    })
+                        isRejected: element?.isRejected || false,
+                        comment: 'physical-stock-reconciled'
+                    });
+                    bulkStoreItems.push({ ...element, quantity: 0 });
                 }
 
-
-                await models.StoreItems.update({ quantity: 0 }, {
-                    where: {
-                        itemId: existingItem.id,
-                        quantity: {
-                            [Op.gt]: 0
-                        },
-                        storeId: Number(req.body.storeId?.toString()?.replaceAll('-reject', '')),
-                        isRejected
-                    }
-                });
-                await models.StoreItems.create({
+                bulkStoreItems.push({
                     storeId: Number(req.body.storeId?.toString()?.replaceAll('-reject', '')),
                     itemId: existingItem.id,
                     quantity: Number(item['Final Stock'] || 0),
                     addedBy: Number(req.body.companyId),
                     status: 1,
-                    addedBy: Number(req.body.userId),
+                    addedBy: Number(userId),
                     price: price,
                     isRejected
-                })
-                await models.StockTransfer.bulkCreate(transfers);
+                });
+
                 continue;
             }
-            if (Number(item['Final Stock'] || 0) < Number(currentStockMap[itemId?.toString()] || 0)) {
-                console.log('inside loop');
-                let remainingQuantity = (currentStockMap[itemId?.toString()] - Number(item['Final Stock']));
-                const existingStock = await models.StoreItems.findAll({
-                    where: { storeId: Number(req.body.storeId?.toString()?.replaceAll('-reject', '')), itemId: existingItem.id, isRejected },
-                    order: [['createdAt', 'ASC']],
-                });
-                for (const stock of existingStock) {
-                    if (remainingQuantity <= 0) break;
-                    if (stock.quantity <= 0) continue;
-                    const deductQty = Math.min(stock.quantity, remainingQuantity);
-                    remainingQuantity -= deductQty;
-
-                    await models.StoreItems.update(
-                        { quantity: (stock.quantity - deductQty) },
-                        { where: { id: stock.id } }
-                    );
+            if (settings?.['stockReconcilation'] != 'manual') {
+                if (Number(item['Final Stock'] || 0) < Number(currentStockMap[itemId?.toString()] || 0)) {
+                    itemIds.push(existingItem.id);
+                    finalStock[existingItem.id] = Number(item['Final Stock'] || 0);
                 }
-
             }
             const storeItemData = {
                 storeId: Number(req.body.storeId?.toString()?.replaceAll('-reject', '')),
                 itemId: existingItem.id,
-                quantity: Number(item['Final Stock'] || 0) - Number(currentStockMap[itemId?.toString()] || 0),
+                quantity: settings?.['stockReconcilation'] == 'manual' ? 0 : (Number(item['Final Stock'] || 0) - Number(currentStockMap[itemId?.toString()] || 0)),
                 addedBy: Number(req.body.companyId),
                 status: 1,
-                addedBy: Number(req.body.userId),
+                addedBy: Number(userId),
                 price: price,
-                isRejected
+                isRejected,
+                approvalId: approval.id,
+                quantityForApproval: Number(item['Final Stock'] || 0) - Number(currentStockMap[itemId?.toString()] || 0)
             };
 
             const stockTransfer = {
                 transferNumber: generateTransferNumber(),
                 fromStoreId: (Number(item['Final Stock'] || 0) < Number(currentStockMap[itemId?.toString()] || 0)) ? Number(req.body.storeId?.toString()?.replaceAll('-reject', '')) : null,
                 itemId: existingItem.id,
-                quantity: Number(item['Final Stock'] || 0) - Number(currentStockMap[itemId?.toString()] || 0),
+                quantity: settings?.['stockReconcilation'] == 'manual' ? null : (Number(item['Final Stock'] || 0) - Number(currentStockMap[itemId?.toString()] || 0)),
                 toStoreId: (Number(item['Final Stock'] || 0) > Number(currentStockMap[itemId?.toString()] || 0)) ? Number(req.body.storeId?.toString()?.replaceAll('-reject', '')) : null,
                 transferDate: new Date().toISOString(),
-                transferredBy: Number(req.body.companyId),
+                transferredBy: Number(userId),
                 comment: '',
                 companyId: Number(req.body.companyId),
                 price: price,
-                isRejected
+                isRejected,
+                approvalId: approval.id,
+                quantityForApproval: Number(item['Final Stock'] || 0) - Number(currentStockMap[itemId?.toString()] || 0),
+                comment: 'physical-stock-reconciled'
             }
 
             if (Number(item['Final Stock'] || 0) > Number(currentStockMap[itemId?.toString()] || 0)) {
-                await models.StoreItems.create(storeItemData);
+                // await models.StoreItems.create(storeItemData);
+                bulkStoreItems.push(storeItemData);
             }
-            await models.StockTransfer.create(stockTransfer);
+            // await models.StockTransfer.create(stockTransfer);
+            bulkStockTransfers.push(stockTransfer);
         }
-        msg = !errorArray.length ? 'Stocks Reconcile Successfully.' : errorArray.length != items.length ? 'Few Items are Not Found. We Download Those Rows for you.' : 'All Items are Not Found. We Download Those Rows for you.'
+
+        if (itemIds.length > 0) {
+            const allStocks = await models.StoreItems.findAll({
+                where: {
+                    storeId: Number(req.body.storeId?.toString()?.replaceAll('-reject', '')),
+                    itemId: {
+                        [Op.in]: itemIds
+                    },
+                    isRejected,
+                    quantity: {
+                        [Op.gt]: 0
+                    }
+                },
+                order: [['createdAt', 'ASC']],
+                raw: true
+            });
+            const existingStoreItemsMap = {};
+            for (const element of allStocks) {
+                if (existingStoreItemsMap[element?.storeId]) {
+                    existingStoreItemsMap[element.itemId].push(element);
+                }
+                else {
+                    existingStoreItemsMap[element.itemId] = [element];
+                }
+            }
+
+            for (const item of itemIds) {
+                let remainingQuantity = (currentStockMap[existingItemsMap[item]?.itemId?.toString()] - finalStock[item]);
+                const existingStock = existingStoreItemsMap[item] || [];
+
+                for (const stock of existingStock) {
+                    if (remainingQuantity <= 0) break;
+                    if (stock.quantity <= 0) continue;
+                    const deductQty = Math.min(stock.quantity, remainingQuantity);
+                    remainingQuantity -= deductQty;
+                    bulkStoreItems.push({ ...stock, quantity: (stock.quantity - deductQty) });
+                }
+            }
+        }
+        await models.StockTransfer.bulkCreate(bulkStockTransfers);
+        await models.StoreItems.bulkCreate(bulkStoreItems, {
+            updateOnDuplicate: ['quantity']
+        });
+        if (!bulkStockTransfers?.length) {
+            await approval.destroy();
+        }
+        msg = !errorArray.length ? settings?.['stockReconcilation'] != 'manual' ? 'Stocks Reconcile Successfully.' : 'Inventory Approval generated for current request.' : errorArray.length != items.length ? 'Few Items are Not Found. We Download Those Rows for you.' : 'All Items are Not Found. We Download Those Rows for you.'
         return res.status(200).json({ message: msg, invalidData: errorArray });
 
     } catch (error) {
@@ -1007,157 +1417,190 @@ async function bulkUploadAlternateUnit(req, res) {
 
 async function bulkStockUpdate(req, res) {
     try {
-        const { companyId } = req.body;
+        const { companyId, userId } = req.body;
         const file = req.file;
         const rows = await convertXlsxToJson(file.filename, "bulkStockUpdate");
-        const items = await models.Items.findAll({
-            where: {
-                companyId: Number(companyId)
-            },
-            raw: true
-        });
-        const itemIdMap = {}, itemMap = {}, itemNameMap = {};
-        for (const element of items) {
-            itemMap[element.id] = element;
-            itemIdMap[element.itemId?.toLowerCase()] = element;
-            itemNameMap[element?.itemName?.toLowerCase()?.trim()] = element;
+
+        if (!Array.isArray(rows) || rows.length === 0)
+            return res.status(400).json({ message: "Empty data found." });
+        const [items, stores, settings, approvalCount] = await Promise.all([
+            models.Items.findAll({ where: { companyId: Number(companyId) }, raw: true }),
+            models.Store.findAll({ where: { companyId: Number(companyId) }, raw: true }),
+            models.Settings.findOne({ where: { companyId: Number(companyId) }, raw: true }),
+            models.InventoryApproval.count({ where: { companyId } }),
+        ]);
+        const itemIdMap = {}, itemNameMap = {};
+        for (const item of items) {
+            itemIdMap[item.itemId?.toLowerCase()] = item;
+            itemNameMap[item.itemName?.toLowerCase()?.trim()] = item;
         }
-        const stores = await models.Store.findAll({
-            where: {
-                companyId: Number(companyId)
-            },
-            raw: true
-        });
-        const storeMap = stores.reduce((acc, curr) => {
-            acc[curr.name] = curr;
+
+        const storeMap = stores.reduce((acc, store) => {
+            acc[store.name] = store;
             return acc;
         }, {});
-        let fromItemName = false;
-        if (Object.keys(rows[0])?.includes('Item')) {
-            fromItemName = true;
-        }
+        const approval = await models.InventoryApproval.create({
+            approvalId: `INA${approvalCount + 1}`,
+            documentType: 'Stock Update',
+            documentNumber: '',
+            approvalStatus: settings?.['stockUpdate'] == 'manual' ? 'Pending' : 'Auto Approved',
+            requestedBy: userId,
+            companyId: companyId,
+            status: 1,
+            approvedBy: null
+        });
         const storeItems = await models.StoreItems.findAll({
             where: {
-                storeId: {
-                    [Op.in]: stores.map(store => store.id),
-                },
-                quantity: {
-                    [Op.gt]: 0
-                }
+                storeId: { [Op.in]: stores.map(s => s.id) },
+                quantity: { [Op.gt]: 0 }
             },
             raw: true
         });
-        const quantityMap = {};
-        for (const element of storeItems) {
-            if (!quantityMap[element.itemId]) quantityMap[element.itemId] = {};
-            if (!quantityMap[element.itemId][element.storeId]) quantityMap[element.itemId][element.storeId] = {};
-            if (element?.isRejected) {
-                quantityMap[element.itemId][element.storeId].rejectedQuantity = (quantityMap[element.itemId][element.storeId].rejectedQuantity || 0) + element.quantity;
-            } else {
-                quantityMap[element.itemId][element.storeId].quantity = (quantityMap[element.itemId][element.storeId].quantity || 0) + element.quantity;
-            }
-        }
-        const errorArray = [], bulkStockTransfer = [], bulkStoreItems = [];
-        for (const element of rows) {
+        const quantityMap = storeItems.reduce((acc, item) => {
+            acc[item.itemId] ??= {};
+            acc[item.itemId][item.storeId] ??= { quantity: 0, rejectedQuantity: 0 };
+            if (item.isRejected)
+                acc[item.itemId][item.storeId].rejectedQuantity += item.quantity;
+            else
+                acc[item.itemId][item.storeId].quantity += item.quantity;
+            return acc;
+        }, {});
+        const errorArray = [];
+        const bulkStockTransfers = [];
+        const bulkStoreItems = [];
+        const isManual = settings?.['stockUpdate'] === 'manual';
+
+        const fromItemName = Object.keys(rows[0])?.includes('Item');
+        for (const row of rows) {
             let error = '';
-            if (!element.Quantity) error += 'Quantity is required. ';
-            if (!element.Price) error += 'Price is required. ';
-            if (!element.Store) error += 'Store is required. ';
-            const itemName = fromItemName ? element.Item.substring(0, element.Item.lastIndexOf("(")).trim() : element['Item Name/Id'];
-            if (!itemName) error += 'Item is required. ';
-            const selectedItem = itemIdMap[itemName?.toString()?.toLowerCase()] || itemNameMap[itemName?.toLowerCase()]
+            if (!row.Quantity && row.Quantity !== 0) error += 'Quantity is required. ';
+            if (!row.Price && row.Price !== 0) error += 'Price is required. ';
+            if (!row.Store) error += 'Store is required. ';
+            const rawName = fromItemName
+                ? row?.Item?.substring?.(0, row.Item.lastIndexOf("("))?.trim()
+                : row['Item Name/Id'];
+            if (!rawName) error += 'Item is required. ';
+
+            const selectedItem = itemIdMap[rawName?.toLowerCase()] || itemNameMap[rawName?.toLowerCase()];
             if (!selectedItem) error += 'Item not found. ';
-            const isReject = element.Store.includes('(Reject)');
-            const storeName = element.Store.substring(0, element.Store.lastIndexOf("(") - 1);
+            const isRejected = row?.Store?.includes('(Reject)');
+            const storeName = row?.Store?.substring?.(0, row.Store.lastIndexOf("(") - 1);
             const store = storeMap[storeName];
             if (!store) error += 'Store not found. ';
+
             if (error) {
-                errorArray.push({ ...element, Error: error });
+                errorArray.push({ ...row, Error: error });
                 continue;
             }
-            if (element?.Type?.toLowerCase() === 'reduce') {
-                if (!quantityMap?.[selectedItem.id]?.[store.id] || element.Quantity > (isReject ? quantityMap?.[selectedItem.id]?.[store.id]?.rejectedQuantity : quantityMap?.[selectedItem.id]?.[store.id].quantity)) {
-                    error += 'Quantity is not available in Store.';
-                    errorArray.push({ ...element, Error: error });
+            const transferNumber = generateTransferNumber();
+            const isReduce = row?.Type?.toLowerCase() === 'reduce';
+
+            if (isReduce) {
+                const availableQty = isRejected
+                    ? quantityMap?.[selectedItem.id]?.[store.id]?.rejectedQuantity || 0
+                    : quantityMap?.[selectedItem.id]?.[store.id]?.quantity || 0;
+
+                if (row.Quantity > availableQty) {
+                    errorArray.push({ ...row, Error: 'Quantity not available in store.' });
                     continue;
                 }
-                const existingStock = await models.StoreItems.findAll({
-                    where: { storeId: (store.id), itemId: selectedItem.id, isRejected: isReject },
-                    order: [['createdAt', 'ASC']],
-                });
-                let remainingQuantity = element.Quantity;
-                const transferNumber = generateTransferNumber();
-                for (const stock of existingStock) {
-                    if (remainingQuantity <= 0) break;
-                    if (stock.quantity <= 0) continue;
-                    const deductQty = Math.min(stock.quantity, remainingQuantity);
-                    remainingQuantity -= deductQty;
-                    await models.StoreItems.update(
-                        { quantity: (stock.quantity - deductQty) },
-                        { where: { id: stock.id } }
-                    );
-                    bulkStockTransfer.push({
-                        fromStoreId: store.id,
+
+                if (!isManual) {
+                    // We will bulk deduct below after collecting all reduce requests
+                    bulkStockTransfers.push({
                         transferNumber,
+                        fromStoreId: store.id,
                         toStoreId: null,
                         itemId: selectedItem.id,
-                        quantity: -deductQty,
-                        status: 1,
-                        addedBy: companyId,
-                        price: element.Price,
-                        isRejected: isReject,
-                        comment: element.Comment,
-                        transferDate: new Date().toISOString(),
-                        transferredBy: Number(companyId),
-                        companyId: Number(companyId),
-                        actualPrice: stock.price
-                    })
+                        quantity: -row.Quantity,
+                        price: row.Price,
+                        isRejected,
+                        comment: row.Comment,
+                        transferDate: new Date(),
+                        transferredBy: userId,
+                        companyId,
+                        actualPrice: null,
+                        approvalId: approval.id,
+                        quantityForApproval: row.Quantity
+                    });
+                } else {
+                    bulkStockTransfers.push({
+                        transferNumber,
+                        fromStoreId: store.id,
+                        toStoreId: null,
+                        itemId: selectedItem.id,
+                        quantity: null,
+                        price: row.Price,
+                        isRejected,
+                        comment: row.Comment,
+                        transferDate: new Date(),
+                        transferredBy: userId,
+                        companyId,
+                        approvalId: approval.id,
+                        quantityForApproval: -row.Quantity
+                    });
                 }
-            }
-            else {
-                bulkStockTransfer.push({
-                    toStoreId: store.id,
+            } else {
+                bulkStockTransfers.push({
+                    transferNumber,
                     fromStoreId: null,
+                    toStoreId: store.id,
                     itemId: selectedItem.id,
-                    quantity: element.Quantity,
-                    status: 1,
-                    addedBy: companyId,
-                    price: element.Price,
-                    isRejected: isReject,
-                    comment: element.Comment,
-                    transferDate: new Date().toISOString(),
-                    transferredBy: Number(companyId),
-                    companyId: Number(companyId),
+                    quantity: isManual ? null : row.Quantity,
+                    price: row.Price,
+                    isRejected,
+                    comment: row.Comment,
+                    transferDate: new Date(),
+                    transferredBy: userId,
+                    companyId,
+                    approvalId: approval.id,
+                    quantityForApproval: row.Quantity
                 });
+
                 bulkStoreItems.push({
                     storeId: store.id,
                     itemId: selectedItem.id,
-                    quantity: element.Quantity,
-                    status: 1,
-                    addedBy: companyId,
-                    price: element?.Price,
-                    isRejected: isReject
-                })
+                    quantity: isManual ? 0 : row.Quantity,
+                    addedBy: userId,
+                    price: row.Price,
+                    isRejected,
+                    approvalId: approval.id,
+                    quantityForApproval: row.Quantity,
+                    status: 1
+                });
             }
-
         }
-
-        if (bulkStockTransfer.length) {
-            await models.StockTransfer.bulkCreate(bulkStockTransfer);
-            await models.StoreItems.bulkCreate(bulkStoreItems);
+        if (bulkStockTransfers.length) {
+            await Promise.all([
+                models.StockTransfer.bulkCreate(bulkStockTransfers),
+                bulkStoreItems.length
+                    ? models.StoreItems.bulkCreate(bulkStoreItems, { updateOnDuplicate: ['quantity'] })
+                    : Promise.resolve()
+            ]);
+        }
+        else {
+            await approval.destroy();
         }
         const msg = !errorArray.length
-            ? 'Bulk Stock updated successfully.'
+            ? isManual
+                ? 'Inventory Approval generated for current request.'
+                : 'Bulk Stock updated successfully.'
             : errorArray.length !== rows.length
-                ? 'Bulk Stock updated successfully. Some rows contain invalid data. We Download Those Rows for you.'
+                ? (isManual
+                    ? 'Inventory Approval generated for current request. Some rows contain invalid data. We Download Those Rows for you.'
+                    : 'Bulk Stock updated successfully. Some rows contain invalid data. We Download Those Rows for you.')
                 : 'All rows contain invalid data. We Download Those Rows for you.';
 
-        res.status(200).json({ message: msg, invalidData: errorArray });
+        return res.status(200).json({ message: msg, invalidData: errorArray });
     } catch (error) {
-        console.log(error);
-        return res.status(500).json({ message: "Something went wrong, please try again later!", error });
+        console.error(error);
+        return res.status(500).json({
+            message: "Something went wrong, please try again later!",
+            error
+        });
     }
 }
+
 
 module.exports = {
     addItem: addItem,

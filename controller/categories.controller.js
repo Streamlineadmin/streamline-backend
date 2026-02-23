@@ -115,6 +115,68 @@ async function addCategory(req, res) {
     }
 }
 
+async function addMultipleCategory(req, res) {
+  try {
+    const { category, companyId, addedBy } = req.body;
+
+    const newCategory = await models.Categories.create({
+      name: category.name,
+      companyId,
+      addedBy,
+      status: 1,
+      parentId: null
+    });
+
+    const bulkSubcategory = [];
+
+    if (Array.isArray(category.subcategory)) {
+      for (const element of category.subcategory) {
+        bulkSubcategory.push({
+          name: element.name,
+          companyId,
+          addedBy,
+          status: 1,
+          parentId: newCategory.id
+        });
+      }
+
+      if (bulkSubcategory.length) {
+        const subCategories = await models.Categories.bulkCreate(bulkSubcategory);
+        const bulkMicrocategory = [];
+        let j = 0;
+
+        for (const element of category.subcategory) {
+          if (Array.isArray(element.microcategory)) {
+            for (let i = 0; i < element.microcategory.length; ++i) {
+              bulkMicrocategory.push({
+                name: element.microcategory[i].name,
+                companyId,
+                addedBy,
+                status: 1,
+                parentId: subCategories[j].id
+              });
+            }
+          }
+          j++;
+        }
+
+        if (bulkMicrocategory.length) {
+          await models.Categories.bulkCreate(bulkMicrocategory);
+        }
+      }
+    }
+
+    res.status(201).json({ message: "Category Created Successfully." });
+
+  } catch (error) {
+    res.status(500).json({
+      message: "An error occurred while adding the category.",
+      error: error.message
+    });
+  }
+}
+
+
 async function editCategory(req, res) {
     const { id, categoryName, description, addedBy, ip_address, companyId } = req.body;
     const updatedCategoryData = {
@@ -232,4 +294,5 @@ module.exports = {
     addCategory: addCategory,
     editCategory: editCategory,
     deleteCategory: deleteCategory,
+    addMultipleCategory: addMultipleCategory,
 };

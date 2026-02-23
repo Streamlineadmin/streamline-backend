@@ -1,6 +1,9 @@
 const models = require("../models");
 const simpleStats = require('simple-statistics'); // Simple stats library for regression
 const moment = require('moment');
+const { Op } = require("sequelize");
+const categories = require("../models/categories");
+const { getAgingBucket, getAgingBucket90Days } = require("../helpers/transfer-number");
 
 async function dashboard(req, res) {
 }
@@ -371,7 +374,7 @@ async function getDocumentsInvoiceSummary(req, res) {
         const summary = documents.map(doc => {
             // Ensure valid date parsing
             const createdDate = doc.createdDate ? new Date(doc.createdDate) : null;
-            const formattedDate = createdDate && !isNaN(createdDate.getTime()) 
+            const formattedDate = createdDate && !isNaN(createdDate.getTime())
                 ? createdDate.toISOString().split('T')[0]  // Correct date format (YYYY-MM-DD)
                 : "Invalid Date";  // If invalid date, set fallback value
 
@@ -421,9 +424,6 @@ async function predictNext30DaysTotalValue(req, res) {
         const currentDateUTC = currentDate.toISOString();
         const thirtyDaysAgoUTC = thirtyDaysAgo.toISOString();
 
-        console.log("Current Date (UTC): ", currentDateUTC);
-        console.log("30 Days Ago (UTC): ", thirtyDaysAgoUTC);
-
         // Fetch documents (invoices) from the last 30 days based on companyId
         const documents = await models.Documents.findAll({
             attributes: [
@@ -442,8 +442,6 @@ async function predictNext30DaysTotalValue(req, res) {
             order: [['createdAt', 'ASC']]
         });
 
-        console.log("Fetched Documents: ", documents);
-
         // If no documents found, return a message
         if (documents.length === 0) {
             return res.status(404).json({
@@ -461,13 +459,10 @@ async function predictNext30DaysTotalValue(req, res) {
             return acc + advancePayment + gstValue;
         }, 0);
 
-        console.log("Total Value Current Period: ", totalValueCurrentPeriod);
 
         // Calculate the average daily total value
         const daysInCurrentPeriod = documents.length > 0 ? documents.length : 1; // Prevent divide by zero
         const avgDailyTotalValue = totalValueCurrentPeriod / daysInCurrentPeriod;
-
-        console.log("Average Daily Total Value: ", avgDailyTotalValue);
 
         // Predict the total value for the next 30 days based on the average daily value
         const predictedTotalValueNext30Days = avgDailyTotalValue * 30;
@@ -499,6 +494,305 @@ function convertStatus(statusCode) {
     }
 }
 
+async function getDashboardData(req, res) {
+    try {
+        const { companyId, dataFor, start, end, assignedTo, salesOrderNumber } = req.body;
+        if (dataFor === 'Production') {
+            const items = await models.Items.findAll({
+                where: {
+                    companyId: Number(companyId)
+                },
+                raw: true,
+                attributes: ['id']
+            });
+
+            const startOfYear = new Date(new Date().getFullYear(), 0, 1);
+            const endOfYear = new Date(new Date().getFullYear(), 11, 31, 23, 59, 59, 999);
+            const stockTransfers = await models.StockTransfer.findAll({
+                where: {
+                    itemId: {
+                        [Op.in]: items.map(item => item.id)
+                    },
+                    productionId: {
+                        [Op.ne]: null
+                    },
+                    quantity: {
+                        [Op.gt]: 0
+                    },
+                    createdAt: {
+                        [Op.between]: [startOfYear, endOfYear]
+                    }
+                },
+                raw: true,
+                attributes: ['quantity', 'createdAt']
+            });
+            const monthMap = {};
+            const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+            stockTransfers.forEach((record) => {
+                const monthIndex = new Date(record.createdAt).getMonth();
+                const monthName = monthNames[monthIndex];
+                monthMap[monthName] = (monthMap[monthName] || 0) + record.quantity;
+            });
+            const currentMonth = new Date().getMonth();
+            const sortedMonthMap = {};
+            monthNames.slice(0, currentMonth + 1).forEach((m) => {
+                if (monthMap[m]) sortedMonthMap[m] = monthMap[m];
+                else sortedMonthMap[m] = 0;
+            });
+
+            const whereClause = {
+                companyId: Number(companyId),
+            };
+            if (start && end) {
+                whereClause.createdAt = {
+                    [Op.gte]: new Date(start),
+                    [Op.lte]: new Date(end)
+                };
+            }
+            const production = await models.Production.findAll({
+                where: {
+                    ...whereClause,
+                    ...(assignedTo ? { assignedTo } : {}),
+                    ...(salesOrderNumber ? {
+                        salesOrderNumber: {
+                            [Op.in]: salesOrderNumber
+                        }
+                    } : {})
+                },
+                raw: true,
+                attributes: ['id', 'status', 'productionEndDate', 'productionCompletionDate']
+            });
+            let ongoing = 0, inplanning = 0, onhold = 0, completed = 0, onTime = 0, delay = 0;
+            const finishedGoodMap = {};
+            const finishedGoods = await models.ProductionFinishedGoods.findAll({
+                where: {
+                    productionId: {
+                        [Op.in]: production.map(prod => {
+                            const completion = new Date(prod.productionCompletionDate);
+                            const end = new Date(prod.productionEndDate);
+                            if (end > completion) {
+                                delay += 1;
+                            } else {
+                                onTime += 1;
+                            }
+                            if (prod.status == 1) inplanning += 1;
+                            else if (prod.status == 2) ongoing += 1;
+                            else if (prod.status == 3) onhold += 1;
+                            else completed += 1;
+                            return prod.id
+                        })
+                    }
+                },
+                raw: true,
+            });
+            let total = 0, passed = 0, reject = 0;
+            const pairArray = [];
+            for (const element of finishedGoods) {
+                passed += (element?.passedQuantity || 0);
+                reject += (element?.rejectQuantity || 0);
+                if (!finishedGoodMap[element.itemId]) {
+                    finishedGoodMap[element.itemId] = element;
+                    finishedGoodMap[element.itemId].quantity = (element.passedQuantity * (element.conversionFactor || 1));
+                    finishedGoodMap[element.itemId].cost = (element.cost || 0);
+                }
+                else {
+                    finishedGoodMap[element.itemId].quantity += (element.passedQuantity * (element.conversionFactor || 1));
+                    finishedGoodMap[element.itemId].cost += (element.cost || 0);
+                }
+            }
+            total = (passed + reject);
+            const sortedItems = Object.values(finishedGoodMap).sort((a, b) => b.quantity - a.quantity).slice(0, 10);
+            return res.status(200).json({
+                ontimeDelayProduction: {
+                    onTime, delay
+                },
+                quantityPerformance: {
+                    total, reject, passed
+                },
+                workOrderStatus: {
+                    inplanning, completed, ongoing, onhold
+                },
+                tableData: sortedItems,
+                sortedMonthMap
+            });
+        }
+        if (dataFor === 'Inventory') {
+            const productions = await models.Production.findAll({
+                where: {
+                    companyId: Number(companyId),
+                    status: {
+                        [Op.ne]: 4
+                    }
+                },
+                raw: true,
+                attributes: ['id']
+            });
+            const rawMaterials = await models.ProductionRawMaterials.findAll({
+                where: {
+                    productionId: {
+                        [Op.in]: productions.map(prod => prod.id)
+                    }
+                },
+                raw: true,
+                attributes: ['quantity', 'conversionFactor', 'itemId']
+            });
+
+            const items = await models.Items.findAll({
+                where: {
+                    companyId: Number(companyId)
+                },
+                raw: true,
+                attributes: ['id', 'category', 'minStock', 'maxStock', 'itemId', 'price']
+            });
+
+            const stockTransfers = await models.StockTransfer.findAll({
+                where: {
+                    itemId: { [Op.in]: items.map(item => item.id) },
+                    quantity: { [Op.ne]: 0 },
+                    isRejected: false
+                },
+                raw: true
+            });
+
+            const fastSlowMovingMap = {};
+            for (const element of stockTransfers) {
+                const bucket = getAgingBucket90Days(element.createdAt);
+                if (fastSlowMovingMap[bucket]) {
+                    fastSlowMovingMap[bucket] = Array.from(new Set([...fastSlowMovingMap[bucket], element.itemId]));
+                }
+                else {
+                    fastSlowMovingMap[bucket] = [element.itemId];
+                }
+            }
+            const stores = await models.Store.findAll({
+                where: {
+                    companyId: Number(companyId)
+                },
+                raw: true,
+                attributes: ['name', 'id']
+            });
+            const storesMap = stores.reduce((acc, curr) => {
+                acc[curr.id] = curr.name;
+                return acc;
+            }, {});
+            const categorys = await models.Categories.findAll({
+                where: {
+                    companyId: Number(companyId)
+                },
+                raw: true,
+                attributes: ['id', 'name']
+            });
+            const categoryMap = categorys.reduce((acc, curr) => {
+                acc[curr.id] = curr.name;
+                return acc;
+            }, {});
+            const storeItems = await models.StoreItems.findAll({
+                where: {
+                    itemId: {
+                        [Op.in]: items.map(item => item.id),
+                    },
+                    quantity: {
+                        [Op.gt]: 0
+                    },
+                    isRejected: false,
+                },
+                attributes: ['id', 'quantity', 'price', 'storeId', 'createdAt', 'itemId'],
+                raw: true
+            });
+            let inventoryValue = 0, storeValueMap = {}, itemsCountMap = {}, stockAgeingMap = {};
+            for (const element of storeItems) {
+                const bucket = getAgingBucket(element.createdAt);
+                if (stockAgeingMap[bucket]) {
+                    stockAgeingMap[bucket] = Array.from(new Set([...stockAgeingMap[bucket], element.itemId]));
+                }
+                else {
+                    stockAgeingMap[bucket] = [element.itemId];
+                }
+                if (!itemsCountMap[element.itemId]) itemsCountMap[element.itemId] = element.quantity;
+                else itemsCountMap[element.itemId] += element.quantity;
+                inventoryValue += (element.quantity * (element.price || 0));
+                if (!storeValueMap[storesMap[element.storeId]]) {
+                    storeValueMap[storesMap[element.storeId]] = (element.quantity * (element.price || 0));
+                }
+                else {
+                    storeValueMap[storesMap[element.storeId]] += (element.quantity * (element.price || 0));
+                }
+            }
+            delete storeValueMap.undefined;
+            let ideal = 0, min = 0, max = 0, outOfStock = 0;
+            const categoryItemsMap = {}, itemMap = {};
+            for (const element of items) {
+                itemMap[element.itemId] = element.price || 0;
+                const count = itemsCountMap[element.id] || 0;
+                if (!count) outOfStock += 1;
+                if (!element.minStock && !element.maxStock) {
+                    ideal += 1;
+                } else if (element.minStock && element.maxStock) {
+                    if (count >= element.minStock && count <= element.maxStock) ideal += 1;
+                    else if (count < element.minStock) min += 1;
+                    else if (count > element.maxStock) max += 1;
+                } else if (element.minStock && !element.maxStock) {
+                    if (count >= element.minStock) ideal += 1;
+                    else min += 1;
+                } else if (!element.minStock && element.maxStock) {
+                    if (count <= element.maxStock) ideal += 1;
+                    else max += 1;
+                }
+
+                if (!element.category) continue;
+                if (!categoryItemsMap[categoryMap[element.category]]) {
+                    categoryItemsMap[categoryMap[element.category]] = 1;
+                } else {
+                    categoryItemsMap[categoryMap[element.category]] += 1;
+                }
+            }
+            let wipCost = 0;
+            for (const element of rawMaterials) {
+                wipCost += ((element.quantity * (element?.conversionFactor || 1)) * (itemMap[element.itemId] || 0))
+            }
+
+            const sortedEntries = Object.entries(categoryItemsMap).sort(([, v1], [, v2]) => v2 - v1);
+            const topFiveEntries = sortedEntries.slice(0, 5);
+            const topFiveObj = Object.fromEntries(topFiveEntries);
+            for (const element in storeValueMap) {
+                storeValueMap[element] = Number(storeValueMap[element]?.toFixed(2))
+            }
+            for (const age in stockAgeingMap) {
+                stockAgeingMap[age] = stockAgeingMap[age].length;
+            }
+            for (const age in fastSlowMovingMap) {
+                if (age == 'Fast Moving') {
+                    fastSlowMovingMap[age] = fastSlowMovingMap[age].length;
+                }
+                else if (age == 'Slow Moving') {
+                    fastSlowMovingMap[age] = fastSlowMovingMap[age]?.filter(data => !(fastSlowMovingMap?.['Fast Moving'] || [])?.includes(data)).length;
+                }
+                else {
+                    fastSlowMovingMap[age] = fastSlowMovingMap[age]?.filter(data => ![...(fastSlowMovingMap?.['Fast Moving'] || []), ...(fastSlowMovingMap?.['Slow Moving'] || [])]?.includes(data)).length;
+                }
+            }
+            return res.status(200).json({
+                itemsCount: items.length,
+                inventoryValue,
+                storeValueMap,
+                topFiveCategory: topFiveObj,
+                min, max, ideal,
+                outOfStock,
+                stockAgeingMap,
+                fastSlowMovingMap,
+                wipCost
+            });
+        }
+        return res.status(200).json({});
+    } catch (err) {
+        console.log(err);
+        res.status(500).json({
+            message: "Failed to fetch dashboard data",
+            error: err.message || err
+        });
+    }
+}
+
 module.exports = {
     dashboard: dashboard,
     getBuyerSupplierCount: getBuyerSupplierCount,
@@ -510,5 +804,6 @@ module.exports = {
     getTotalDocuments: getTotalDocuments,
     getTotalUsersByCompany: getTotalUsersByCompany,
     getItemSalesSummaryWithPrediction: getItemSalesSummaryWithPrediction,
-    predictSales: predictSales
+    predictSales: predictSales,
+    getDashboardData: getDashboardData
 };

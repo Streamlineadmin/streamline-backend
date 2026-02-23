@@ -19,5 +19,16 @@ router.post('/getProductionsByCompanyId', productionController.getProductionsByC
 router.post('/productionBasedMaterialPlanning', productionController.productionBasedMaterialPlanning);
 router.post('/updateTable', productionController.updateTable);
 router.post('/removeRows', productionController.removeRows);
+router.post('/viewProductionHistory', productionController.viewProductionHistory);
+router.post('/returnRawMaterial', productionController.returnRawMaterial);
+router.post('/startBulkProduction', productionController.startBulkProduction);
+router.post('/getBulkProductions', productionController.getBulkProductions);
+router.post('/remainingProduction', productionController.remainingProduction);
+router.post('/discardProduction', productionController.discardProduction);
+router.post('/bulkIssue', productionController.bulkIssue);
+router.post('/updateStartDate', productionController.updateStartDate);
+router.post('/minStockMaterialPlanning', productionController.minStockMaterialPlanning);
+router.post('/saveReworkQuantity', productionController.saveReworkQuantity);
+router.post('/getAllProductions', productionController.getAllProductions);
 
 module.exports = router;

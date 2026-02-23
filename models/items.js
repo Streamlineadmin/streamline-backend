@@ -8,7 +8,7 @@ module.exports = (sequelize, DataTypes) => {
      * Helper method for defining associations.
      * This method is not a part of Sequelize lifecycle.
      * The `models/index` file will call this method automatically.
-     */   
+     */
   }
   Items.init({
     itemName: DataTypes.TEXT,
@@ -36,10 +36,17 @@ module.exports = (sequelize, DataTypes) => {
     customFields: {
       type: DataTypes.JSON,
       defaultValue: []
-    }
+    },
+    imageUrl: DataTypes.STRING
   }, {
     sequelize,
     modelName: 'Items',
+    indexes: [
+      {
+        name: 'idx_items_company_id',
+        fields: ['companyId'],
+      },
+    ]
   });
 
 

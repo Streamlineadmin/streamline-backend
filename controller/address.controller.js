@@ -1,7 +1,7 @@
 const models = require("../models");
 
 async function addAddress(req, res) {
-  const { addressType, companyId, ip_address, addressLineOne, addressLineTwo, pinCode, city, state, country } = req.body;
+  const { addressType, companyId, ip_address, addressLineOne, addressLineTwo, pinCode, city, state, country, gstNumber } = req.body;
 
   // Define the common data for both addresses
   const baseAddress = {
@@ -13,6 +13,7 @@ async function addAddress(req, res) {
     city,
     state,
     country,
+    gstNumber
   };
 
   // Prepare an array for storing the promises of address creation
@@ -53,66 +54,120 @@ async function addAddress(req, res) {
 }
 
 
-function editAddress(req, res) {
-  const addressId = req.body.addressId;
-
-  // updatedAddressData
-  const updatedStoreData = {
-    companyId: req.body.companyId,
-    ip_address: req.body.ip_address,
-    addressLineOne: req.body.addressLineOne,
-    addressLineTwo: req.body.addressLineTwo,
-    pincode: req.body.pinCode,
-    city: req.body.city,
-    state: req.body.state,
-    country: req.body.country,
-    addressType: req.body.addressType,
-    status: req.body.status || 1,
-  };
-
-  models.Addresses.update(updatedStoreData, { where: { id: addressId } })
-    .then((result) => {
-      if (result[0] > 0) {
-        res.status(200).json({
-          message: "Address updated successfully",
-          post: updatedStoreData,
-        });
-      } else {
-        res.status(200).json({
-          message: "Something went wrong, please try again later!",
-        });
-      }
-    })
-    .catch((error) => {
-      res.status(500).json({
-        message: "Something went wrong, please try again later!",
-        error: error,
-      });
+async function editAddress(req, res) {
+  try {
+    const addressId = req.body.addressId;
+    const addressType = req.body.addressType;
+    const existingAddress = await models.Addresses.findOne({
+      where: { id: addressId }
     });
+
+    const updatedStoreData = {
+      companyId: req.body.companyId,
+      ip_address: req.body.ip_address,
+      addressLineOne: req.body.addressLineOne,
+      addressLineTwo: req.body.addressLineTwo,
+      pincode: req.body.pinCode,
+      city: req.body.city,
+      state: req.body.state,
+      country: req.body.country,
+      addressType: addressType.length == 1 ? addressType[0] : existingAddress.addressType,
+      status: req.body.status ?? 1,
+      gstNumber: req.body?.gstNumber
+    };
+
+    const [updatedRows] = await models.Addresses.update(updatedStoreData, {
+      where: { id: addressId }
+    });
+
+    // If addressType has more than one type, create an additional address
+    if (addressType.length > 1) {
+      const address = await models.Addresses.findOne({
+        where: {
+          companyId: req.body.companyId,
+          addressType: existingAddress?.addressType == 1 ? 2 : 1,
+          status: 0
+        }
+      });
+      const secondaryAddress = {
+        companyId: req.body.companyId,
+        ip_address: req.body.ip_address,
+        addressLineOne: req.body.addressLineOne,
+        addressLineTwo: req.body.addressLineTwo,
+        pincode: req.body.pinCode,
+        city: req.body.city,
+        state: req.body.state,
+        country: req.body.country,
+        addressType: existingAddress?.addressType == 1 ? 2 : 1,
+        status: address ? 1 : 0,
+        gstNumber: req.body?.gstNumber
+      };
+
+      await models.Addresses.create(secondaryAddress);
+    }
+
+    if (updatedRows > 0) {
+      return res.status(200).json({
+        message: "Address updated successfully",
+        post: updatedStoreData
+      });
+    }
+
+    return res.status(200).json({
+      message: "Something went wrong, please try again later!"
+    });
+
+  } catch (error) {
+    console.log(error)
+    return res.status(500).json({
+      message: "Something went wrong, please try again later!",
+      error
+    });
+  }
 }
 
-function deleteAddress(req, res) {
-  const storeId = req.body.storeId; // Assuming the store ID is passed as a URL parameter
 
-  models.Addresses.destroy({ where: { id: storeId } })
-    .then((result) => {
-      if (result) {
-        res.status(200).json({
-          message: "Address deleted successfully",
-        });
-      } else {
-        res.status(200).json({
-          message: "Something went wrong, please try again later!",
-        });
-      }
-    })
-    .catch((error) => {
-      res.status(500).json({
-        message: "Something went wrong, please try again later!",
-        error: error,
-      });
+async function deleteAddress(req, res) {
+  try {
+    const storeId = req.body.storeId;
+
+    const address = await models.Addresses.findOne({
+      where: { id: storeId }
     });
+
+    const result = await models.Addresses.destroy({
+      where: { id: storeId }
+    });
+
+    const addresses = await models.Addresses.findAll({
+      where: {
+        companyId: address.companyId,
+        addressType: address.addressType
+      }
+    });
+
+    if (addresses.length == 1) {
+      await addresses[0].update({ status: 0 });
+    }
+
+    if (result) {
+      return res.status(200).json({
+        message: "Address deleted successfully",
+      });
+    } else {
+      return res.status(200).json({
+        message: "Something went wrong, please try again later!",
+      });
+    }
+
+  } catch (error) {
+    return res.status(500).json({
+      message: "Something went wrong, please try again later!",
+      error: error,
+    });
+  }
 }
+
 
 function getAddressById(req, res) {
   const id = req.params.id;

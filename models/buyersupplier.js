@@ -29,7 +29,8 @@ module.exports = (sequelize, DataTypes) => {
     customerType: {
       type: DataTypes.STRING,
       defaultValue: 'company',
-    }
+    },
+    pocDetails: DataTypes.JSON,
 
   }, {
     sequelize,
