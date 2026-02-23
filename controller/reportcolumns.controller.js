@@ -37,8 +37,6 @@ async function handleReportColumns(req, res) {
         status: status !== undefined ? status : existingRecord.status,
       };
 
-      console.log("Existing record:", existingRecord.dataValues);
-      console.log("Updating with:", updateData);
       result = await existingRecord.update(updateData);
     } else {
       result = await models.ReportColumns.create({

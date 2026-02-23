@@ -368,8 +368,10 @@ async function createDocument(req, res) {
 
     if (status && documentType === documentTypes.purchaseOrder && indent_number) {
       const indent_numbers = indent_number.split(',');
+      const conversionFactorMap = {};
       const itemsMap = items.reduce((item, current) => {
         item[current.itemId] = current.quantity;
+        conversionFactorMap[current.itemId] = current.conversionFactor || 1;
         return item;
       }, {});
       for (const ind_number of indent_numbers) {
@@ -393,14 +395,14 @@ async function createDocument(req, res) {
             let quantity = 0, remaining = 0;
             if (current.receivedToday) quantity += current.receivedToday;
             if (itemsMap[current.itemId]) {
-              if ((quantity + itemsMap[current.itemId]) > current.quantity) {
-                remaining = (quantity + itemsMap[current.itemId]) - current.quantity;
+              if ((quantity + (itemsMap[current.itemId] * ((conversionFactorMap[current.itemId] || 1) / (current.conversionFactor || 1)))) > current.quantity) {
+                remaining = (quantity + (itemsMap[current.itemId] * ((conversionFactorMap[current.itemId] || 1) / (current.conversionFactor || 1)))) - current.quantity;
                 quantity = current.quantity;
                 current.receivedToday = quantity;
-                consumeItemsMap[current?.itemId] = itemsMap[current.itemId] - remaining;
+                consumeItemsMap[current?.itemId] = (itemsMap[current.itemId] * ((conversionFactorMap[current.itemId] || 1) / (current.conversionFactor || 1))) - remaining;
               }
               else {
-                quantity += itemsMap[current.itemId];
+                quantity += (itemsMap[current.itemId] * ((conversionFactorMap[current.itemId] || 1) / (current.conversionFactor || 1)));
                 current.receivedToday = quantity;
               }
             }
