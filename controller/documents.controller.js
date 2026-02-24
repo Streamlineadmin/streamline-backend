@@ -2771,6 +2771,60 @@ async function createDocument(req, res) {
       }
     }
 
+    if (status && documentType === "Service Invoice" && serviceOrderNumber) {
+      const documentItems = await models.DocumentItems.findAll({
+        where: {
+          companyId,
+          documentNumber: serviceOrderNumber
+        },
+        attributes: ['serviceId', 'quantity']
+      });
+
+      const documentItemsMap = documentItems.reduce((acc, curr) => {
+        acc[curr.serviceId] = curr.quantity;
+        return acc;
+      }, {});
+
+      const previousServiceInvoice = await models.Documents.findAll({
+        where: {
+          companyId,
+          documentType: 'Service Invoice',
+          serviceOrderNumber,
+        },
+        attributes: ['documentNumber'],
+        raw: true
+      });
+
+      const previousServiceInvoiceItems = await models.DocumentItems.findAll({
+        where: {
+          companyId,
+          documentNumber: {
+            [Op.in]: previousServiceInvoice.map(doc => doc.documentNumber)
+          },
+        },
+        attributes: ['serviceId', 'quantity'],
+      });
+
+      const serviceInvoiceItemsMap = previousServiceInvoiceItems.reduce((acc, curr) => {
+        acc[curr.serviceId] = (acc[curr.serviceId] || 0) + Number(curr.quantity);
+        return acc;
+      }, {});
+
+      let partial = false;
+      for (const key in documentItemsMap) {
+        if (!serviceInvoiceItemsMap[key] || serviceInvoiceItemsMap[key] < documentItemsMap[key]) {
+          partial = true;
+          break;
+        }
+      }
+      await models.Documents.update({ status: partial ? 49 : 50 }, {
+        where: {
+          companyId,
+          documentNumber: serviceOrderNumber
+        }
+      });
+    }
+
     res.status(201).json({
       message: !status ? "Document Saved as Draft Successfully" : message ? "Document created successfully and Inventory approval requested." : "Document created successfully!"
     });
