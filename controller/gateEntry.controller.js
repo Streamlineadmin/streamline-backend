@@ -76,6 +76,10 @@ async function updateGateEntry(req, res) {
         await gateEntry.update({
             status: 1,
         });
+        res.status(200).json({
+            message: "Gate Entry updated successfully",
+            data: gateEntry
+        });
     } catch (error) {
         res.status(500).json({
             message: "Something went wrong, please try again later!",
