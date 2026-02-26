@@ -12,7 +12,7 @@ module.exports = (sequelize, DataTypes) => {
         {
             userId: DataTypes.INTEGER,
             documentNumber: DataTypes.STRING,
-            vistorName: DataTypes.STRING,
+            visitorName: DataTypes.STRING,
             visitorContact: DataTypes.STRING,
             visitorEmail: DataTypes.STRING,
             visitorCompany: DataTypes.STRING,
