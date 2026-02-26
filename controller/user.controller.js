@@ -366,7 +366,7 @@ async function updateProfile(req, res) {
             cin: updatedUser.cin,
             permissions: rolesAccess,
             logoUrl,
-            signature
+            signature: updatedUser.signature
         };
 
         const token = jwt.sign(payload, process.env.JWT_SECRET || "secret", { expiresIn: "1h" });

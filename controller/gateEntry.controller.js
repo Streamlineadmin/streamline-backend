@@ -3,7 +3,7 @@ const models = require('../models');
 
 async function createGateEntry(req, res) {
     try {
-        const { userId, documentNumber, vistorName, visitorContact,
+        const { userId, documentNumber, visitorName, visitorContact,
             visitorEmail, visitorCompany, idProofType, idProofNumber,
             purposeOfVisit, visitorImageUrl, personToMeet, vehicleNumber,
             vehicleType, comments, companyId, securitySignatureUrl, seriesId } = req.body;
@@ -11,7 +11,7 @@ async function createGateEntry(req, res) {
         const result = await models.GateEntry.create({
             userId,
             documentNumber,
-            vistorName,
+            visitorName,
             visitorContact,
             visitorEmail,
             visitorCompany,
@@ -46,7 +46,8 @@ async function createGateEntry(req, res) {
 
 async function getAllGateEntries(req, res) {
     try {
-        const { companyId } = req.body;
+        const { companyId, dateRange = [] } = req.body;
+
         const users = await models.User.findAll({
             where: { companyId },
             attributes: ['id', 'name', 'email', 'contactNo'],
@@ -56,8 +57,22 @@ async function getAllGateEntries(req, res) {
             map[user.id] = user;
             return map;
         }, {});
+
+        let dateFilter = {};
+        if (dateRange && Array.isArray(dateRange) && dateRange.length === 2) {
+            const [startDate, endDate] = dateRange;
+            dateFilter = {
+                createdAt: {
+                    [Op.between]: [
+                        new Date(startDate + 'T00:00:00.000Z'),
+                        new Date(endDate + 'T23:59:59.999Z')
+                    ]
+                }
+            };
+        }
+
         const gateEntries = await models.GateEntry.findAll({
-            where: { companyId },
+            where: { companyId, ...dateFilter },
             order: [['createdAt', 'DESC']],
             raw: true
         });
