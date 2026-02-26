@@ -49,7 +49,7 @@ async function getAllGateEntries(req, res) {
     try {
         const { companyId, dateRange = [] } = req.body;
 
-        const users = await models.User.findAll({
+        const users = await models.Users.findAll({
             where: { companyId },
             attributes: ['id', 'name', 'email', 'contactNo'],
             raw: true
