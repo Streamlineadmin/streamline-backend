@@ -47,10 +47,22 @@ async function createGateEntry(req, res) {
 async function getAllGateEntries(req, res) {
     try {
         const { companyId } = req.body;
+        const users = await models.User.findAll({
+            where: { companyId },
+            attributes: ['id', 'name', 'email', 'contactNo'],
+            raw: true
+        });
+        const userMap = users.reduce((map, user) => {
+            map[user.id] = user;
+            return map;
+        }, {});
         const gateEntries = await models.GateEntry.findAll({
             where: { companyId },
             order: [['createdAt', 'DESC']],
             raw: true
+        });
+        gateEntries.forEach(entry => {
+            entry.user = userMap[entry.userId] || null;
         });
         return res.status(200).json({
             data: gateEntries
