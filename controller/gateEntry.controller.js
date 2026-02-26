@@ -1,5 +1,6 @@
 const { raw } = require('body-parser');
 const models = require('../models');
+const { Op } = require('sequelize');
 
 async function createGateEntry(req, res) {
     try {
