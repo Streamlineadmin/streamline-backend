@@ -106,7 +106,11 @@ const AllDocuments = {
     "Service Confirmation Invoice": "SCINV",
     "Service Confirmation Debit Note": "SCDNN",
     "Service Confirmation Credit Note": "SCCNN",
-    "Production": "PROD"
+    "Production": "PROD",
+    "Gate Entry": "GE",
+    "Production Finished Good Batch": "PFGB",
+    "Production Scrap Batch": "PSCRB",
+    "Document Batch": "DOCB"
 }
 
 module.exports = {
