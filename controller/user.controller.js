@@ -288,9 +288,19 @@ async function updateProfile(req, res) {
             { where: { id: userId } }
         );
 
-        if (affectedRows === 0) {
-            return res.status(404).json({ message: "User not found or no changes made." });
+        // if (affectedRows === 0) {
+        //     return res.status(404).json({ message: "User not found or no changes made." });
+        // }
+
+        if ((role == 1 || role == 2) && user && companyName) {
+            await models.Users.update(
+                {
+                    companyName
+                },
+                { where: { companyId: user.companyId } }
+            );
         }
+
 
         // Fetch the updated user details
         const updatedUser = await models.Users.findOne({
@@ -366,7 +376,7 @@ async function updateProfile(req, res) {
             cin: updatedUser.cin,
             permissions: rolesAccess,
             logoUrl,
-            signature
+            signature: updatedUser.signature
         };
 
         const token = jwt.sign(payload, process.env.JWT_SECRET || "secret", { expiresIn: "1h" });

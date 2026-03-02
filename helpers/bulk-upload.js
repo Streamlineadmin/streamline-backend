@@ -8,7 +8,7 @@ const requiredColumnsFun = (key) => {
         bulkEdit: ['Item ID', 'Item Name', 'Item type', 'Category', 'Sub Category', 'Micro Category', 'HSN', 'Price', 'Tax Type', 'Tax', 'Min Stock', 'Max Stock', 'Description'],
         reconcileStock: ['Item ID', 'Item Name', 'Current Stock', 'Final Stock', 'Price/Unit', 'comment'],
         alternateUnit: ['* Item ID', 'Item Name', '* Base Unit', '* Alternate Unit', '* Conversion Factor'],
-        bulkUploadCompany: ["Person Name", "Person Email", "Phone", "* Company Name", "Company Email", "* Company Type", "GST Number", "GST Type", "* Address", "* Address Type", "Pin Code", "* City", "* State","PAN Number"],
+        bulkUploadCompany: ["Person Name", "Person Email", "Phone", "* Company Name", "Company Email", "* Company Type", "GST Number", "GST Type", "* Address", "* Address Type", "Pin Code", "* City", "* State", "PAN Number"],
 
     }
     return colsObject[key] || [];
@@ -26,6 +26,16 @@ const convertXlsxToJson = async (filePath, key) => {
             throw new Error('No sheets found in the Excel file');
         }
         const sheet = workbook.Sheets[sheetName];
+        if (key === "bulkUploadBom") {
+            const result = {};
+            workbook.SheetNames.forEach(sheetName => {
+                const sheet = workbook.Sheets[sheetName];
+                const jsonData = xlsx.utils.sheet_to_json(sheet);
+                result[sheetName] = jsonData;
+            });
+            fs.unlink(directory, () => { });
+            return result;
+        }
         const jsonData = xlsx.utils.sheet_to_json(sheet);
         if (key === 'bulkStockUpdate') {
             fs.unlink(directory, (err) => {

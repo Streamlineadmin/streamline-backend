@@ -368,8 +368,10 @@ async function createDocument(req, res) {
 
     if (status && documentType === documentTypes.purchaseOrder && indent_number) {
       const indent_numbers = indent_number.split(',');
+      const conversionFactorMap = {};
       const itemsMap = items.reduce((item, current) => {
         item[current.itemId] = current.quantity;
+        conversionFactorMap[current.itemId] = current.conversionFactor || 1;
         return item;
       }, {});
       for (const ind_number of indent_numbers) {
@@ -393,14 +395,14 @@ async function createDocument(req, res) {
             let quantity = 0, remaining = 0;
             if (current.receivedToday) quantity += current.receivedToday;
             if (itemsMap[current.itemId]) {
-              if ((quantity + itemsMap[current.itemId]) > current.quantity) {
-                remaining = (quantity + itemsMap[current.itemId]) - current.quantity;
+              if ((quantity + (itemsMap[current.itemId] * ((conversionFactorMap[current.itemId] || 1) / (current.conversionFactor || 1)))) > current.quantity) {
+                remaining = (quantity + (itemsMap[current.itemId] * ((conversionFactorMap[current.itemId] || 1) / (current.conversionFactor || 1)))) - current.quantity;
                 quantity = current.quantity;
                 current.receivedToday = quantity;
-                consumeItemsMap[current?.itemId] = itemsMap[current.itemId] - remaining;
+                consumeItemsMap[current?.itemId] = (itemsMap[current.itemId] * ((conversionFactorMap[current.itemId] || 1) / (current.conversionFactor || 1))) - remaining;
               }
               else {
-                quantity += itemsMap[current.itemId];
+                quantity += (itemsMap[current.itemId] * ((conversionFactorMap[current.itemId] || 1) / (current.conversionFactor || 1)));
                 current.receivedToday = quantity;
               }
             }
@@ -2767,6 +2769,60 @@ async function createDocument(req, res) {
         }
         await challan.update({ status: partial ? 31 : 32 });
       }
+    }
+
+    if (status && documentType === "Service Invoice" && serviceOrderNumber) {
+      const documentItems = await models.DocumentItems.findAll({
+        where: {
+          companyId,
+          documentNumber: serviceOrderNumber
+        },
+        attributes: ['serviceId', 'quantity']
+      });
+
+      const documentItemsMap = documentItems.reduce((acc, curr) => {
+        acc[curr.serviceId] = curr.quantity;
+        return acc;
+      }, {});
+
+      const previousServiceInvoice = await models.Documents.findAll({
+        where: {
+          companyId,
+          documentType: 'Service Invoice',
+          serviceOrderNumber,
+        },
+        attributes: ['documentNumber'],
+        raw: true
+      });
+
+      const previousServiceInvoiceItems = await models.DocumentItems.findAll({
+        where: {
+          companyId,
+          documentNumber: {
+            [Op.in]: previousServiceInvoice.map(doc => doc.documentNumber)
+          },
+        },
+        attributes: ['serviceId', 'quantity'],
+      });
+
+      const serviceInvoiceItemsMap = previousServiceInvoiceItems.reduce((acc, curr) => {
+        acc[curr.serviceId] = (acc[curr.serviceId] || 0) + Number(curr.quantity);
+        return acc;
+      }, {});
+
+      let partial = false;
+      for (const key in documentItemsMap) {
+        if (!serviceInvoiceItemsMap[key] || serviceInvoiceItemsMap[key] < documentItemsMap[key]) {
+          partial = true;
+          break;
+        }
+      }
+      await models.Documents.update({ status: partial ? 49 : 50 }, {
+        where: {
+          companyId,
+          documentNumber: serviceOrderNumber
+        }
+      });
     }
 
     res.status(201).json({

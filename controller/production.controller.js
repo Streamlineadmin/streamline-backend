@@ -3613,7 +3613,6 @@ async function bulkIssue(req, res) {
             }
         }
         for (const element of finishedGoods) {
-            console.log("totalPrice", totalPrice);
             if (!finishedGoodStoreMap?.[element.itemId]) continue;
             await element.update({ producedQuantity: (element.producedQuantity || 0) + quantity, ...(auto ? { passedQuantity: (element.passedQuantity || 0) + quantity, cost: (element.cost || 0) + totalPrice } : {}), ...(!auto ? { quantityToTest: (element.quantityToTest || 0) + quantity } : {}) });
             if (auto) {

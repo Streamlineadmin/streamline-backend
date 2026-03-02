@@ -1601,12 +1601,12 @@ async function getReports(req, res) {
                 const row1 = {
                     date,
                     processes: {},
-                    production:"Today's Production"
+                    production: "Today's Production"
                 };
                 const row2 = {
                     date,
                     processes: {},
-                    production:"Total Production"
+                    production: "Total Production"
                 };
 
                 Object.keys(processMap).forEach(pid => {
@@ -1630,6 +1630,72 @@ async function getReports(req, res) {
             return res.json({
                 data: ledger,
                 total: ledger.length
+            });
+        }
+        if (documentType === "gateEntryReport") {
+            const { dateRange, quickRange } = req.body;
+            let startDate = null, endDate = null;
+
+            const IST_OFFSET = 5.5 * 60 * 60 * 1000;
+
+            // ---------- DATE RANGE ----------
+            if (dateRange?.length === 2) {
+                const startIst = new Date(dateRange[0]);
+                const endIst = new Date(dateRange[1]);
+                startIst.setHours(0, 0, 0, 0);
+                endIst.setHours(23, 59, 59, 999);
+                startDate = startIst;
+                endDate = endIst;
+            }
+
+            // ---------- QUICK RANGE ----------
+            else if (quickRange) {
+                const nowIst = new Date(Date.now() + IST_OFFSET);
+                const startIst = new Date(nowIst);
+                startIst.setDate(nowIst.getDate() - quickRange);
+
+                startDate = startIst;   // IST
+                endDate = nowIst;       // IST
+            }
+
+            // ---------- DEFAULT (LAST 1 MONTH) ----------
+            const nowIst = new Date(Date.now() + IST_OFFSET);
+            const oneMonthAgoIst = new Date(nowIst);
+            oneMonthAgoIst.setMonth(nowIst.getMonth() - 1);
+
+            // ✅ SINGLE conversion point (IST → UTC)
+            const startUtc = startDate || istToUtc(oneMonthAgoIst);
+            const endUtc = endDate || istToUtc(nowIst);
+
+            // ---------- QUERY ----------
+            const whereClause = {
+                companyId: Number(companyId),
+                createdAt: { [Op.between]: [startUtc, endUtc] },
+            };
+
+            const users = await models.Users.findAll({
+                where: { companyId },
+                attributes: ['id', 'name', 'email', 'contactNo'],
+                raw: true
+            });
+            const userMap = users.reduce((map, user) => {
+                map[user.id] = user;
+                return map;
+            }, {});
+
+
+            const gateEntries = await models.GateEntry.findAll({
+                where: whereClause,
+                raw: true
+            });
+
+            gateEntries.forEach(entry => {
+                entry.user = userMap[entry.userId] || null;
+            });
+
+            return res.status(200).json({
+                message: "reports fetched.",
+                data: gateEntries
             });
         }
 

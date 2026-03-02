@@ -142,6 +142,7 @@ const ShowHideColumnRoutes = require("./routes/showHideColumns");
 const { mode } = require("simple-statistics");
 const amyRoutes = require("./routes/amy");
 const showhidecolumns = require("./models/showhidecolumns");
+const gateEntryRoute = require("./routes/gateEntry");
 const app = express();
 
 // Apply body-parser middleware to handle JSON request bodies
@@ -493,5 +494,6 @@ app.use("/eInvoice", eInvoiceRoutes);
 app.use("/email", eMailRoutes);
 app.use("/showHideColumns", ShowHideColumnRoutes);
 app.use("/amy", amyRoutes);
+app.use("/gateEntry", gateEntryRoute);
 
 module.exports = app;
