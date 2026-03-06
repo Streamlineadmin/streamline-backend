@@ -3435,6 +3435,13 @@ async function bulkIssue(req, res) {
             const current = timeToSeconds(auto ? element.totalPlannedTime : element?.currentPlannedTime);
             const result = secondsToTime(unit + current);
             await element.update({ ...(auto ? { totalPlannedTime: result, averageCost: (element.averageCost || 0) + cost } : { currentPlannedTime: result, currentaverageCost: (element.currentaverageCost || 0) + cost }), processCompleteOn: (element.processCompleteOn || 0) + quantity });
+            await models.ProcessLogs.create({
+                companyId: production.companyId,
+                productionId: production.id,
+                processId: element.id,
+                quantity: quantity,
+                userId
+            });
         }
         for (const element of scraps) {
             const settings = isValidJSON(element?.isManual) || {};
