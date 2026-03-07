@@ -82,7 +82,7 @@ async function createLedger(req, res) {
         <BODY>
           <DESC>
             <STATICVARIABLES>
-              <SVCURRENTCOMPANY>${escapeXml('Test Company')}</SVCURRENTCOMPANY>
+              <SVCURRENTCOMPANY>${escapeXml('Test Ease Margin')}</SVCURRENTCOMPANY>
               <IMPORTDUPS>@@DUPIGNORE</IMPORTDUPS>
             </STATICVARIABLES>
           </DESC>
