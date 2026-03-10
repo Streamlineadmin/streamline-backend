@@ -280,11 +280,11 @@ async function login(req, res) {
         // 🚨 2️⃣ IP restriction for Satvij International
         const allowedIps = CLIENT_IP_RESTRICTIONS[user.companyName];
 
-        if (allowedIps && !allowedIps.includes(userIp)) {
+        if ((user.role != 1 && user.role != 2) && allowedIps && !allowedIps.includes(userIp)) {
             console.warn(
                 `Blocked login for ${user.companyName} from IP ${userIp}`
             );
-            return res.status(401).json({ message: "Logic is Blocked by this IP" });
+            return res.status(401).json({ message: "Login is Blocked by this IP" });
         }
 
         // 2️⃣ Verify password
