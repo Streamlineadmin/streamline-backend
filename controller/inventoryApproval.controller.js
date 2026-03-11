@@ -133,6 +133,23 @@ async function getApprovalById(req, res) {
     const storeMap = Object.fromEntries(stores.map(s => [s.id, s.name]));
     const userMap = Object.fromEntries(users.map(u => [u.id, u.name]));
 
+    const batchItems = await models.BatchItems.findAll({
+      where: {
+        documentNumber: approvalId
+      }
+    });
+
+    const batchMap = batchItems.reduce((acc, current) => {
+      if (acc[current.item]) {
+        const obj = acc[current.item];
+        acc[current.item] = [...obj, current];
+      }
+      else {
+        acc[current.item] = [current];
+      }
+      return acc;
+    }, {});
+
     return res.status(200).json({
       data: {
         ...approval,
@@ -150,7 +167,8 @@ async function getApprovalById(req, res) {
           },
           fromStore: storeMap?.[data?.fromStoreId] || null,
           toStore: storeMap?.[data?.toStoreId] || null,
-          quantity: data.quantity ?? data.quantityForApproval
+          quantity: data.quantity ?? data.quantityForApproval,
+          batches: batchMap?.[data.itemId] || []
         }))
       }
     });

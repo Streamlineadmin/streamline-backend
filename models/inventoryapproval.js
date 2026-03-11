@@ -18,7 +18,8 @@ module.exports = (sequelize, DataTypes) => {
             companyId: DataTypes.INTEGER,
             status: DataTypes.INTEGER,
             approvedBy: DataTypes.INTEGER,
-            approvalDate: DataTypes.DATE
+            approvalDate: DataTypes.DATE,
+            batchesAssigned: DataTypes.BOOLEAN,
         },
         {
             sequelize,

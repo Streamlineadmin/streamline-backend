@@ -63,7 +63,7 @@ function normalizeIp(ip) {
 async function signUp(req, res) {
     const t = await models.sequelize.transaction();
     try {
-        const { companyName, businessType, email, username, password, contactNo, name, role } = req.body;
+        const { companyName, businessType, email, username, password, contactNo, name, role, registeredFromMobile } = req.body;
 
         // Check if email, username, or companyName already exists
         const existingUser = await models.Users.findOne({ where: { email } });
@@ -89,7 +89,8 @@ async function signUp(req, res) {
             contactNo,
             name,
             role,
-            status: 1
+            status: 1,
+            registeredFromMobile: registeredFromMobile ? 1 : 2
         }, { transaction: t });
 
         // Update the same row with companyId
@@ -362,7 +363,8 @@ async function login(req, res) {
             cin: user.cin,
             permissions: rolesAccess,
             logoUrl,
-            signature: user.signature
+            signature: user.signature,
+            registeredFromMobile : user?.registeredFromMobile
         };
 
         const token = jwt.sign(payload, process.env.JWT_SECRET || "secret", { expiresIn: "1h" });
