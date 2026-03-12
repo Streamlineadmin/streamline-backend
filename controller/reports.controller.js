@@ -1537,8 +1537,37 @@ async function getReports(req, res) {
                 });
             }
 
+            // 1. Fetch all descendant productions recursively
+            let currentLevelIds = [productionId];
+            const allProductionIds = [productionId];
+
+            while (currentLevelIds.length > 0) {
+                const children = await models.Production.findAll({
+                    where: { parentProductionId: { [Op.in]: currentLevelIds } },
+                    attributes: ['id'],
+                    raw: true
+                });
+                if (children.length > 0) {
+                    currentLevelIds = children.map(c => c.id);
+                    allProductionIds.push(...currentLevelIds);
+                } else {
+                    currentLevelIds = [];
+                }
+            }
+
+            // Fetch the Production models to map integer ID to string productionId
+            const productionsDetail = await models.Production.findAll({
+                where: { id: { [Op.in]: allProductionIds } },
+                attributes: ['id', 'productionId'],
+                raw: true
+            });
+            const prodStringMap = productionsDetail.reduce((acc, curr) => {
+                acc[curr.id] = curr.productionId;
+                return acc;
+            }, {});
+
             const processLogs = await models.ProcessLogs.findAll({
-                where: { productionId },
+                where: { productionId: { [Op.in]: allProductionIds } },
                 order: [['createdAt', 'ASC']],
                 raw: true
             });
@@ -1553,13 +1582,14 @@ async function getReports(req, res) {
             // 2. Fetch process names
             const process = await models.ProductionSalesProcess.findAll({
                 where: {
-                    productionId: productionId
+                    productionId: { [Op.in]: allProductionIds }
                 },
                 raw: true
             });
 
             const processMap = process.reduce((acc, curr) => {
-                acc[curr.id] = curr.processName;
+                const prodStringId = prodStringMap[curr.productionId] || curr.productionId;
+                acc[curr.id] = `${curr.processName} (${prodStringId})`;
                 return acc;
             }, {});
 

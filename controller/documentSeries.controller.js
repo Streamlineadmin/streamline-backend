@@ -175,6 +175,7 @@ function deleteDocumentSeries(req, res) {
 }
 
 function getDocumentSeries(req, res) {
+    console.log(req.body);
     models.DocumentSeries.findAll({
         where: {
             companyId: req.body.companyId

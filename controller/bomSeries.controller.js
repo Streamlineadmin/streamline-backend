@@ -50,13 +50,13 @@ function addBOMSeries(req, res) {
 function editBOMSeries(req, res) {
   const seriesName = req.body.seriesName;
   const prefix = req.body.series;
-  const number = req.body.number;
   const companyId = req.body.companyId;
+  const nextNumber = req.body.nextNumber;
 
   const updatedBOMSeriesData = {
     seriesName,
     prefix,
-    number,
+    nextNumber,
     companyId,
     status: req.body.status || 1,
     ip_address: req.body.ip_address,

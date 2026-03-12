@@ -674,6 +674,66 @@ async function getProductionById(req, res) {
             },
             raw: true
         });
+        const scrapBatchItems = await models.BatchItems.findAll({
+            where: {
+                documentNumber: productionId,
+                documentType: 'Scrap Material',
+            },
+            raw: true
+        });
+        const scrapItems = await models.Items.findAll({
+            where: {
+                id: {
+                    [Op.in]: scrapBatchItems.map(item => item.item)
+                }
+            },
+            raw: true,
+            attributes: ['itemId', 'id']
+        });
+        const scrapItemsMap = scrapItems.reduce((acc, curr) => {
+            acc[curr.id] = curr.itemId;
+            return acc;
+        }, {});
+        const scrapBatchMap = scrapBatchItems.reduce((acc, current) => {
+            if (acc[scrapItemsMap[current.item]]) {
+                const obj = acc[scrapItemsMap[current.item]];
+                acc[scrapItemsMap[current.item]] = [...obj, current];
+            }
+            else {
+                acc[scrapItemsMap[current.item]] = [current];
+            }
+            return acc;
+        }, {});
+        const finishedBatchItems = await models.BatchItems.findAll({
+            where: {
+                documentNumber: productionId,
+                documentType: 'Finished Good',
+            },
+            raw: true
+        });
+        const finishedItems = await models.Items.findAll({
+            where: {
+                id: {
+                    [Op.in]: finishedBatchItems.map(item => item.item)
+                }
+            },
+            raw: true,
+            attributes: ['itemId', 'id']
+        });
+        const finishedItemsMap = finishedItems.reduce((acc, curr) => {
+            acc[curr.id] = curr.itemId;
+            return acc;
+        }, {});
+        const finishedBatchMap = finishedBatchItems.reduce((acc, current) => {
+            if (acc[finishedItemsMap[current.item]]) {
+                const obj = acc[finishedItemsMap[current.item]];
+                acc[finishedItemsMap[current.item]] = [...obj, current];
+            }
+            else {
+                acc[finishedItemsMap[current.item]] = [current];
+            }
+            return acc;
+        }, {});
         const isRawMaterialLock = await models.InventoryApproval.findOne({
             where: {
                 documentType: 'Raw Material',
@@ -789,6 +849,7 @@ async function getProductionById(req, res) {
             else {
                 item.alternates = [{ ...item }];
             }
+            item.batches = scrapBatchMap?.[item.itemId];
             return item;
         });
 
@@ -811,7 +872,7 @@ async function getProductionById(req, res) {
                 bom,
                 scrapLogs: newScrap,
                 rawMaterials: newRaw,
-                finishedGoods: [{ ...finishedGoods[0]?.toJSON(), customFields }],
+                finishedGoods: [{ ...finishedGoods[0]?.toJSON(), customFields, batches: finishedBatchMap?.[finishedGoods[0]?.itemId] }],
                 additionalCharges,
                 process,
                 isMulti,
@@ -1393,7 +1454,6 @@ async function saveFinishedGoods(req, res) {
             rejectQty,
             reworkQty,
             companyId,
-            batchData,
             userId,
             by,
             rejectQuantityCostPerUnit,
@@ -1640,32 +1700,7 @@ async function saveFinishedGoods(req, res) {
             await production.update({ status: 4 });
         }
 
-        if (batchData && Array.isArray(batchData) && batchData?.length) {
-            const batchItems = [];
-            for (const element of batchData) {
-                for (const batch of element.batchItems) {
-                    batchItems.push({
-                        companyId: Number(companyId),
-                        createdBy: Number(companyId),
-                        documentNumber: production?.productionId,
-                        documentType: 'Production',
-                        item: batch.item,
-                        iterationCount: batch?.iterationCount,
-                        barCodeNumber: batch?.barCodeNumber,
-                        manufacturingDate: batch.manufacturingDate,
-                        expiryDate: batch.expiryDate,
-                        quantity: batch.quantity,
-                        outQuantity: 0,
-                        store: batch?.isRejected ? rejectStores.name : stores.name,
-                        status: 1,
-                        isRejected: batch?.isRejected || false
-                    });
-                }
-            }
-            if (batchItems.length) {
-                await models.BatchItems.bulkCreate(batchItems);
-            }
-        }
+
         return res.status(200).json({ message: settings?.['productionFinishedGood'] == 'manual' ? 'Finished Goods Saved and Inventory approval Requested.' : 'Finished Goods Saved.' });
 
     } catch (error) {
@@ -3841,7 +3876,6 @@ async function saveReworkQuantity(req, res) {
             passedQty,
             rejectQty,
             companyId,
-            batchData,
             userId,
             by,
             rejectQuantityCostPerUnit,
@@ -4010,32 +4044,7 @@ async function saveReworkQuantity(req, res) {
             });
         }
 
-        if (batchData && Array.isArray(batchData) && batchData?.length) {
-            const batchItems = [];
-            for (const element of batchData) {
-                for (const batch of element.batchItems) {
-                    batchItems.push({
-                        companyId: Number(companyId),
-                        createdBy: Number(companyId),
-                        documentNumber: production?.productionId,
-                        documentType: 'Production',
-                        item: batch.item,
-                        iterationCount: batch?.iterationCount,
-                        barCodeNumber: batch?.barCodeNumber,
-                        manufacturingDate: batch.manufacturingDate,
-                        expiryDate: batch.expiryDate,
-                        quantity: batch.quantity,
-                        outQuantity: 0,
-                        store: batch?.isRejected ? rejectStores.name : stores.name,
-                        status: 1,
-                        isRejected: batch?.isRejected || false
-                    });
-                }
-            }
-            if (batchItems.length) {
-                await models.BatchItems.bulkCreate(batchItems);
-            }
-        }
+
 
         await transaction.commit();
 

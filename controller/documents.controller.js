@@ -1728,44 +1728,7 @@ async function createDocument(req, res) {
       }
     }
 
-    if (status && (documentType === documentTypes.goodsReceive || documentType === documentTypes.qualityReport)) {
-      if (batches && batches?.length) {
-        const bulkBatches = [], bulkBatchItems = [];
-        for (const batch of batches) {
-          bulkBatches.push({
-            companyId: Number(companyId),
-            createdBy: Number(createdBy),
-            documentNumber,
-            documentType,
-            item: batch.item,
-            status: 1,
-            isRejected: batch?.isRejected || false
-          });
-          for (const batchItem of batch.batchItems) {
-            bulkBatchItems.push({
-              companyId: Number(companyId),
-              createdBy: Number(createdBy),
-              documentNumber,
-              documentType,
-              item: batch.item,
-              iterationCount: batch?.batchItems?.length,
-              barCodeNumber: batchItem.barCodeNumber,
-              manufacturingDate: batchItem.manufacturingDate,
-              expiryDate: batchItem.expiryDate,
-              quantity: batchItem.quantity,
-              outQuantity: 0,
-              store: store,
-              status: 1,
-              isRejected: batch?.isRejected || false
-            })
-          }
-        }
-        await Promise.all([
-          models?.Batches?.bulkCreate(bulkBatches),
-          models?.BatchItems?.bulkCreate(bulkBatchItems)
-        ]);
-      }
-    }
+    
 
     if (status && (documentType === documentTypes.serviceChallan || documentType == 'Service Confirmation Challan')) {
 
@@ -3299,41 +3262,6 @@ async function fetchCurrentDoc(req, res) {
       logisticDetails: document.logisticDetails || null,
       documentComments,
     };
-
-    if (document.documentType === documentTypes.goodsReceive || document.documentType === documentTypes.qualityReport) {
-      const batchItems = await models.BatchItems.findAll({
-        where: {
-          companyId,
-          documentNumber: document.documentNumber
-        },
-        raw: true
-      });
-      const batchMap = batchItems.reduce((acc, current) => {
-        if (acc[current.item]) {
-          const obj = acc[current.item];
-          acc[current.item] = [...obj, current];
-        }
-        else {
-          acc[current.item] = [current];
-        }
-        return acc;
-      }, {});
-      const itemsId = batchItems.map(batch => batch.item);
-      const items = await models.Items.findAll({
-        where: {
-          id: {
-            [Op.in]: itemsId
-          }
-        },
-        attributes: ['id', 'itemName', 'itemId'],
-        raw: true
-      });
-      const batches = {};
-      for (const item of items) {
-        batches[item.itemId] = batchMap[item.id];
-      }
-      response.batches = batches;
-    }
 
     return res.status(200).json(response);
 

@@ -6,6 +6,7 @@ module.exports = (sequelize, DataTypes) => {
 
     BatchItems.init({
         documentNumber: DataTypes.STRING,
+        documentType: DataTypes.STRING,
         companyId: DataTypes.INTEGER,
         item: {
             type: DataTypes.INTEGER,
