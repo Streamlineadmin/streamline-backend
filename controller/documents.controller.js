@@ -1728,7 +1728,7 @@ async function createDocument(req, res) {
       }
     }
 
-    
+
 
     if (status && (documentType === documentTypes.serviceChallan || documentType == 'Service Confirmation Challan')) {
 
@@ -3701,6 +3701,237 @@ async function discardDocument(req, res) {
           companyId
         }
       });
+    }
+
+    if (document.documentType === "Service Challan") {
+      const stockTransfers = await models.StockTransfer.findAll({
+        where: {
+          companyId,
+          documentNumber: document.documentNumber,
+        }
+      });
+      const storeItems = [], stockHistory = [];
+      const transferNumber = generateTransferNumber();
+      for (const stockTransfer of stockTransfers) {
+        stockHistory.push({
+          transferNumber,
+          fromStoreId: null,
+          itemId: stockTransfer.itemId,
+          quantity: stockTransfer.quantity * -1,
+          toStoreId: stockTransfer.fromStoreId,
+          transferDate: new Date().toISOString(),
+          transferredBy: stockTransfer.transferredBy,
+          comment: '',
+          companyId: stockTransfer.companyId,
+          price: stockTransfer?.price,
+          documentNumber: document.documentNumber,
+          documentType: stockTransfer.documentType,
+        });
+        storeItems.push({
+          storeId: stockTransfer.fromStoreId,
+          itemId: stockTransfer.itemId,
+          quantity: stockTransfer.quantity * -1,
+          status: 1,
+          addedBy: stockTransfer.transferredBy,
+          price: stockTransfer?.actualPrice
+        })
+      }
+      await Promise.all([
+        models.StoreItems.bulkCreate(storeItems),
+        models.StockTransfer.bulkCreate(stockHistory)
+      ]);
+      if (document.serviceOrderNumber) {
+        const production = await models.Production.findOne({
+          where: {
+            companyId,
+            serviceOrderNumber: document.serviceOrderNumber,
+          }
+        });
+        if (production) {
+          const documentItems = await models.DocumentItems.findAll({
+            where: {
+              companyId,
+              documentNumber: document.documentNumber,
+            }
+          });
+          const documentItemsMap = documentItems.reduce((acc, curr) => {
+            acc[curr.itemId] = curr.quantity;
+            return acc;
+          }, {});
+          const rawMaterial = await models.ProductionRawMaterials.findAll({
+            where: {
+              productionId: production.id
+            }
+          });
+          for (const element of rawMaterial) {
+            if (documentItemsMap[element.itemId]) {
+              await element.update({ consumedQuantity: element.consumedQuantity - documentItemsMap[element.itemId] });
+            }
+          }
+        }
+      }
+    }
+
+    if (document.documentType === "Service Grn" && document.challan_number) {
+      const serviceChallan = await models.Documents.findOne({
+        where: {
+          companyId,
+          documentNumber: document.challan_number,
+          documentType: 'Service Challan'
+        }
+      });
+      if (serviceChallan?.addStockOn === "GRN") {
+        const stockTransfers = await models.StockTransfer.findAll({
+          where: {
+            companyId,
+            documentNumber: document.documentNumber,
+          }
+        });
+        const store = await models.Store.findOne({
+          where: {
+            companyId,
+            name: document?.store,
+          }
+        });
+        const stockHistory = [];
+        await models.StoreItems.update({ quantity: 0 }, {
+          where: {
+            documentNumber: document.documentNumber,
+            storeId: store.id
+          }
+        });
+        const transferNumber = generateTransferNumber();
+        for (const stockTransfer of stockTransfers) {
+          stockHistory.push({
+            transferNumber,
+            fromStoreId: stockTransfer.toStoreId,
+            itemId: stockTransfer.itemId,
+            quantity: stockTransfer.quantity * -1,
+            toStoreId: null,
+            transferDate: new Date().toISOString(),
+            transferredBy: stockTransfer.transferredBy,
+            comment: '',
+            companyId: stockTransfer.companyId,
+            price: stockTransfer?.price,
+            documentNumber: document.documentNumber,
+            documentType: stockTransfer.documentType,
+            actualPrice: stockTransfer.price
+          });
+        }
+        await models.StockTransfer.bulkCreate(stockHistory);
+      }
+      if (serviceChallan?.serviceOrderNumber) {
+        const production = await models.Production.findOne({
+          where: {
+            companyId,
+            serviceOrderNumber: serviceChallan?.serviceOrderNumber
+          }
+        });
+        if (production) {
+          const finishedGoods = await models.ProductionFinishedGoods.findAll({
+            where: {
+              productionId: production.id
+            }
+          });
+          const documentItems = await models.DocumentItems.findAll({
+            where: {
+              companyId,
+              documentNumber: document.documentNumber
+            }
+          });
+          const documentItemsMap = documentItems.reduce((acc, curr) => {
+            acc[curr.itemId] = curr.quantity;
+            return acc;
+          }, {});
+          for (const element of finishedGoods) {
+            if (serviceChallan.addStockOn === "GRN") {
+              await element.update({
+                producedQuantity: element.producedQuantity - documentItemsMap?.[element.itemId],
+                passedQuantity: element.passedQuantity - documentItemsMap?.[element.itemId]
+              })
+            } else {
+              await element.update({
+                producedQuantity: element.producedQuantity - documentItemsMap?.[element.itemId],
+              });
+            }
+          }
+        }
+      }
+    }
+
+    if (document.documentType === "Service Qr") {
+      const stockTransfers = await models.StockTransfer.findAll({
+        where: {
+          companyId,
+          documentNumber: document.documentNumber,
+        }
+      });
+      const store = await models.Store.findOne({
+        where: {
+          companyId,
+          name: document.store,
+        }
+      });
+      const stockHistory = [];
+      await models.StoreItems.update({ quantity: 0 }, {
+        where: {
+          documentNumber: document.documentNumber,
+          storeId: store?.id
+        }
+      });
+      const transferNumber = generateTransferNumber();
+      for (const stockTransfer of stockTransfers) {
+        stockHistory.push({
+          transferNumber,
+          fromStoreId: stockTransfer.toStoreId,
+          itemId: stockTransfer.itemId,
+          quantity: stockTransfer.quantity * -1,
+          toStoreId: null,
+          transferDate: new Date().toISOString(),
+          transferredBy: stockTransfer.transferredBy,
+          comment: '',
+          companyId: stockTransfer.companyId,
+          price: stockTransfer?.price,
+          documentNumber: document.documentNumber,
+          documentType: stockTransfer.documentType,
+          actualPrice: stockTransfer.price
+        });
+      }
+      await models.StockTransfer.bulkCreate(stockHistory);
+
+      if (document?.serviceOrderNumber) {
+        const production = await models.Production.findOne({
+          where: {
+            companyId,
+            serviceOrderNumber: document?.serviceOrderNumber
+          }
+        });
+        if (production) {
+          const finishedGoods = await models.ProductionFinishedGoods.findAll({
+            where: {
+              productionId: production.id
+            }
+          });
+          const documentItems = await models.DocumentItems.findAll({
+            where: {
+              companyId,
+              documentNumber: document.documentNumber
+            }
+          });
+          const rejectMap = {};
+          const documentItemsMap = documentItems.reduce((acc, curr) => {
+            acc[curr.itemId] = curr.receivedToday || 0;
+            rejectMap[curr.itemId] = curr.pendingQuantity || 0;
+            return acc;
+          }, {});
+          for (const element of finishedGoods) {
+            await element.update({
+              rejectQuantity: element.rejectQuantity - rejectMap?.[element.itemId],
+              passedQuantity: element.passedQuantity - documentItemsMap?.[element.itemId]
+            });
+          }
+        }
+      }
     }
 
     if (

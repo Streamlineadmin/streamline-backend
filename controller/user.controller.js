@@ -401,7 +401,7 @@ async function updateProfile(req, res) {
 
     } catch (error) {
         console.error("Error updating profile:", error);
-        res.status(500).json({ message: "Something went wrong, please try again later!" });
+        res.status(500).json({ message: "Something went wrong, please try again later!", error });
     }
 }
 
