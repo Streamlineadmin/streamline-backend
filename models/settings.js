@@ -36,6 +36,8 @@ module.exports = (sequelize, DataTypes) => {
         categoryWiseCustomFields: DataTypes.BOOLEAN,
         itemInBarcodeSettings: DataTypes.JSON,
         itemOutBarcodeSettings: DataTypes.JSON,
+        exactRawMaterial: DataTypes.BOOLEAN,
+        defaultStores: DataTypes.JSON
     }, {
         sequelize,
         modelName: 'Settings',
