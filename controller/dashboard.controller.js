@@ -536,7 +536,7 @@ async function getDashboardData(req, res) {
             const currentMonth = new Date().getMonth();
             const sortedMonthMap = {};
             monthNames.slice(0, currentMonth + 1).forEach((m) => {
-                if (monthMap[m]) sortedMonthMap[m] = monthMap[m];
+                if (monthMap[m]) sortedMonthMap[m] = monthMap[m]?.toFixed(2);
                 else sortedMonthMap[m] = 0;
             });
 
@@ -607,7 +607,7 @@ async function getDashboardData(req, res) {
                     onTime, delay
                 },
                 quantityPerformance: {
-                    total, reject, passed
+                    total: Number(total?.toFixed(2)), reject: Number(reject?.toFixed(2)), passed: Number(passed?.toFixed(2))
                 },
                 workOrderStatus: {
                     inplanning, completed, ongoing, onhold

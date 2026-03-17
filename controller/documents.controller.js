@@ -3515,6 +3515,29 @@ async function discardDocument(req, res) {
       }
     }
     if (document.documentType === documentTypes.goodsReceive) {
+      const batch = await models.BatchItems.findOne({
+        where: {
+          companyId,
+          documentNumber: document.documentNumber,
+          [Op.or]: [
+            {
+              outQuantity: {
+                [Op.gt]: 0
+              }
+            },
+            {
+              consumedQuantity: {
+                [Op.gt]: 0
+              }
+            }
+          ]
+        }
+      });
+      if (batch) {
+        return res.status(409).json({
+          message: 'You can not discard this document after Batches Consumption.'
+        });
+      }
       linkedDocument = await models.Documents.findOne({
         where: {
           companyId,
@@ -3637,6 +3660,29 @@ async function discardDocument(req, res) {
       await models.StockTransfer.bulkCreate(stockHistory);
     }
     if (document.documentType === documentTypes.qualityReport) {
+      const batch = await models.BatchItems.findOne({
+        where: {
+          companyId,
+          documentNumber: document.documentNumber,
+          [Op.or]: [
+            {
+              outQuantity: {
+                [Op.gt]: 0
+              }
+            },
+            {
+              consumedQuantity: {
+                [Op.gt]: 0
+              }
+            }
+          ]
+        }
+      });
+      if (batch) {
+        return res.status(409).json({
+          message: 'You can not discard this document after Batches Consumption.'
+        });
+      }
       const stockTransfers = await models.StockTransfer.findAll({
         where: {
           companyId,
@@ -4264,11 +4310,63 @@ async function shortCloseTransaction(req, res) {
 async function getSalesDocumentItems(req, res) {
   const { documentNumber, documentType, companyId } = req.body;
   try {
+    if (documentType === "Service Grn") {
+      const documents = await models.Documents.findAll({
+        where: {
+          companyId: Number(companyId),
+          documentType,
+          challan_number: documentNumber,
+          status: {
+            [Op.notIn]: [0, 2]
+          }
+        },
+        attributes: ['id', 'documentNumber'],
+        raw: true
+      });
+
+      const documentIds = documents?.map(data => data.documentNumber);
+
+      const documentItems = await models.DocumentItems.findAll({
+        where: {
+          companyId: Number(companyId),
+          documentNumber: {
+            [Op.in]: documentIds
+          }
+        },
+        raw: true
+      });
+      const itemsmap = documentItems?.reduce((acc, curr) => {
+        acc[curr.itemId] = (acc[curr.itemId] || 0) + curr.receivedToday;
+        return acc;
+      }, {});
+
+      const challanItems = await models.DocumentItems.findAll({
+        where: {
+          companyId: Number(companyId),
+          documentNumber
+        },
+        raw: true
+      });
+
+      const challanItemsMap = challanItems?.reduce((acc, curr) => {
+        acc[curr.itemId] = (acc[curr.itemId] || 0) + curr.quantity;
+        return acc;
+      }, {});
+
+      return res.status(200).json({
+        itemsData: itemsmap,
+        salesOrderItems: challanItemsMap,
+        message: 'Data Fetched Successfully.'
+      });
+    }
     const documents = await models.Documents.findAll({
       where: {
         companyId: Number(companyId),
         documentType,
-        orderConfirmationNumber: documentNumber
+        orderConfirmationNumber: documentNumber,
+        status: {
+          [Op.notIn]: [0, 2]
+        }
       },
       attributes: ['id', 'documentNumber'],
       raw: true
