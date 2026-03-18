@@ -2079,17 +2079,31 @@ async function materialPlanning(req, res) {
 async function bomBasedMaterialPlanning(req, res) {
     try {
         const { companyId, data } = req.body;
-        const bomDetails = await models.BOMDetails.findOne({
-            where: { id: data.bomId }
-        });
+        const bomIds = data.map(d => d.bomId);
 
-        const bomFinishedGoods = await models.BOMFinishedGoods.findOne({
-            where: { bomId: data.bomId },
+        const bomDetails = await models.BOMDetails.findAll({
+            where: { id: bomIds },
             raw: true
         });
+
+        const bomFinishedGoods = await models.BOMFinishedGoods.findAll({
+            where: { bomId: bomIds },
+            raw: true
+        });
+
+        const bomFinishedGoodsMap = bomFinishedGoods.reduce((acc, curr) => {
+            acc[curr.bomId] = curr;
+            return acc;
+        }, {});
+
+        const dataQuantityMap = data.reduce((acc, curr) => {
+            acc[curr.bomId] = curr.quantity;
+            return acc;
+        }, {});
+
         const bomRawMaterial = await models.BOMRawMaterial.findAll({
             where: {
-                bomId: data.bomId
+                bomId: bomIds
             },
             raw: true
         });
@@ -2126,8 +2140,11 @@ async function bomBasedMaterialPlanning(req, res) {
                     break;
                 }
             }
-            const perUnitQtyRequired = (element.quantity * conversionFactor) / bomFinishedGoods.quantity;
-            requiredQtyMap[element.itemId] = (requiredQtyMap[element.itemId] || 0) + (data.quantity * perUnitQtyRequired);
+            const finishedGood = bomFinishedGoodsMap[element.bomId];
+            if (!finishedGood) continue;
+            const bomQuantity = dataQuantityMap[element.bomId] || 0;
+            const perUnitQtyRequired = (element.quantity * conversionFactor) / finishedGood.quantity;
+            requiredQtyMap[element.itemId] = (requiredQtyMap[element.itemId] || 0) + (bomQuantity * perUnitQtyRequired);
         }
 
         const itemToPIdMap = items?.reduce((acc, curr) => {

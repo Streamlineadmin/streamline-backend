@@ -37,7 +37,8 @@ module.exports = (sequelize, DataTypes) => {
         itemInBarcodeSettings: DataTypes.JSON,
         itemOutBarcodeSettings: DataTypes.JSON,
         exactRawMaterial: DataTypes.BOOLEAN,
-        defaultStores: DataTypes.JSON
+        defaultStores: DataTypes.JSON,
+        challanExactQuantity: DataTypes.BOOLEAN,
     }, {
         sequelize,
         modelName: 'Settings',
