@@ -195,6 +195,10 @@ module.exports = (sequelize, DataTypes) => {
         name: 'idx_document_items_company_id',
         fields: ['companyId'],
       },
+      {
+        name: 'idx_document_items_company_document_number',
+        fields: ['companyId', 'documentNumber'],
+      },
     ],
   });
 

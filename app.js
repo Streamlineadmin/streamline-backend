@@ -142,6 +142,8 @@ const ShowHideColumnRoutes = require("./routes/showHideColumns");
 const { mode } = require("simple-statistics");
 const amyRoutes = require("./routes/amy");
 const showhidecolumns = require("./models/showhidecolumns");
+const gateEntryRoute = require("./routes/gateEntry");
+const ledgerMappingRoute = require("./routes/ledgerMapping");
 const tallyRoutes = require("./routes/tallyRoutes");
 const app = express();
 
@@ -494,6 +496,8 @@ app.use("/eInvoice", eInvoiceRoutes);
 app.use("/email", eMailRoutes);
 app.use("/showHideColumns", ShowHideColumnRoutes);
 app.use("/amy", amyRoutes);
+app.use("/gateEntry", gateEntryRoute);
+app.use("/ledgerMapping", ledgerMappingRoute);
 app.use("/tally", tallyRoutes);
 
 module.exports = app;

@@ -776,9 +776,10 @@ async function duplicateBom(req, res) {
 }
 
 async function bulkUploadBom(req, res) {
+  const transaction = await models.sequelize.transaction();
   try {
     const file = req.file;
-    const { companyId } = req.body;
+    const { companyId, userId } = req.body;
     const data = await convertXlsxToJson(file.filename, 'bulkUploadBom');
     const ids = [];
     for (const element of data['FG']) {
@@ -786,12 +787,12 @@ async function bulkUploadBom(req, res) {
       ids.push(element["FG Item ID"]);
     }
     for (const element of data['RM']) {
-      if (!element["Item ID"]) continue;
+      if (!element["Item Id"]) continue;
       ids.push(element["Item Id"]);
     }
     for (const element of data['Leftover']) {
-      if (!element["Item ID"]) continue;
-      ids.push(element["Item ID"]);
+      if (!element["Item Id"]) continue;
+      ids.push(element["Item Id"]);
     }
     const items = await models.Items.findAll({
       where: {
@@ -806,12 +807,13 @@ async function bulkUploadBom(req, res) {
     const itemsMap = items.reduce((acc, curr) => {
       acc[curr.itemId] = curr;
       return acc;
-    }, {})
+    }, {});
     const unitMap = items.reduce((acc, curr) => {
       if (!acc[curr.id]) {
         acc[curr.id] = [];
       }
       acc[curr.id].push(Number(curr.metricsUnit));
+      return acc;
     }, {});
 
     const alternateUnits = await models.AlternateUnits.findAll({
@@ -821,8 +823,9 @@ async function bulkUploadBom(req, res) {
     });
 
     alternateUnits.forEach((data) => {
-      if (unitMap[data.itemId])
-        unitMap[data.itemId] = unitMap[data.itemId].push(Number(data.alternateUnits));
+      if (unitMap[data.itemId]) {
+        unitMap[data.itemId].push(Number(data.alternateUnits));
+      }
     });
 
     const uoms = await models.UOM.findAll({
@@ -855,20 +858,426 @@ async function bulkUploadBom(req, res) {
         companyId
       },
       raw: true,
-      attributes: ['nextNumber', 'prefix']
+      attributes: ['nextNumber', 'prefix', 'id']
     });
     const bomSeriesMap = bomSeries.reduce((acc, curr) => {
       acc[curr.prefix] = curr.nextNumber;
       return acc;
     }, {});
 
-    const errorIds = {};
-    const errorData = {}
+    const processes = await models.ProductionProcess.findAll({
+      where: {
+        companyId
+      },
+      raw: true,
+      attributes: ['id', 'processName']
+    });
+    const processMap = processes.reduce((acc, curr) => {
+      acc[curr.processName] = curr.id;
+      return acc;
+    }, {});
+
+    const payload = [];
+    const siMap = {};
+    for (const element of data['FG']) {
+      const { Sl_No, "FG Item ID": itemId, "FG UOM": uom, "BOM Series": series,
+        "BOM Name": bomName, "FG Store": store, "FG Quantity": Quantity } = element;
+      if (Sl_No && siMap[Sl_No]) {
+        if (!payload['Unknown']) {
+          payload['Unknown'] = {};
+        }
+        if (!payload['Unknown']['FG']) {
+          payload['Unknown']['FG'] = [];
+        }
+        payload['Unknown']['FG'].push({ ...element, Error: "Duplicate Sl_No" });
+        continue;
+      } else {
+        siMap[Sl_No] = true;
+      }
+      const id = Sl_No || 'Unknown';
+      const error = [];
+      if (!Sl_No) {
+        error.push("Sl_No is required");
+      }
+      if (!itemId) {
+        error.push("FG Item ID is required");
+      }
+      if (Quantity == 0 || !Quantity || isNaN(Quantity)) {
+        error.push("Quantity is required and must be a number");
+      }
+      if (!unitMap?.[itemsMap?.[itemId]?.id]?.includes(uomMap?.[uom]?.id)) {
+        error.push("Invalid UOM");
+      }
+      if (!bomSeriesMap?.[series]) {
+        error.push("Invalid BOM Series");
+      }
+      if (!bomName?.trim()) {
+        error.push("BOM Name is required");
+      }
+      if (store && !storeMap?.[store]) {
+        error.push("Invalid Store");
+      }
+      if (!payload[id]) {
+        payload[id] = {};
+      }
+      if (!payload[id]['FG']) {
+        payload[id]['FG'] = [];
+      }
+      payload[id]['FG'].push({ ...element, Error: error.join(", ") });
+      if (error.length) {
+        payload[id].error = true;
+      }
+    }
+
+    for (const element of data['RM']) {
+      const { "Sl_No (FG Sheet)": Sl_No, "Item Id": itemId, "UOM": uom, "RM Store": store, Quantity } = element;
+      if (!Sl_No) {
+        if (!payload['Unknown']) {
+          payload['Unknown'] = {};
+        }
+        if (!payload['Unknown']['RM']) {
+          payload['Unknown']['RM'] = [];
+        }
+        payload['Unknown']['RM'].push({ ...element, Error: "Sl_No is required" });
+        continue;
+      }
+      if (Sl_No && !siMap[Sl_No]) {
+        if (!payload['Unknown']) {
+          payload['Unknown'] = {};
+        }
+        if (!payload['Unknown']['RM']) {
+          payload['Unknown']['RM'] = [];
+        }
+        payload['Unknown']['RM'].push({ ...element, Error: "Invalid Sl_No" });
+        continue;
+      }
+      const id = Sl_No;
+      const error = [];
+      if (!itemId) {
+        error.push("RM Item ID is required");
+      }
+      if (!unitMap?.[itemsMap?.[itemId]?.id]?.includes(uomMap?.[uom]?.id)) {
+        error.push("Invalid UOM");
+      }
+      if (Quantity == 0 || !Quantity || isNaN(Quantity)) {
+        error.push("Quantity is required and must be a number");
+      }
+      if (store && !storeMap?.[store]) {
+        error.push("Invalid Store");
+      }
+      if (!payload[id]) {
+        payload[id] = {};
+      }
+      if (!payload[id]['RM']) {
+        payload[id]['RM'] = [];
+      }
+      payload[id]['RM'].push({ ...element, Error: error.join(", ") });
+      if (error.length) {
+        payload[id].error = true;
+      }
+    }
+
+    for (const element of data['Leftover']) {
+      const { "Sl_No (FG Sheet)": Sl_No, "Item Id": itemId, "UOM": uom, "Leftover Store": store, Quantity } = element;
+      if (!Sl_No) {
+        if (!payload['Unknown']) {
+          payload['Unknown'] = {};
+        } if (!payload['Unknown']['Leftover']) {
+          payload['Unknown']['Leftover'] = [];
+        }
+        payload['Unknown']['Leftover'].push({ ...element, Error: "Sl_No is required" });
+        continue;
+      }
+      if (Sl_No && !siMap[Sl_No]) {
+        if (!payload['Unknown']) {
+          payload['Unknown'] = {};
+        }
+        if (!payload['Unknown']['Leftover']) {
+          payload['Unknown']['Leftover'] = [];
+        }
+        payload['Unknown']['Leftover'].push({ ...element, Error: "Invalid Sl_No" });
+        continue;
+      }
+      const id = Sl_No;
+      const error = [];
+      if (!itemId) {
+        error.push("Leftover Item ID is required");
+      }
+      if (!unitMap?.[itemsMap?.[itemId]?.id]?.includes(uomMap?.[uom]?.id)) {
+        error.push("Invalid UOM");
+      }
+      if (Quantity == 0 || !Quantity || isNaN(Quantity)) {
+        error.push("Quantity is required and must be a number");
+      }
+      if (store && !storeMap?.[store]) {
+        error.push("Invalid Store");
+      }
+      if (!payload[id]) {
+        payload[id] = {};
+      }
+      if (!payload[id]['Leftover']) {
+        payload[id]['Leftover'] = [];
+      }
+      payload[id]['Leftover'].push({ ...element, Error: error.join(", ") });
+      if (error.length) {
+        payload[id].error = true;
+      }
+    }
+
+    for (const element of data['Production Process']) {
+      const { "Sl_No (FG Sheet)": Sl_No, "Process Name": processName, "Process Id": processId } = element;
+      if (!Sl_No) {
+        if (!payload['Unknown']) {
+          payload['Unknown'] = {};
+        }
+        if (!payload['Unknown']['Production Process']) {
+          payload['Unknown']['Production Process'] = [];
+        }
+        payload['Unknown']['Production Process'].push({ ...element, Error: "Sl_No is required" });
+        continue;
+      }
+      if (Sl_No && !siMap[Sl_No]) {
+        if (!payload['Unknown']) {
+          payload['Unknown'] = {};
+        }
+        if (!payload['Unknown']['Production Process']) {
+          payload['Unknown']['Production Process'] = [];
+        }
+        payload['Unknown']['Production Process'].push({ ...element, Error: "Invalid Sl_No" });
+        continue;
+      }
+      const id = Sl_No;
+      const error = [];
+      if (!processName) {
+        error.push("Process Name is required");
+      }
+      if (!processMap?.[processName]) {
+        error.push("Process Name Not Found.");
+      }
+      if (!payload[id]) {
+        payload[id] = {};
+      }
+      if (!payload[id]['Production Process']) {
+        payload[id]['Production Process'] = [];
+      }
+      payload[id]['Production Process'].push({ ...element, Error: error.join(", ") });
+      if (error.length) {
+        payload[id].error = true;
+      }
+    }
+
+    for (const element of data['Other Charges']) {
+      const { "Sl_No (FG Sheet)": Sl_No, "Charges Name": chargeName, "Amount (INR)": amount } = element;
+      if (!Sl_No) {
+        if (!payload['Unknown']) {
+          payload['Unknown'] = {};
+        }
+        if (!payload['Unknown']['Other Charges']) {
+          payload['Unknown']['Other Charges'] = [];
+        }
+        payload['Unknown']['Other Charges'].push({ ...element, Error: "Sl_No is required" });
+        continue;
+      }
+      if (Sl_No && !siMap[Sl_No]) {
+        if (!payload['Unknown']) {
+          payload['Unknown'] = {};
+        }
+        if (!payload['Unknown']['Other Charges']) {
+          payload['Unknown']['Other Charges'] = [];
+        }
+        payload['Unknown']['Other Charges'].push({ ...element, Error: "Invalid Sl_No" });
+        continue;
+      }
+      const id = Sl_No;
+      const error = [];
+      if (!chargeName) {
+        error.push("Charge Name is required");
+      }
+      if (amount == 0 || !amount || isNaN(amount)) {
+        error.push("Amount is required and must be a number");
+      }
+      if (!payload[id]) {
+        payload[id] = {};
+      }
+      if (!payload[id]['Other Charges']) {
+        payload[id]['Other Charges'] = [];
+      }
+      payload[id]['Other Charges'].push({ ...element, Error: error.join(", ") });
+      if (error.length) {
+        payload[id].error = true;
+      }
+    }
+
+    const errorData = {
+      FG: [],
+      RM: [],
+      Leftover: [],
+      ["Production Process"]: [],
+      ["Other Charges"]: []
+    }
+
+    const validData = {};
+
+    for (const key in payload) {
+      if (payload[key].error || key == 'Unknown' || !payload[key]['RM'] || !payload[key]['RM']?.length) {
+        if (payload[key]['FG'] || key == 'Unknown') {
+          errorData.FG.push(...(Array.isArray(payload[key]['FG']) ? payload[key]['FG'] : []));
+        }
+        if (payload[key]['RM']) {
+          errorData.RM.push(...(Array.isArray(payload[key]['RM']) ? payload[key]['RM'] : []));
+        }
+        if (payload[key]['Leftover']) {
+          errorData.Leftover.push(...(Array.isArray(payload[key]['Leftover']) ? payload[key]['Leftover'] : []));
+        }
+        if (payload[key]['Production Process']) {
+          errorData["Production Process"].push(...(Array.isArray(payload[key]['Production Process']) ? payload[key]['Production Process'] : []));
+        }
+        if (payload[key]['Other Charges']) {
+          errorData["Other Charges"].push(...(Array.isArray(payload[key]['Other Charges']) ? payload[key]['Other Charges'] : []));
+        }
+      }
+      else {
+        validData[key] = {
+          bomDetails: {
+            bomId: payload[key]['FG'][0]?.['BOM Series'] + bomSeriesMap?.[payload[key]['FG'][0]?.['BOM Series']],
+            bomName: payload[key]['FG'][0]?.['BOM Name'],
+            status: 1,
+            bomDescription: payload[key]['FG'][0]?.['BOM Description'],
+            companyId,
+            userId
+          },
+          finishedGoods: payload[key]['FG']?.map(fg => ({
+            itemId: fg['FG Item ID'],
+            itemName: itemsMap?.[fg['FG Item ID']]?.itemName,
+            uom: uomMap?.[fg['FG UOM']].id,
+            quantity: fg['FG Quantity'],
+            store: fg['FG Store'],
+            userId,
+            companyId,
+            status: 1,
+          })),
+          rawMaterials: payload[key]['RM']?.map(rm => ({
+            itemId: rm['Item Id'],
+            itemName: itemsMap?.[rm['Item Id']]?.itemName,
+            uom: uomMap?.[rm['UOM']].id,
+            quantity: rm['Quantity'],
+            store: rm['RM Store'],
+            userId,
+            companyId,
+            status: 1,
+          })),
+          scrapMaterials: payload[key]['Leftover']?.map(left => ({
+            itemId: left['Item Id'],
+            itemName: itemsMap?.[left['Item Id']]?.itemName,
+            uom: uomMap?.[left['UOM']].id,
+            quantity: left['Quantity'],
+            store: left['Leftover Store'],
+            userId,
+            companyId,
+            status: 1,
+          })),
+          productionProcess: payload[key]['Production Process']?.map(pp => ({
+            processId: processMap?.[pp['Process Name']],
+            userId,
+            companyId,
+            status: 1,
+          })),
+          additionalCharges: payload[key]['Other Charges']?.map(oc => ({
+            chargesName: oc['Charges Name'],
+            amount: oc['Amount (INR)'],
+            userId,
+            companyId,
+            status: 1,
+          }))
+        }
+        bomSeriesMap[payload[key]['FG'][0]['BOM Series']] = bomSeriesMap?.[payload[key]['FG'][0]?.['BOM Series']] + 1;
+      }
+    }
+
+    const entries = Object.entries(validData);
+
+    // 1️⃣ Create all BOMDetails
+    const bomDetails = await models.BOMDetails.bulkCreate(
+      entries.map(([_, value]) => value.bomDetails),
+      { returning: true, transaction }
+    );
+
+    // 2️⃣ Prepare master arrays
+    const allFinishedGoods = [];
+    const allRawMaterials = [];
+    const allScrapMaterials = [];
+    const allProductionProcess = [];
+    const allAdditionalCharges = [];
+
+    bomDetails.forEach((bomDetail, index) => {
+      const [, value] = entries[index];
+
+      const {
+        finishedGoods = [],
+        rawMaterials = [],
+        scrapMaterials = [],
+        productionProcess = [],
+        additionalCharges = []
+      } = value;
+
+      finishedGoods.forEach(fg =>
+        allFinishedGoods.push({ ...fg, bomId: bomDetail.id })
+      );
+
+      rawMaterials.forEach(rm =>
+        allRawMaterials.push({ ...rm, bomId: bomDetail.id })
+      );
+
+      scrapMaterials.forEach(sm =>
+        allScrapMaterials.push({ ...sm, bomId: bomDetail.id })
+      );
+
+      productionProcess.forEach(pp =>
+        allProductionProcess.push({ ...pp, bomId: bomDetail.id })
+      );
+
+      additionalCharges.forEach(ac =>
+        allAdditionalCharges.push({ ...ac, bomId: bomDetail.id })
+      );
+    });
+
+    // 3️⃣ Bulk insert once per table
+    await Promise.all([
+      allFinishedGoods.length &&
+      models.BOMFinishedGoods.bulkCreate(allFinishedGoods, { transaction }),
+
+      allRawMaterials.length &&
+      models.BOMRawMaterial.bulkCreate(allRawMaterials, { transaction }),
+
+      allScrapMaterials.length &&
+      models.BOMScrapMaterial.bulkCreate(allScrapMaterials, { transaction }),
+
+      allProductionProcess.length &&
+      models.BOMProductionProcess.bulkCreate(allProductionProcess, { transaction }),
+
+      allAdditionalCharges.length &&
+      models.BOMAdditionalCharges.bulkCreate(allAdditionalCharges, { transaction })
+    ]);
+
+
+
+    const dataLength = data['FG']?.length;
+    const validLength = bomDetails?.length;
+
+    for (const element of bomSeries) {
+      if (bomSeriesMap?.[element.prefix] != element.nextNumber) {
+        await models.BOMSeries.update({ nextNumber: bomSeriesMap[element.prefix] }, { where: { id: element.id } }, { transaction });
+      }
+    }
+
+    await transaction.commit();
 
     return res.status(200).json({
-      data
-    })
+      errorData: dataLength == validLength ? {} : errorData,
+      message: dataLength == validLength ? 'BOMs uploaded successfully' : validLength == 0 ? 'All records have errors' : 'BOMs uploaded Successfully. Few rows have errors. We download Those rows.',
+    });
   } catch (error) {
+    await transaction.rollback();
     console.log(error);
     res.status(500).json({
       message: 'Something went wrong.'

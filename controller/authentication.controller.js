@@ -63,7 +63,7 @@ function normalizeIp(ip) {
 async function signUp(req, res) {
     const t = await models.sequelize.transaction();
     try {
-        const { companyName, businessType, email, username, password, contactNo, name, role } = req.body;
+        const { companyName, businessType, email, username, password, contactNo, name, role, registeredFromMobile } = req.body;
 
         // Check if email, username, or companyName already exists
         const existingUser = await models.Users.findOne({ where: { email } });
@@ -89,7 +89,8 @@ async function signUp(req, res) {
             contactNo,
             name,
             role,
-            status: 1
+            status: 1,
+            registeredFromMobile: registeredFromMobile ? 1 : 2
         }, { transaction: t });
 
         // Update the same row with companyId
@@ -280,11 +281,11 @@ async function login(req, res) {
         // 🚨 2️⃣ IP restriction for Satvij International
         const allowedIps = CLIENT_IP_RESTRICTIONS[user.companyName];
 
-        if (allowedIps && !allowedIps.includes(userIp)) {
+        if ((user.role != 1 && user.role != 2) && allowedIps && !allowedIps.includes(userIp)) {
             console.warn(
                 `Blocked login for ${user.companyName} from IP ${userIp}`
             );
-            return res.status(401).json({ message: "Logic is Blocked by this IP" });
+            return res.status(401).json({ message: "Login is Blocked by this IP" });
         }
 
         // 2️⃣ Verify password
@@ -362,7 +363,8 @@ async function login(req, res) {
             cin: user.cin,
             permissions: rolesAccess,
             logoUrl,
-            signature: user.signature
+            signature: user.signature,
+            registeredFromMobile : user?.registeredFromMobile
         };
 
         const token = jwt.sign(payload, process.env.JWT_SECRET || "secret", { expiresIn: "1h" });

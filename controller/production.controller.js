@@ -674,6 +674,66 @@ async function getProductionById(req, res) {
             },
             raw: true
         });
+        const scrapBatchItems = await models.BatchItems.findAll({
+            where: {
+                documentNumber: productionId,
+                documentType: 'Scrap Material',
+            },
+            raw: true
+        });
+        const scrapItems = await models.Items.findAll({
+            where: {
+                id: {
+                    [Op.in]: scrapBatchItems.map(item => item.item)
+                }
+            },
+            raw: true,
+            attributes: ['itemId', 'id']
+        });
+        const scrapItemsMap = scrapItems.reduce((acc, curr) => {
+            acc[curr.id] = curr.itemId;
+            return acc;
+        }, {});
+        const scrapBatchMap = scrapBatchItems.reduce((acc, current) => {
+            if (acc[scrapItemsMap[current.item]]) {
+                const obj = acc[scrapItemsMap[current.item]];
+                acc[scrapItemsMap[current.item]] = [...obj, current];
+            }
+            else {
+                acc[scrapItemsMap[current.item]] = [current];
+            }
+            return acc;
+        }, {});
+        const finishedBatchItems = await models.BatchItems.findAll({
+            where: {
+                documentNumber: productionId,
+                documentType: 'Finished Good',
+            },
+            raw: true
+        });
+        const finishedItems = await models.Items.findAll({
+            where: {
+                id: {
+                    [Op.in]: finishedBatchItems.map(item => item.item)
+                }
+            },
+            raw: true,
+            attributes: ['itemId', 'id']
+        });
+        const finishedItemsMap = finishedItems.reduce((acc, curr) => {
+            acc[curr.id] = curr.itemId;
+            return acc;
+        }, {});
+        const finishedBatchMap = finishedBatchItems.reduce((acc, current) => {
+            if (acc[finishedItemsMap[current.item]]) {
+                const obj = acc[finishedItemsMap[current.item]];
+                acc[finishedItemsMap[current.item]] = [...obj, current];
+            }
+            else {
+                acc[finishedItemsMap[current.item]] = [current];
+            }
+            return acc;
+        }, {});
         const isRawMaterialLock = await models.InventoryApproval.findOne({
             where: {
                 documentType: 'Raw Material',
@@ -789,6 +849,7 @@ async function getProductionById(req, res) {
             else {
                 item.alternates = [{ ...item }];
             }
+            item.batches = scrapBatchMap?.[item.itemId];
             return item;
         });
 
@@ -811,7 +872,7 @@ async function getProductionById(req, res) {
                 bom,
                 scrapLogs: newScrap,
                 rawMaterials: newRaw,
-                finishedGoods: [{ ...finishedGoods[0]?.toJSON(), customFields }],
+                finishedGoods: [{ ...finishedGoods[0]?.toJSON(), customFields, batches: finishedBatchMap?.[finishedGoods[0]?.itemId] }],
                 additionalCharges,
                 process,
                 isMulti,
@@ -1393,7 +1454,6 @@ async function saveFinishedGoods(req, res) {
             rejectQty,
             reworkQty,
             companyId,
-            batchData,
             userId,
             by,
             rejectQuantityCostPerUnit,
@@ -1640,32 +1700,7 @@ async function saveFinishedGoods(req, res) {
             await production.update({ status: 4 });
         }
 
-        if (batchData && Array.isArray(batchData) && batchData?.length) {
-            const batchItems = [];
-            for (const element of batchData) {
-                for (const batch of element.batchItems) {
-                    batchItems.push({
-                        companyId: Number(companyId),
-                        createdBy: Number(companyId),
-                        documentNumber: production?.productionId,
-                        documentType: 'Production',
-                        item: batch.item,
-                        iterationCount: batch?.iterationCount,
-                        barCodeNumber: batch?.barCodeNumber,
-                        manufacturingDate: batch.manufacturingDate,
-                        expiryDate: batch.expiryDate,
-                        quantity: batch.quantity,
-                        outQuantity: 0,
-                        store: batch?.isRejected ? rejectStores.name : stores.name,
-                        status: 1,
-                        isRejected: batch?.isRejected || false
-                    });
-                }
-            }
-            if (batchItems.length) {
-                await models.BatchItems.bulkCreate(batchItems);
-            }
-        }
+
         return res.status(200).json({ message: settings?.['productionFinishedGood'] == 'manual' ? 'Finished Goods Saved and Inventory approval Requested.' : 'Finished Goods Saved.' });
 
     } catch (error) {
@@ -2044,17 +2079,31 @@ async function materialPlanning(req, res) {
 async function bomBasedMaterialPlanning(req, res) {
     try {
         const { companyId, data } = req.body;
-        const bomDetails = await models.BOMDetails.findOne({
-            where: { id: data.bomId }
-        });
+        const bomIds = data.map(d => d.bomId);
 
-        const bomFinishedGoods = await models.BOMFinishedGoods.findOne({
-            where: { bomId: data.bomId },
+        const bomDetails = await models.BOMDetails.findAll({
+            where: { id: bomIds },
             raw: true
         });
+
+        const bomFinishedGoods = await models.BOMFinishedGoods.findAll({
+            where: { bomId: bomIds },
+            raw: true
+        });
+
+        const bomFinishedGoodsMap = bomFinishedGoods.reduce((acc, curr) => {
+            acc[curr.bomId] = curr;
+            return acc;
+        }, {});
+
+        const dataQuantityMap = data.reduce((acc, curr) => {
+            acc[curr.bomId] = curr.quantity;
+            return acc;
+        }, {});
+
         const bomRawMaterial = await models.BOMRawMaterial.findAll({
             where: {
-                bomId: data.bomId
+                bomId: bomIds
             },
             raw: true
         });
@@ -2091,8 +2140,11 @@ async function bomBasedMaterialPlanning(req, res) {
                     break;
                 }
             }
-            const perUnitQtyRequired = (element.quantity * conversionFactor) / bomFinishedGoods.quantity;
-            requiredQtyMap[element.itemId] = (requiredQtyMap[element.itemId] || 0) + (data.quantity * perUnitQtyRequired);
+            const finishedGood = bomFinishedGoodsMap[element.bomId];
+            if (!finishedGood) continue;
+            const bomQuantity = dataQuantityMap[element.bomId] || 0;
+            const perUnitQtyRequired = (element.quantity * conversionFactor) / finishedGood.quantity;
+            requiredQtyMap[element.itemId] = (requiredQtyMap[element.itemId] || 0) + (bomQuantity * perUnitQtyRequired);
         }
 
         const itemToPIdMap = items?.reduce((acc, curr) => {
@@ -3435,6 +3487,13 @@ async function bulkIssue(req, res) {
             const current = timeToSeconds(auto ? element.totalPlannedTime : element?.currentPlannedTime);
             const result = secondsToTime(unit + current);
             await element.update({ ...(auto ? { totalPlannedTime: result, averageCost: (element.averageCost || 0) + cost } : { currentPlannedTime: result, currentaverageCost: (element.currentaverageCost || 0) + cost }), processCompleteOn: (element.processCompleteOn || 0) + quantity });
+            await models.ProcessLogs.create({
+                companyId: production.companyId,
+                productionId: production.id,
+                processId: element.id,
+                quantity: quantity,
+                userId
+            });
         }
         for (const element of scraps) {
             const settings = isValidJSON(element?.isManual) || {};
@@ -3613,7 +3672,6 @@ async function bulkIssue(req, res) {
             }
         }
         for (const element of finishedGoods) {
-            console.log("totalPrice", totalPrice);
             if (!finishedGoodStoreMap?.[element.itemId]) continue;
             await element.update({ producedQuantity: (element.producedQuantity || 0) + quantity, ...(auto ? { passedQuantity: (element.passedQuantity || 0) + quantity, cost: (element.cost || 0) + totalPrice } : {}), ...(!auto ? { quantityToTest: (element.quantityToTest || 0) + quantity } : {}) });
             if (auto) {
@@ -3835,7 +3893,6 @@ async function saveReworkQuantity(req, res) {
             passedQty,
             rejectQty,
             companyId,
-            batchData,
             userId,
             by,
             rejectQuantityCostPerUnit,
@@ -4004,32 +4061,7 @@ async function saveReworkQuantity(req, res) {
             });
         }
 
-        if (batchData && Array.isArray(batchData) && batchData?.length) {
-            const batchItems = [];
-            for (const element of batchData) {
-                for (const batch of element.batchItems) {
-                    batchItems.push({
-                        companyId: Number(companyId),
-                        createdBy: Number(companyId),
-                        documentNumber: production?.productionId,
-                        documentType: 'Production',
-                        item: batch.item,
-                        iterationCount: batch?.iterationCount,
-                        barCodeNumber: batch?.barCodeNumber,
-                        manufacturingDate: batch.manufacturingDate,
-                        expiryDate: batch.expiryDate,
-                        quantity: batch.quantity,
-                        outQuantity: 0,
-                        store: batch?.isRejected ? rejectStores.name : stores.name,
-                        status: 1,
-                        isRejected: batch?.isRejected || false
-                    });
-                }
-            }
-            if (batchItems.length) {
-                await models.BatchItems.bulkCreate(batchItems);
-            }
-        }
+
 
         await transaction.commit();
 

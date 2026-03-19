@@ -873,8 +873,6 @@ async function addBulkItem(req, res) {
             }
         }
 
-        console.log("mapmap", uniqueCustomFieldMap, uniqueFieldInSheet);
-
         const msg = !errorArray.length
             ? 'Bulk items uploaded successfully.'
             : errorArray.length !== data.length

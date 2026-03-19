@@ -1537,8 +1537,37 @@ async function getReports(req, res) {
                 });
             }
 
+            // 1. Fetch all descendant productions recursively
+            let currentLevelIds = [productionId];
+            const allProductionIds = [productionId];
+
+            while (currentLevelIds.length > 0) {
+                const children = await models.Production.findAll({
+                    where: { parentProductionId: { [Op.in]: currentLevelIds } },
+                    attributes: ['id'],
+                    raw: true
+                });
+                if (children.length > 0) {
+                    currentLevelIds = children.map(c => c.id);
+                    allProductionIds.push(...currentLevelIds);
+                } else {
+                    currentLevelIds = [];
+                }
+            }
+
+            // Fetch the Production models to map integer ID to string productionId
+            const productionsDetail = await models.Production.findAll({
+                where: { id: { [Op.in]: allProductionIds } },
+                attributes: ['id', 'productionId'],
+                raw: true
+            });
+            const prodStringMap = productionsDetail.reduce((acc, curr) => {
+                acc[curr.id] = curr.productionId;
+                return acc;
+            }, {});
+
             const processLogs = await models.ProcessLogs.findAll({
-                where: { productionId },
+                where: { productionId: { [Op.in]: allProductionIds } },
                 order: [['createdAt', 'ASC']],
                 raw: true
             });
@@ -1553,13 +1582,14 @@ async function getReports(req, res) {
             // 2. Fetch process names
             const process = await models.ProductionSalesProcess.findAll({
                 where: {
-                    productionId: productionId
+                    productionId: { [Op.in]: allProductionIds }
                 },
                 raw: true
             });
 
             const processMap = process.reduce((acc, curr) => {
-                acc[curr.id] = curr.processName;
+                const prodStringId = prodStringMap[curr.productionId] || curr.productionId;
+                acc[curr.id] = `${curr.processName} (${prodStringId})`;
                 return acc;
             }, {});
 
@@ -1601,12 +1631,12 @@ async function getReports(req, res) {
                 const row1 = {
                     date,
                     processes: {},
-                    production:"Today's Production"
+                    production: "Today's Production"
                 };
                 const row2 = {
                     date,
                     processes: {},
-                    production:"Total Production"
+                    production: "Total Production"
                 };
 
                 Object.keys(processMap).forEach(pid => {
@@ -1631,6 +1661,208 @@ async function getReports(req, res) {
                 data: ledger,
                 total: ledger.length
             });
+        }
+        if (documentType === "gateEntryReport") {
+            const { dateRange, quickRange } = req.body;
+            let startDate = null, endDate = null;
+
+            const IST_OFFSET = 5.5 * 60 * 60 * 1000;
+
+            // ---------- DATE RANGE ----------
+            if (dateRange?.length === 2) {
+                const startIst = new Date(dateRange[0]);
+                const endIst = new Date(dateRange[1]);
+                startIst.setHours(0, 0, 0, 0);
+                endIst.setHours(23, 59, 59, 999);
+                startDate = startIst;
+                endDate = endIst;
+            }
+
+            // ---------- QUICK RANGE ----------
+            else if (quickRange) {
+                const nowIst = new Date(Date.now() + IST_OFFSET);
+                const startIst = new Date(nowIst);
+                startIst.setDate(nowIst.getDate() - quickRange);
+
+                startDate = startIst;   // IST
+                endDate = nowIst;       // IST
+            }
+
+            // ---------- DEFAULT (LAST 1 MONTH) ----------
+            const nowIst = new Date(Date.now() + IST_OFFSET);
+            const oneMonthAgoIst = new Date(nowIst);
+            oneMonthAgoIst.setMonth(nowIst.getMonth() - 1);
+
+            // ✅ SINGLE conversion point (IST → UTC)
+            const startUtc = startDate || istToUtc(oneMonthAgoIst);
+            const endUtc = endDate || istToUtc(nowIst);
+
+            // ---------- QUERY ----------
+            const whereClause = {
+                companyId: Number(companyId),
+                createdAt: { [Op.between]: [startUtc, endUtc] },
+            };
+
+            const users = await models.Users.findAll({
+                where: { companyId },
+                attributes: ['id', 'name', 'email', 'contactNo'],
+                raw: true
+            });
+            const userMap = users.reduce((map, user) => {
+                map[user.id] = user;
+                return map;
+            }, {});
+
+
+            const gateEntries = await models.GateEntry.findAll({
+                where: whereClause,
+                raw: true
+            });
+
+            gateEntries.forEach(entry => {
+                entry.user = userMap[entry.userId] || null;
+            });
+
+            return res.status(200).json({
+                message: "reports fetched.",
+                data: gateEntries
+            });
+        }
+        if (documentType === "Product Ageing Inventory Report"){
+            const { stores, itemType, dateAsFor } = req.body;
+            const effectiveDateAsFor = (typeof dateAsFor === 'string' && dateAsFor.trim())
+                ? dateAsFor
+                : new Date().toISOString();
+           
+             const uoms = await models.UOM.findAll({
+                where: {
+                    [Op.or]: [
+                        { companyId: req.body.companyId, status: 1 },
+                        { companyId: null, status: 0 }
+                    ]
+                }
+            });
+            const uomMap = uoms.reduce((acc, curr) => {
+                acc[curr.id] = curr.code;
+                return acc;
+            }, {});
+ 
+           
+            // Get first day of selected month at 00:00:00 UTC
+            const dateObj = new Date(effectiveDateAsFor);
+            if (Number.isNaN(dateObj.getTime())) {
+                return res.status(400).json({ message: "Invalid dateAsFor format. Expected ISO string." });
+            }
+ 
+            const firstDayOfMonth = new Date(Date.UTC(
+                dateObj.getUTCFullYear(),
+                dateObj.getUTCMonth(),
+                1,
+                0,
+                0,
+                0,
+                0
+            ));
+            // Build items filter condition
+            const itemsWhereCondition = {
+                companyId: Number(companyId)
+            };
+            if (Array.isArray(itemType) && itemType.length > 0) {
+                itemsWhereCondition.itemType = {
+                    [Op.in]: itemType
+                };
+            }
+           
+            const items = await models.Items.findAll({
+                where: itemsWhereCondition,
+                raw: true
+            });
+           
+            const itemsMap = items.reduce((acc, curr) => {
+                acc[curr.id] = curr;
+                return acc;
+            }, {});
+           
+            const itemIds = items.map(item => item.id);
+           
+            // Get store items with filter
+            const StoreItems = await models.StoreItems.findAll({
+                where: {
+                    itemId: {
+                        [Op.in]: itemIds
+                    },
+                    ...( Array.isArray(stores) && stores.length > 0 ? { storeId: {
+                        [Op.in]: stores
+                    }} : {}),
+                    quantity: {
+                        [Op.gt]: 0
+                    },
+                    isRejected: false,
+                },
+                raw: true
+            });
+           
+            // Helper function to calculate age bracket
+            const getAgeBracket = (createdAtDate) => {
+                const createdAt = new Date(createdAtDate);
+                if (Number.isNaN(createdAt.getTime())) return null;
+ 
+                const diffInMs = firstDayOfMonth.getTime() - createdAt.getTime();
+ 
+                if (diffInMs < 0) return null;
+                const diffInDays = diffInMs / (1000 * 60 * 60 * 24);
+                const diffInMonths = diffInDays / 30; // Approximate month calculation
+                if (diffInMonths < 3) return '0-3';
+                if (diffInMonths < 6) return '3-6';
+                if (diffInMonths < 9) return '6-9';
+                if (diffInMonths < 12) return '9-12';
+                if (diffInMonths < 24) return '12-24';
+                return '>24';
+            };
+           
+            // Segregate by age brackets and item
+            const ageingReport = {};
+           
+            for (const storeItem of StoreItems) {
+                const itemDetail = itemsMap[storeItem.itemId];
+                if (!itemDetail) continue;
+               
+                const ageBracket = getAgeBracket(storeItem.createdAt);
+                if (!ageBracket) continue;
+               
+                if (!ageingReport[storeItem.itemId]) {
+                    ageingReport[storeItem.itemId] = {
+                        itemId: itemDetail.itemId,
+                        itemName: itemDetail.itemName,
+                        description: itemDetail.description,
+                        category: itemDetail.category,
+                        itemType: itemDetail.itemType,
+                        metricsUnit: uomMap[itemDetail.metricsUnit],
+                        price : itemDetail.price,
+                        brackets: {
+                            '0-3': [],
+                            '3-6': [],
+                            '6-9': [],
+                            '9-12': [],
+                            '12-24': [],
+                            '>24': []
+                        },
+                        totalQuantity: 0
+                    };
+                }
+               
+                ageingReport[storeItem.itemId].brackets[ageBracket].push({
+                    storeId: storeItem.storeId,
+                    quantity: storeItem.quantity,
+                    price: storeItem.price,
+                    createdAt: storeItem.createdAt,
+                });
+               
+                ageingReport[storeItem.itemId].totalQuantity += storeItem.quantity;
+            }
+           
+            const data = Object.values(ageingReport);
+            return res.status(200).json({ data, total: data.length });
         }
 
         const documents = await models.Documents.findAndCountAll({

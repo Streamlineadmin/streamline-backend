@@ -1,5 +1,6 @@
 const express = require('express');
 const bomDetailsController = require('../controller/bomDetails.controller');
+const { upload } = require('../helpers/file-uploader');
 
 const router = express.Router();
 router.post('/', bomDetailsController.getBOMDetails);
@@ -12,5 +13,6 @@ router.post('/getAllItemsBoms', bomDetailsController.getAllItemsBoms);
 router.post('/deleteBillOfMaterials', bomDetailsController.deleteBillOfMaterials);
 router.post('/editBillOfMaterials', bomDetailsController.editBillOfMaterials);
 router.post('/duplicateBom', bomDetailsController.duplicateBom);
+router.post('/bulkUploadBom', upload.single('file'), bomDetailsController.bulkUploadBom);
 
 module.exports = router;
