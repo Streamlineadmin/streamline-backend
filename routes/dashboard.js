@@ -14,4 +14,6 @@ router.post("/predictNext30DaysTotalValue", dashboardController.predictNext30Day
 router.post("/getItemSalesSummaryWithPrediction", dashboardController.getItemSalesSummaryWithPrediction);
 router.post("/predictSales", dashboardController.predictSales);
 router.post("/getDashboardData", dashboardController.getDashboardData);
+router.post("/getStoreWiseItems", dashboardController.getStoreWiseItems);
+
 module.exports = router;

@@ -793,6 +793,99 @@ async function getDashboardData(req, res) {
     }
 }
 
+async function getStoreWiseItems(req, res) {
+    const { storeId, isRejected = false } = req.body;
+    if (!storeId) return res.status(404).json({ message: "Store Not found." });
+
+    try {
+        // Fetch StoreItems and UOMs
+        const [storeItemsRaw, uomData] = await Promise.all([
+            models.StoreItems.findAll({
+                where: {
+                    storeId, isRejected, quantity: {
+                        [Op.gt]: 0
+                    }
+                },
+                raw: true,
+
+            }),
+            models.UOM.findAll({ raw: true })
+        ]);
+
+        // Map UOM IDs to codes
+        const uomMap = uomData.reduce((map, uom) => {
+            map[uom.id] = uom.code;
+            return map;
+        }, {});
+
+        const itemQuantityMap = {};
+        const itemPriceMap = {};
+        const uniqueStoreItems = {};
+
+        for (const item of storeItemsRaw) {
+            const itemId = item.itemId;
+            const quantity = item.quantity;
+            const price = item.price;
+
+            // Aggregate quantity and price
+            itemQuantityMap[itemId] = (itemQuantityMap[itemId] || 0) + quantity;
+            if (quantity > 0) {
+                itemPriceMap[itemId] = (itemPriceMap[itemId] || 0) + (price * quantity);
+            }
+
+            // Store one instance of each item
+            if (!uniqueStoreItems[itemId]) {
+                uniqueStoreItems[itemId] = item;
+            }
+        }
+
+        const itemIds = Object.keys(uniqueStoreItems);
+
+        // Fetch item data and alternate units in bulk
+        const [itemsData, alternateUnitsData] = await Promise.all([
+            models.Items.findAll({
+                where: { id: itemIds },
+                raw: true
+            }),
+            models.AlternateUnits.findAll({
+                where: { itemId: itemIds },
+                raw: true
+            })
+        ]);
+
+        // Map alternate units by itemId
+        const alternateUnitsMap = alternateUnitsData.reduce((acc, unit) => {
+            const itemId = unit.itemId;
+            const unitWithCode = { ...unit, code: uomMap[unit.alternateUnits] || null };
+            acc[itemId] = acc[itemId] || [];
+            acc[itemId].push(unitWithCode);
+            return acc;
+        }, {});
+
+        // Build final store items
+        const storeItems = itemIds.map(itemId => {
+            const baseItem = uniqueStoreItems[itemId];
+            return {
+                ...baseItem,
+                quantity: itemQuantityMap[itemId],
+                averagePrice: itemPriceMap[itemId] || 0,
+                itemId: {
+                    ...itemsData.find(item => item.id === Number(itemId)),
+                    alternateUnit: alternateUnitsMap[itemId] || []
+                }
+            };
+        });
+
+        return res.status(200).json({ storeItems });
+
+    } catch (error) {
+        console.error(error);
+        return res.status(500).json({ message: "Something went wrong." });
+    }
+}
+
+
+
 module.exports = {
     dashboard: dashboard,
     getBuyerSupplierCount: getBuyerSupplierCount,
@@ -805,5 +898,8 @@ module.exports = {
     getTotalUsersByCompany: getTotalUsersByCompany,
     getItemSalesSummaryWithPrediction: getItemSalesSummaryWithPrediction,
     predictSales: predictSales,
-    getDashboardData: getDashboardData
+    getDashboardData: getDashboardData,
+    getStoreWiseItems: getStoreWiseItems,
+
+
 };
