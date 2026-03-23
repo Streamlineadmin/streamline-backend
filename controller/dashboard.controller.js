@@ -884,7 +884,270 @@ async function getStoreWiseItems(req, res) {
     }
 }
 
+async function getCategoryWiseItems(req, res) {
+    try {
+        const { companyId, categoryId } = req.body;
+        if (!companyId || !categoryId) {
+            return res.status(400).json({
+                message: "companyId and categoryId are required"
+            });
+        }
+        const items = await models.Items.findAll({
+            where: {
+                companyId,
+                category: categoryId
+            },
+            raw: true,
+        });
+        res.status(200).json({
+            message: "Category wise items fetched successfully",
+            data: items
+        });
+    } catch (err) {
+        console.log(err);
+        res.status(500).json({
+            message: "Failed to fetch category wise items",
+            error: err.message || err
+        });
+    }
+}
 
+async function fastMovingSlowMovingItems(req, res) {
+    try {
+        const { companyId, type } = req.body;
+
+        if (!companyId || !type) {
+            return res.status(400).json({
+                message: "companyId and type are required"
+            });
+        }
+
+        const validTypes = ['Fast Moving', 'Slow Moving', 'Non Moving'];
+        if (!validTypes.includes(type)) {
+            return res.status(400).json({
+                message: "Invalid type. Must be 'Fast Moving', 'Slow Moving', or 'Non Moving'"
+            });
+        }
+
+        const items = await models.Items.findAll({
+            where: {
+                companyId: Number(companyId)
+            },
+            raw: true
+        });
+
+        const stockTransfers = await models.StockTransfer.findAll({
+            where: {
+                itemId: { [Op.in]: items.map(item => item.id) },
+                quantity: { [Op.ne]: 0 },
+                isRejected: false
+            },
+            raw: true
+        });
+
+        const fastSlowMovingMap = {};
+        for (const element of stockTransfers) {
+            const bucket = getAgingBucket90Days(element.createdAt);
+            if (fastSlowMovingMap[bucket]) {
+                fastSlowMovingMap[bucket] = Array.from(new Set([...fastSlowMovingMap[bucket], element.itemId]));
+            } else {
+                fastSlowMovingMap[bucket] = [element.itemId];
+            }
+        }
+
+        const categorizedItems = {};
+        for (const age in fastSlowMovingMap) {
+            let itemIds = [];
+            if (age === 'Fast Moving') {
+                itemIds = fastSlowMovingMap[age];
+            } else if (age === 'Slow Moving') {
+                itemIds = fastSlowMovingMap[age]?.filter(data => !(fastSlowMovingMap?.['Fast Moving'] || [])?.includes(data));
+            } else {
+                itemIds = fastSlowMovingMap[age]?.filter(data => ![...(fastSlowMovingMap?.['Fast Moving'] || []), ...(fastSlowMovingMap?.['Slow Moving'] || [])]?.includes(data));
+            }
+            categorizedItems[age] = items.filter(item => itemIds.includes(item.id));
+        }
+
+        const requestedData = categorizedItems[type] || [];
+
+        return res.status(200).json({
+            message: `${type} items fetched successfully`,
+            data: requestedData
+        });
+
+    } catch (err) {
+        console.log(err);
+        res.status(500).json({
+            message: "Failed to fetch categorized items",
+            error: err.message || err
+        });
+    }
+}
+
+async function stockLevelAnalysis(req, res) {
+    try {
+        const { companyId, type } = req.body;
+
+        if (!companyId || !type) {
+            return res.status(400).json({
+                message: "companyId and type are required"
+            });
+        }
+
+        const validTypes = ['ideal', 'min', 'max', 'outOfStock'];
+        if (!validTypes.includes(type)) {
+            return res.status(400).json({
+                message: "Invalid type. Must be one of: 'ideal', 'min', 'max', 'outOfStock'"
+            });
+        }
+
+        const items = await models.Items.findAll({
+            where: {
+                companyId: Number(companyId)
+            },
+            raw: true
+        });
+
+        const storeItems = await models.StoreItems.findAll({
+            where: {
+                itemId: {
+                    [Op.in]: items.map(item => item.id),
+                },
+                quantity: {
+                    [Op.gt]: 0
+                },
+                isRejected: false,
+            },
+            attributes: ['quantity', 'itemId'],
+            raw: true
+        });
+
+        const itemsCountMap = {};
+        for (const element of storeItems) {
+            itemsCountMap[element.itemId] = (itemsCountMap[element.itemId] || 0) + element.quantity;
+        }
+
+        const idealItems = [];
+        const minItems = [];
+        const maxItems = [];
+        const outOfStockItems = [];
+
+        for (const element of items) {
+            const count = itemsCountMap[element.id] || 0;
+            // Add current quantity so frontend can see what the stock level is
+            const itemData = { ...element, currentQuantity: count };
+
+            if (!count) {
+                outOfStockItems.push(itemData);
+            }
+
+            if (!element.minStock && !element.maxStock) {
+                idealItems.push(itemData);
+            } else if (element.minStock && element.maxStock) {
+                if (count >= element.minStock && count <= element.maxStock) idealItems.push(itemData);
+                else if (count < element.minStock) minItems.push(itemData);
+                else if (count > element.maxStock) maxItems.push(itemData);
+            } else if (element.minStock && !element.maxStock) {
+                if (count >= element.minStock) idealItems.push(itemData);
+                else minItems.push(itemData);
+            } else if (!element.minStock && element.maxStock) {
+                if (count <= element.maxStock) idealItems.push(itemData);
+                else maxItems.push(itemData);
+            }
+        }
+
+        const categorizedItems = {
+            ideal: idealItems,
+            min: minItems,
+            max: maxItems,
+            outOfStock: outOfStockItems
+        };
+
+        const requestedData = categorizedItems[type] || [];
+
+        return res.status(200).json({
+            message: `${type} stock level analysis fetched successfully`,
+            data: requestedData
+        });
+
+    } catch (err) {
+        console.log(err);
+        res.status(500).json({
+            message: "Failed to fetch stock level analysis",
+            error: err.message || err
+        });
+    }
+}
+
+async function stockAgeing(req, res) {
+    try {
+        const { companyId, type } = req.body;
+
+        if (!companyId || !type) {
+            return res.status(400).json({
+                message: "companyId and type are required"
+            });
+        }
+
+        const validTypes = ['0–30 days', '31–60 days', '61–90 days', '91–180 days', '180+ days'];
+        if (!validTypes.includes(type)) {
+            return res.status(400).json({
+                message: "Invalid type. Must be one of: '0–30 days', '31–60 days', '61–90 days', '91–180 days', '180+ days'"
+            });
+        }
+
+        const items = await models.Items.findAll({
+            where: {
+                companyId: Number(companyId)
+            },
+            raw: true
+        });
+
+        const storeItems = await models.StoreItems.findAll({
+            where: {
+                itemId: {
+                    [Op.in]: items.map(item => item.id),
+                },
+                quantity: {
+                    [Op.gt]: 0
+                },
+                isRejected: false,
+            },
+            attributes: ['id', 'itemId', 'createdAt'],
+            raw: true
+        });
+
+        const stockAgeingMap = {};
+        for (const element of storeItems) {
+            const bucket = getAgingBucket(element.createdAt);
+            if (stockAgeingMap[bucket]) {
+                stockAgeingMap[bucket] = Array.from(new Set([...stockAgeingMap[bucket], element.itemId]));
+            } else {
+                stockAgeingMap[bucket] = [element.itemId];
+            }
+        }
+
+        const responseData = {};
+        for (const bucket in stockAgeingMap) {
+            const itemIds = stockAgeingMap[bucket];
+            responseData[bucket] = items.filter(item => itemIds.includes(item.id));
+        }
+
+        const requestedData = responseData[type] || [];
+
+        return res.status(200).json({
+            message: `${type} stock ageing data fetched successfully`,
+            data: requestedData
+        });
+
+    } catch (err) {
+        console.log(err);
+        res.status(500).json({
+            message: "Failed to fetch stock ageing",
+            error: err.message || err
+        });
+    }
+}
 
 module.exports = {
     dashboard: dashboard,
@@ -900,6 +1163,9 @@ module.exports = {
     predictSales: predictSales,
     getDashboardData: getDashboardData,
     getStoreWiseItems: getStoreWiseItems,
-
+    getCategoryWiseItems: getCategoryWiseItems,
+    fastMovingSlowMovingItems: fastMovingSlowMovingItems,
+    stockLevelAnalysis: stockLevelAnalysis,
+    stockAgeing: stockAgeing
 
 };
