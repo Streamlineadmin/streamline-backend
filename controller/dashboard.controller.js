@@ -552,6 +552,9 @@ async function getDashboardData(req, res) {
             const production = await models.Production.findAll({
                 where: {
                     ...whereClause,
+                    status: {
+                        [Op.ne]: 0
+                    },
                     ...(assignedTo ? { assignedTo } : {}),
                     ...(salesOrderNumber ? {
                         salesOrderNumber: {
@@ -1149,6 +1152,157 @@ async function stockAgeing(req, res) {
     }
 }
 
+async function onTimeDelayProduction(req, res) {
+    try {
+        const { companyId, start, end, assignedTo, salesOrderNumber, type } = req.body;
+
+        if (!companyId || !type) {
+            return res.status(400).json({
+                message: "companyId and type are required"
+            });
+        }
+
+        const validTypes = ['onTime', 'delay'];
+        if (!validTypes.includes(type)) {
+            return res.status(400).json({
+                message: "Invalid type. Must be 'onTime' or 'delay'"
+            });
+        }
+
+        const whereClause = { companyId: Number(companyId) };
+        if (start && end) {
+            whereClause.createdAt = {
+                [Op.gte]: new Date(start),
+                [Op.lte]: new Date(end)
+            };
+        }
+
+        const production = await models.Production.findAll({
+            where: {
+                ...whereClause,
+                status: {
+                    [Op.ne]: 0
+                },
+                ...(assignedTo ? { assignedTo } : {}),
+                ...(salesOrderNumber ? {
+                    salesOrderNumber: {
+                        [Op.in]: salesOrderNumber
+                    }
+                } : {})
+            },
+            raw: true
+        });
+
+        const onTimeItems = [];
+        const delayItems = [];
+
+        for (const prod of production) {
+            const completion = new Date(prod.productionCompletionDate);
+            const endDate = new Date(prod.productionEndDate);
+            if (endDate > completion) {
+                delayItems.push(prod);
+            } else {
+                onTimeItems.push(prod);
+            }
+        }
+
+        const categorizedItems = {
+            onTime: onTimeItems,
+            delay: delayItems
+        };
+
+        const requestedData = categorizedItems[type] || [];
+
+        return res.status(200).json({
+            message: `${type} production records fetched successfully`,
+            data: requestedData
+        });
+
+    } catch (err) {
+        console.log(err);
+        res.status(500).json({
+            message: "Failed to fetch onTimeDelayProduction",
+            error: err.message || err
+        });
+    }
+}
+
+async function workOrderStatus(req, res) {
+    try {
+        const { companyId, start, end, assignedTo, salesOrderNumber, type } = req.body;
+
+        if (!companyId || !type) {
+            return res.status(400).json({
+                message: "companyId and type are required"
+            });
+        }
+
+        const validTypes = ['inplanning', 'ongoing', 'onhold', 'completed'];
+        if (!validTypes.includes(type)) {
+            return res.status(400).json({
+                message: "Invalid type. Must be 'inplanning', 'ongoing', 'onhold', or 'completed'"
+            });
+        }
+
+        const whereClause = { companyId: Number(companyId) };
+        if (start && end) {
+            whereClause.createdAt = {
+                [Op.gte]: new Date(start),
+                [Op.lte]: new Date(end)
+            };
+        }
+
+        const production = await models.Production.findAll({
+            where: {
+                ...whereClause,
+                status: {
+                    [Op.ne]: 0
+                },
+                ...(assignedTo ? { assignedTo } : {}),
+                ...(salesOrderNumber ? {
+                    salesOrderNumber: {
+                        [Op.in]: salesOrderNumber
+                    }
+                } : {})
+            },
+            raw: true
+        });
+
+        const inplanningItems = [];
+        const ongoingItems = [];
+        const onholdItems = [];
+        const completedItems = [];
+
+        for (const prod of production) {
+            if (prod.status == 1) inplanningItems.push(prod);
+            else if (prod.status == 2) ongoingItems.push(prod);
+            else if (prod.status == 3) onholdItems.push(prod);
+            else completedItems.push(prod);
+        }
+
+        const categorizedItems = {
+            inplanning: inplanningItems,
+            ongoing: ongoingItems,
+            onhold: onholdItems,
+            completed: completedItems
+        };
+
+        const requestedData = categorizedItems[type] || [];
+
+        return res.status(200).json({
+            message: `${type} production records fetched successfully`,
+            data: requestedData
+        });
+
+    } catch (err) {
+        console.log(err);
+        res.status(500).json({
+            message: "Failed to fetch workOrder status",
+            error: err.message || err
+        });
+    }
+}
+
 module.exports = {
     dashboard: dashboard,
     getBuyerSupplierCount: getBuyerSupplierCount,
@@ -1166,6 +1320,7 @@ module.exports = {
     getCategoryWiseItems: getCategoryWiseItems,
     fastMovingSlowMovingItems: fastMovingSlowMovingItems,
     stockLevelAnalysis: stockLevelAnalysis,
-    stockAgeing: stockAgeing
-
+    stockAgeing: stockAgeing,
+    onTimeDelayProduction: onTimeDelayProduction,
+    workOrderStatus: workOrderStatus
 };

@@ -19,4 +19,6 @@ router.post("/getCategoryWiseItems", dashboardController.getCategoryWiseItems);
 router.post("/fastMovingSlowMovingItems", dashboardController.fastMovingSlowMovingItems);
 router.post("/stockLevelAnalysis", dashboardController.stockLevelAnalysis);
 router.post("/stockAgeing", dashboardController.stockAgeing);
+router.post("/onTimeDelayProduction", dashboardController.onTimeDelayProduction);
+router.post("/workOrderStatus", dashboardController.workOrderStatus);
 module.exports = router;
