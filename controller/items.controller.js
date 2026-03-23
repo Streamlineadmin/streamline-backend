@@ -517,19 +517,45 @@ async function deleteItems(req, res) {
 // }
 
 async function getItems(req, res) {
-    const { companyId } = req.body;
+    const { companyId, currentPage, pageSize } = req.body;
 
     try {
-        // Step 1: Retrieve all items for the given company
-        const items = await models.Items.findAll({
+        const queryOptions = {
             where: { companyId },
             raw: true,
             order: [['createdAt', 'DESC']]
-        });
+        };
+
+        let isPaginated = false;
+        if (currentPage && pageSize) {
+            isPaginated = true;
+            queryOptions.limit = Number(pageSize);
+            queryOptions.offset = (Number(currentPage) - 1) * Number(pageSize);
+        }
+
+        // Step 1: Retrieve items for the given company
+        let items;
+        let totalItems = 0;
+
+        if (isPaginated) {
+            const result = await models.Items.findAndCountAll(queryOptions);
+            items = result.rows;
+            totalItems = result.count;
+        } else {
+            items = await models.Items.findAll(queryOptions);
+            totalItems = items.length;
+        }
 
         if (!items || items.length === 0) {
-            // Explicitly send clean JSON response
             res.setHeader('Content-Type', 'application/json');
+            if (isPaginated) {
+                return res.status(200).send(JSON.stringify({
+                    data: [],
+                    totalItems: 0,
+                    currentPage: Number(currentPage),
+                    totalPages: 0
+                }));
+            }
             return res.status(200).send('[]');
         }
 
@@ -591,12 +617,19 @@ async function getItems(req, res) {
 
         // ✅ Safe response: avoid Content-Length mismatch
         res.setHeader('Content-Type', 'application/json');
-        res.status(200).send(JSON.stringify(itemsWithStores));
+        if (isPaginated) {
+            return res.status(200).send(JSON.stringify({
+                data: itemsWithStores,
+                totalItems,
+                currentPage: Number(currentPage),
+                totalPages: Math.ceil(totalItems / Number(pageSize))
+            }));
+        } else {
+            return res.status(200).send(JSON.stringify(itemsWithStores));
+        }
     } catch (error) {
         console.error(error);
-        res
-            .status(500)
-            .json({ message: 'Something went wrong, please try again later!' });
+        res.status(500).json({ message: 'Something went wrong, please try again later!' });
     }
 }
 
