@@ -535,7 +535,9 @@ async function getPaginatedItems(req, res) {
                 { itemId: { [Op.like]: `%${search}%` } },
                 { itemName: { [Op.like]: `%${search}%` } },
                 { itemType: { [Op.like]: `%${search}%` } },
-                { price: { [Op.like]: `%${search}%` } },
+                models.Sequelize.where(models.Sequelize.cast(models.Sequelize.col('price'), 'CHAR'), {
+                    [Op.like]: `%${search}%`
+                }),
                 models.Sequelize.where(models.Sequelize.cast(models.Sequelize.col('customFields'), 'CHAR'), {
                     [Op.like]: `%${search}%`
                 })
@@ -545,7 +547,15 @@ async function getPaginatedItems(req, res) {
         if (itemId) queryOptions.where.itemId = { [Op.like]: `%${itemId}%` };
         if (itemName) queryOptions.where.itemName = { [Op.like]: `%${itemName}%` };
         if (itemType) queryOptions.where.itemType = { [Op.like]: `%${itemType}%` };
-        if (price) queryOptions.where.price = { [Op.like]: `%${price}%` };
+        
+        if (price) {
+            queryOptions.where[Op.and] = queryOptions.where[Op.and] || [];
+            queryOptions.where[Op.and].push(
+                models.Sequelize.where(models.Sequelize.cast(models.Sequelize.col('price'), 'CHAR'), {
+                    [Op.like]: `%${price}%`
+                })
+            );
+        }
 
         if (customFields && typeof customFields === 'object') {
             const customFieldConditions = [];
