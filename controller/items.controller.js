@@ -521,7 +521,7 @@ async function getItems(req, res) {
 }
 
 async function getPaginatedItems(req, res) {
-    const { companyId, currentPage, pageSize, itemId, itemName, itemType, price, search, customFields } = req.body;
+    const { companyId, currentPage, pageSize, itemId, itemName, itemType, price, search, customFields, filters } = req.body;
 
     try {
         const queryOptions = {
@@ -547,7 +547,7 @@ async function getPaginatedItems(req, res) {
         if (itemId) queryOptions.where.itemId = { [Op.like]: `%${itemId}%` };
         if (itemName) queryOptions.where.itemName = { [Op.like]: `%${itemName}%` };
         if (itemType) queryOptions.where.itemType = { [Op.like]: `%${itemType}%` };
-        
+
         if (price) {
             queryOptions.where[Op.and] = queryOptions.where[Op.and] || [];
             queryOptions.where[Op.and].push(
@@ -573,6 +573,41 @@ async function getPaginatedItems(req, res) {
                     queryOptions.where[Op.and].push(...customFieldConditions);
                 } else {
                     queryOptions.where[Op.and] = customFieldConditions;
+                }
+            }
+        }
+
+        if (filters && typeof filters === 'object') {
+            if (filters.category) queryOptions.where.category = filters.category;
+            if (filters.subCategory) queryOptions.where.subCategory = filters.subCategory;
+            if (filters.microCategory) queryOptions.where.microCategory = filters.microCategory;
+            if (filters.itemType && Array.isArray(filters.itemType) && filters.itemType.length > 0) {
+                queryOptions.where.itemType = { [Op.in]: filters.itemType };
+            }
+            if (filters.price) {
+                if (Array.isArray(filters.price) && filters.price.length === 2) {
+                    queryOptions.where.price = { [Op.between]: filters.price };
+                } else if (typeof filters.price === 'object') {
+                    if (filters.price.min !== undefined && filters.price.max !== undefined) {
+                        queryOptions.where.price = { [Op.between]: [filters.price.min, filters.price.max] };
+                    } else if (filters.price.min !== undefined) {
+                        queryOptions.where.price = { [Op.gte]: filters.price.min };
+                    } else if (filters.price.max !== undefined) {
+                        queryOptions.where.price = { [Op.lte]: filters.price.max };
+                    }
+                }
+            }
+            if (filters.date) {
+                if (Array.isArray(filters.date) && filters.date.length === 2) {
+                   queryOptions.where.createdAt = { [Op.between]: filters.date };
+                } else if (typeof filters.date === 'object') {
+                    if (filters.date.startDate && filters.date.endDate) {
+                        queryOptions.where.createdAt = { [Op.between]: [filters.date.startDate, filters.date.endDate] };
+                    } else if (filters.date.startDate) {
+                        queryOptions.where.createdAt = { [Op.gte]: filters.date.startDate };
+                    } else if (filters.date.endDate) {
+                        queryOptions.where.createdAt = { [Op.lte]: filters.date.endDate };
+                    }
                 }
             }
         }
