@@ -521,7 +521,7 @@ async function getItems(req, res) {
 }
 
 async function getPaginatedItems(req, res) {
-    const { companyId, currentPage, pageSize } = req.body;
+    const { companyId, currentPage, pageSize, itemId, itemName, itemType, price, search } = req.body;
 
     try {
         const queryOptions = {
@@ -529,6 +529,20 @@ async function getPaginatedItems(req, res) {
             raw: true,
             order: [['createdAt', 'DESC']]
         };
+
+        if (search) {
+            queryOptions.where[Op.or] = [
+                { itemId: { [Op.like]: `%${search}%` } },
+                { itemName: { [Op.like]: `%${search}%` } },
+                { itemType: { [Op.like]: `%${search}%` } },
+                { price: { [Op.like]: `%${search}%` } }
+            ];
+        }
+
+        if (itemId) queryOptions.where.itemId = { [Op.like]: `%${itemId}%` };
+        if (itemName) queryOptions.where.itemName = { [Op.like]: `%${itemName}%` };
+        if (itemType) queryOptions.where.itemType = { [Op.like]: `%${itemType}%` };
+        if (price) queryOptions.where.price = { [Op.like]: `%${price}%` };
 
         let isPaginated = false;
         if (currentPage && pageSize) {
