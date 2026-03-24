@@ -521,7 +521,7 @@ async function getItems(req, res) {
 }
 
 async function getPaginatedItems(req, res) {
-    const { companyId, currentPage, pageSize, itemId, itemName, itemType, price, search } = req.body;
+    const { companyId, currentPage, pageSize, itemId, itemName, itemType, price, search, customFields } = req.body;
 
     try {
         const queryOptions = {
@@ -535,7 +535,10 @@ async function getPaginatedItems(req, res) {
                 { itemId: { [Op.like]: `%${search}%` } },
                 { itemName: { [Op.like]: `%${search}%` } },
                 { itemType: { [Op.like]: `%${search}%` } },
-                { price: { [Op.like]: `%${search}%` } }
+                { price: { [Op.like]: `%${search}%` } },
+                models.Sequelize.where(models.Sequelize.cast(models.Sequelize.col('customFields'), 'CHAR'), {
+                    [Op.like]: `%${search}%`
+                })
             ];
         }
 
@@ -543,6 +546,26 @@ async function getPaginatedItems(req, res) {
         if (itemName) queryOptions.where.itemName = { [Op.like]: `%${itemName}%` };
         if (itemType) queryOptions.where.itemType = { [Op.like]: `%${itemType}%` };
         if (price) queryOptions.where.price = { [Op.like]: `%${price}%` };
+
+        if (customFields && typeof customFields === 'object') {
+            const customFieldConditions = [];
+            for (const [key, value] of Object.entries(customFields)) {
+                if (value !== undefined && value !== null && value !== '') {
+                    customFieldConditions.push(
+                        models.Sequelize.literal(
+                            `JSON_UNQUOTE(JSON_EXTRACT(customFields, '$."${key}"')) LIKE '%${String(value)}%'`
+                        )
+                    );
+                }
+            }
+            if (customFieldConditions.length > 0) {
+                if (queryOptions.where[Op.and]) {
+                    queryOptions.where[Op.and].push(...customFieldConditions);
+                } else {
+                    queryOptions.where[Op.and] = customFieldConditions;
+                }
+            }
+        }
 
         let isPaginated = false;
         if (currentPage && pageSize) {
