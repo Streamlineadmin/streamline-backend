@@ -8,6 +8,7 @@ router.post('/addItem', upload.array('imageUrl'), itemController.addItem);
 router.post('/editItem', upload.array('imageUrl'), itemController.editItem);
 router.post('/deleteItem', itemController.deleteItem);
 router.post('/', itemController.getItems);
+router.post('/getPaginatedItems', itemController.getPaginatedItems);
 router.post('/deleteItems', itemController.deleteItems);
 router.post('/addBulkItem', upload.single('file'), itemController.addBulkItem);
 router.post('/editBulkItem', upload.single('file'), itemController.bulkEditItems);
