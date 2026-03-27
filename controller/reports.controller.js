@@ -1938,6 +1938,7 @@ async function getReports(req, res) {
                 if (!dateWiseMap[dateKey]) {
                     dateWiseMap[dateKey] = {
                         date: dateKey,
+                        documentNumber: dateKey,
                         quantity: 0
                     };
                 }
@@ -2057,6 +2058,7 @@ async function getReports(req, res) {
                 if (!dateWiseMap[dateKey]) {
                     dateWiseMap[dateKey] = {
                         date: dateKey,
+                        documentNumber: dateKey,
                         stockIn: 0,
                         stockOut: 0,
                         currentStock: 0
@@ -2203,9 +2205,7 @@ async function getReports(req, res) {
             const salesOrder = await models.Documents.findAll({
                 where: {
                     companyId: Number(companyId),
-                    documentNumber: {
-                        [Op.in]: documents?.rows?.filter(doc => doc?.orderConfirmationNumber)?.map(doc => doc.orderConfirmationNumber)
-                    },
+                    documentType: 'Sales Order'
                 },
                 raw: true
             });
@@ -2759,7 +2759,7 @@ async function getReports(req, res) {
         const formattedResult = (documents?.rows || documents)?.map(document => {
             let itemToSend = uniqueItems.filter(item => item.documentNumber === document.documentNumber);
             if (documentType === documentTypes.invoice) itemToSend = itemToSend?.map(item => {
-                const salesItemsCount = salesItemsMap?.[document?.orderConfirmationNumber]?.[item.itemId];
+                const salesItemsCount = document.orderConfirmationNumber ? document?.orderConfirmationNumber?.split(",")?.reduce((acc, curr) => acc + (salesItemsMap?.[curr]?.[item.itemId] || 0), 0) : 0;
                 const salesReturnCount = salesReturnItemsMap?.[document?.documentNumber]?.[item.itemId];
                 const existingQuantity = pendingItemsMap?.[document?.orderConfirmationNumber]?.[item.itemId] || 0 + item?.quantity;
                 if (!pendingItemsMap?.[document?.orderConfirmationNumber]) {
@@ -2776,7 +2776,7 @@ async function getReports(req, res) {
                 return ({ ...item, invoiceItemsCount, invoicePrice });
             })
             if (documentType === documentTypes.deliveryChallan || documentType === documentTypes.proformaInvoice) itemToSend = itemToSend?.map(item => {
-                const salesItemsCount = salesItemsMap?.[document?.orderConfirmationNumber]?.[item.itemId];
+                const salesItemsCount = document.orderConfirmationNumber ? document?.orderConfirmationNumber?.split(",")?.reduce((acc, curr) => acc + (salesItemsMap?.[curr]?.[item.itemId] || 0), 0) : 0;
                 return ({ ...item, salesItemsCount });
             })
 
@@ -2818,8 +2818,8 @@ async function getReports(req, res) {
             });
             if (documentType === documentTypes.salesOrder) {
                 itemToSend = itemToSend.map(item => {
-                    const challanQuantity = (deliveryChallanItemsMap?.[document.documentNumber]?.[item?.itemId] || 0)?.toFixed(2);
-                    const invoiceQuantity = (salesItemsMap?.[document.documentNumber]?.[item?.itemId] || 0)?.toFixed(2);
+                    const challanQuantity = (item?.receivedQuantity || 0)?.toFixed(2);
+                    const invoiceQuantity = (item?.pendingQuantity || 0)?.toFixed(2);
                     const salesReturnQuantity = (salesReturnItemsMap?.[document.documentNumber]?.[item.itemId] || 0)?.toFixed(2);
                     const pendingQuantity = Math.max(((item.quantity + Number(salesReturnQuantity)) - (Number(challanQuantity) + Number(invoiceQuantity))), 0)?.toFixed(2);
                     return { ...item, challanQuantity, invoiceQuantity, pendingQuantity, salesReturnQuantity };

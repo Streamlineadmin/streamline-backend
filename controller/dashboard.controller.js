@@ -1183,6 +1183,9 @@ async function onTimeDelayProduction(req, res) {
                 status: {
                     [Op.ne]: 0
                 },
+                productionId: {
+                    [Op.ne]: null
+                },
                 ...(assignedTo ? { assignedTo } : {}),
                 ...(salesOrderNumber ? {
                     salesOrderNumber: {
@@ -1257,6 +1260,9 @@ async function workOrderStatus(req, res) {
                 ...whereClause,
                 status: {
                     [Op.ne]: 0
+                },
+                productionId: {
+                    [Op.ne]: null
                 },
                 ...(assignedTo ? { assignedTo } : {}),
                 ...(salesOrderNumber ? {
