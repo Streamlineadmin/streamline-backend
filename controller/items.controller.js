@@ -436,86 +436,6 @@ async function deleteItems(req, res) {
     }
 }
 
-// no content issue code
-// async function getItems(req, res) {
-//     const { companyId } = req.body;
-
-//     try {
-//         // Step 1: Retrieve all items for the given company
-//         const items = await models.Items.findAll({
-//             where: { companyId },
-//             raw: true
-//         });
-
-//         if (!items || items.length === 0) {
-//             return res.status(200).json([]);
-//         }
-
-//         // Step 2: Retrieve store IDs and quantities for ALL items (rejected + non-rejected)
-//         const itemIds = items.map(item => item.id);
-
-//         const storeItems = await models.StoreItems.findAll({
-//             where: { itemId: itemIds },
-//             attributes: ['itemId', 'storeId', 'quantity', 'isRejected'],
-//             raw: true
-//         });
-
-//         // Step 3: Retrieve alternate units
-//         const alternateUnits = await models.AlternateUnits.findAll({
-//             where: { itemId: itemIds },
-//             attributes: ['itemId', 'alternateUnits', 'conversionfactor', 'ip_address'],
-//             raw: true
-//         });
-
-//         // Step 4: Structure the response
-//         const itemsWithStores = items.map(item => {
-//             const relatedStoreItems = storeItems.filter(si => si.itemId === item.id);
-
-//             // Group quantities by store and isRejected
-//             const storeDataMap = {};
-//             relatedStoreItems.forEach(({ storeId, quantity, isRejected }) => {
-//                 if (!storeDataMap[storeId]) {
-//                     storeDataMap[storeId] = { quantity: 0, rejectedQuantity: 0 };
-//                 }
-//                 if (isRejected) {
-//                     storeDataMap[storeId].rejectedQuantity += quantity;
-//                 } else {
-//                     storeDataMap[storeId].quantity += quantity;
-//                 }
-//             });
-
-//             const stores = Object.entries(storeDataMap)
-//                 .filter(([_, data]) => data.quantity > 0 || data.rejectedQuantity > 0)
-//                 .map(([storeId, data]) => ({
-//                     storeId: parseInt(storeId),
-//                     ...(data?.quantity ? { quantity: data.quantity } : {}),
-//                     rejectedQuantity: data.rejectedQuantity
-//                 }));
-
-//             const itemAlternateUnits = alternateUnits
-//                 .filter(unit => unit.itemId === item.id)
-//                 .map(({ alternateUnits, conversionfactor, ip_address }) => ({
-//                     alternateUnits,
-//                     conversionfactor,
-//                     ip_address
-//                 }));
-
-//             return {
-//                 ...item,
-//                 stores,
-//                 alternateUnits: itemAlternateUnits
-//             };
-//         });
-
-//         res.status(200).json(itemsWithStores);
-//     } catch (error) {
-//         console.error(error);
-//         res.status(500).json({
-//             message: "Something went wrong, please try again later!"
-//         });
-//     }
-// }
-
 async function getItems(req, res) {
     const { companyId } = req.body;
 
@@ -597,6 +517,205 @@ async function getItems(req, res) {
         res
             .status(500)
             .json({ message: 'Something went wrong, please try again later!' });
+    }
+}
+
+async function getPaginatedItems(req, res) {
+    const { companyId, currentPage, pageSize, itemId, itemName, itemType, price, search, customFields, filters } = req.body;
+
+    try {
+        const queryOptions = {
+            where: { companyId },
+            raw: true,
+            order: [['createdAt', 'DESC']]
+        };
+
+        if (search) {
+            queryOptions.where[Op.or] = [
+                { itemId: { [Op.like]: `%${search}%` } },
+                { itemName: { [Op.like]: `%${search}%` } },
+                { itemType: { [Op.like]: `%${search}%` } },
+                models.Sequelize.where(models.Sequelize.cast(models.Sequelize.col('price'), 'CHAR'), {
+                    [Op.like]: `%${search}%`
+                }),
+                models.Sequelize.where(models.Sequelize.cast(models.Sequelize.col('customFields'), 'CHAR'), {
+                    [Op.like]: `%${search}%`
+                })
+            ];
+        }
+
+        if (itemId) queryOptions.where.itemId = { [Op.like]: `%${itemId}%` };
+        if (itemName) queryOptions.where.itemName = { [Op.like]: `%${itemName}%` };
+        if (itemType) queryOptions.where.itemType = { [Op.like]: `%${itemType}%` };
+
+        if (price) {
+            queryOptions.where[Op.and] = queryOptions.where[Op.and] || [];
+            queryOptions.where[Op.and].push(
+                models.Sequelize.where(models.Sequelize.cast(models.Sequelize.col('price'), 'CHAR'), {
+                    [Op.like]: `%${price}%`
+                })
+            );
+        }
+
+        if (customFields && typeof customFields === 'object') {
+            const customFieldConditions = [];
+            for (const [key, value] of Object.entries(customFields)) {
+                if (value !== undefined && value !== null && value !== '') {
+                    customFieldConditions.push(
+                        models.Sequelize.literal(
+                            `JSON_UNQUOTE(JSON_EXTRACT(customFields, '$."${key}"')) LIKE '%${String(value)}%'`
+                        )
+                    );
+                }
+            }
+            if (customFieldConditions.length > 0) {
+                if (queryOptions.where[Op.and]) {
+                    queryOptions.where[Op.and].push(...customFieldConditions);
+                } else {
+                    queryOptions.where[Op.and] = customFieldConditions;
+                }
+            }
+        }
+
+        if (filters && typeof filters === 'object') {
+            if (filters.category) queryOptions.where.category = filters.category;
+            if (filters.subCategory) queryOptions.where.subCategory = filters.subCategory;
+            if (filters.microCategory) queryOptions.where.microCategory = filters.microCategory;
+            if (filters.itemType && Array.isArray(filters.itemType) && filters.itemType.length > 0) {
+                queryOptions.where.itemType = { [Op.in]: filters.itemType };
+            }
+            if (filters.price) {
+                if (Array.isArray(filters.price) && filters.price.length === 2) {
+                    queryOptions.where.price = { [Op.between]: filters.price };
+                } else if (typeof filters.price === 'object') {
+                    if (filters.price.min !== undefined && filters.price.max !== undefined) {
+                        queryOptions.where.price = { [Op.between]: [filters.price.min, filters.price.max] };
+                    } else if (filters.price.min !== undefined) {
+                        queryOptions.where.price = { [Op.gte]: filters.price.min };
+                    } else if (filters.price.max !== undefined) {
+                        queryOptions.where.price = { [Op.lte]: filters.price.max };
+                    }
+                }
+            }
+            if (filters.date) {
+                if (Array.isArray(filters.date) && filters.date.length === 2) {
+                   queryOptions.where.createdAt = { [Op.between]: filters.date };
+                } else if (typeof filters.date === 'object') {
+                    if (filters.date.startDate && filters.date.endDate) {
+                        queryOptions.where.createdAt = { [Op.between]: [filters.date.startDate, filters.date.endDate] };
+                    } else if (filters.date.startDate) {
+                        queryOptions.where.createdAt = { [Op.gte]: filters.date.startDate };
+                    } else if (filters.date.endDate) {
+                        queryOptions.where.createdAt = { [Op.lte]: filters.date.endDate };
+                    }
+                }
+            }
+        }
+
+        let isPaginated = false;
+        if (currentPage && pageSize) {
+            isPaginated = true;
+            queryOptions.limit = Number(pageSize);
+            queryOptions.offset = (Number(currentPage) - 1) * Number(pageSize);
+        }
+
+        // Step 1: Retrieve items for the given company
+        let items;
+        let totalItems = 0;
+
+        if (isPaginated) {
+            const result = await models.Items.findAndCountAll(queryOptions);
+            items = result.rows;
+            totalItems = result.count;
+        } else {
+            items = await models.Items.findAll(queryOptions);
+            totalItems = items.length;
+        }
+
+        if (!items || items.length === 0) {
+            res.setHeader('Content-Type', 'application/json');
+            if (isPaginated) {
+                return res.status(200).send(JSON.stringify({
+                    data: [],
+                    totalItems: 0,
+                    currentPage: Number(currentPage),
+                    totalPages: 0
+                }));
+            }
+            return res.status(200).send('[]');
+        }
+
+        // Step 2: Retrieve store IDs and quantities
+        const itemIds = items.map((item) => item.id);
+
+        const storeItems = await models.StoreItems.findAll({
+            where: { itemId: itemIds },
+            attributes: ['itemId', 'storeId', 'quantity', 'isRejected'],
+            raw: true,
+        });
+
+        // Step 3: Retrieve alternate units
+        const alternateUnits = await models.AlternateUnits.findAll({
+            where: { itemId: itemIds },
+            attributes: ['itemId', 'alternateUnits', 'conversionfactor', 'ip_address'],
+            raw: true,
+        });
+
+        // Step 4: Structure the response
+        const itemsWithStores = items.map((item) => {
+            const relatedStoreItems = storeItems.filter((si) => si.itemId === item.id);
+
+            // Group quantities by store and isRejected
+            const storeDataMap = {};
+            relatedStoreItems.forEach(({ storeId, quantity, isRejected }) => {
+                if (!storeDataMap[storeId]) {
+                    storeDataMap[storeId] = { quantity: 0, rejectedQuantity: 0 };
+                }
+                if (isRejected) {
+                    storeDataMap[storeId].rejectedQuantity += quantity;
+                } else {
+                    storeDataMap[storeId].quantity += quantity;
+                }
+            });
+
+            const stores = Object.entries(storeDataMap)
+                .filter(([_, data]) => data.quantity > 0 || data.rejectedQuantity > 0)
+                .map(([storeId, data]) => ({
+                    storeId: parseInt(storeId),
+                    ...(data?.quantity ? { quantity: data.quantity } : {}),
+                    rejectedQuantity: data.rejectedQuantity,
+                }));
+
+            const itemAlternateUnits = alternateUnits
+                .filter((unit) => unit.itemId === item.id)
+                .map(({ alternateUnits, conversionfactor, ip_address }) => ({
+                    alternateUnits,
+                    conversionfactor,
+                    ip_address,
+                }));
+
+            return {
+                ...item,
+                stores,
+                alternateUnits: itemAlternateUnits,
+            };
+        });
+
+        // ✅ Safe response: avoid Content-Length mismatch
+        res.setHeader('Content-Type', 'application/json');
+        if (isPaginated) {
+            return res.status(200).send(JSON.stringify({
+                data: itemsWithStores,
+                totalItems,
+                currentPage: Number(currentPage),
+                totalPages: Math.ceil(totalItems / Number(pageSize))
+            }));
+        } else {
+            return res.status(200).send(JSON.stringify(itemsWithStores));
+        }
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: 'Something went wrong, please try again later!' });
     }
 }
 
@@ -1610,5 +1729,6 @@ module.exports = {
     bulkEditItems: bulkEditItems,
     stockReconcilation: stockReconcilation,
     bulkUploadAlternateUnit: bulkUploadAlternateUnit,
-    bulkStockUpdate: bulkStockUpdate
+    bulkStockUpdate: bulkStockUpdate,
+    getPaginatedItems: getPaginatedItems
 }

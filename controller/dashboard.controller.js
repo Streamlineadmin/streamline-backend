@@ -552,6 +552,9 @@ async function getDashboardData(req, res) {
             const production = await models.Production.findAll({
                 where: {
                     ...whereClause,
+                    status: {
+                        [Op.ne]: 0
+                    },
                     ...(assignedTo ? { assignedTo } : {}),
                     ...(salesOrderNumber ? {
                         salesOrderNumber: {
@@ -793,6 +796,519 @@ async function getDashboardData(req, res) {
     }
 }
 
+async function getStoreWiseItems(req, res) {
+    const { storeId, isRejected = false } = req.body;
+    if (!storeId) return res.status(404).json({ message: "Store Not found." });
+
+    try {
+        // Fetch StoreItems and UOMs
+        const [storeItemsRaw, uomData] = await Promise.all([
+            models.StoreItems.findAll({
+                where: {
+                    storeId, isRejected, quantity: {
+                        [Op.gt]: 0
+                    }
+                },
+                raw: true,
+
+            }),
+            models.UOM.findAll({ raw: true })
+        ]);
+
+        // Map UOM IDs to codes
+        const uomMap = uomData.reduce((map, uom) => {
+            map[uom.id] = uom.code;
+            return map;
+        }, {});
+
+        const itemQuantityMap = {};
+        const itemPriceMap = {};
+        const uniqueStoreItems = {};
+
+        for (const item of storeItemsRaw) {
+            const itemId = item.itemId;
+            const quantity = item.quantity;
+            const price = item.price;
+
+            // Aggregate quantity and price
+            itemQuantityMap[itemId] = (itemQuantityMap[itemId] || 0) + quantity;
+            if (quantity > 0) {
+                itemPriceMap[itemId] = (itemPriceMap[itemId] || 0) + (price * quantity);
+            }
+
+            // Store one instance of each item
+            if (!uniqueStoreItems[itemId]) {
+                uniqueStoreItems[itemId] = item;
+            }
+        }
+
+        const itemIds = Object.keys(uniqueStoreItems);
+
+        // Fetch item data and alternate units in bulk
+        const [itemsData, alternateUnitsData] = await Promise.all([
+            models.Items.findAll({
+                where: { id: itemIds },
+                raw: true
+            }),
+            models.AlternateUnits.findAll({
+                where: { itemId: itemIds },
+                raw: true
+            })
+        ]);
+
+        // Map alternate units by itemId
+        const alternateUnitsMap = alternateUnitsData.reduce((acc, unit) => {
+            const itemId = unit.itemId;
+            const unitWithCode = { ...unit, code: uomMap[unit.alternateUnits] || null };
+            acc[itemId] = acc[itemId] || [];
+            acc[itemId].push(unitWithCode);
+            return acc;
+        }, {});
+
+        // Build final store items
+        const storeItems = itemIds.map(itemId => {
+            const baseItem = uniqueStoreItems[itemId];
+            return {
+                ...baseItem,
+                quantity: itemQuantityMap[itemId],
+                averagePrice: itemPriceMap[itemId] || 0,
+                itemId: {
+                    ...itemsData.find(item => item.id === Number(itemId)),
+                    alternateUnit: alternateUnitsMap[itemId] || []
+                }
+            };
+        });
+
+        return res.status(200).json({ storeItems });
+
+    } catch (error) {
+        console.error(error);
+        return res.status(500).json({ message: "Something went wrong." });
+    }
+}
+
+async function getCategoryWiseItems(req, res) {
+    try {
+        const { companyId, categoryId } = req.body;
+        if (!companyId || !categoryId) {
+            return res.status(400).json({
+                message: "companyId and categoryId are required"
+            });
+        }
+        const items = await models.Items.findAll({
+            where: {
+                companyId,
+                category: categoryId
+            },
+            raw: true,
+        });
+        res.status(200).json({
+            message: "Category wise items fetched successfully",
+            data: items
+        });
+    } catch (err) {
+        console.log(err);
+        res.status(500).json({
+            message: "Failed to fetch category wise items",
+            error: err.message || err
+        });
+    }
+}
+
+async function fastMovingSlowMovingItems(req, res) {
+    try {
+        const { companyId, type } = req.body;
+
+        if (!companyId || !type) {
+            return res.status(400).json({
+                message: "companyId and type are required"
+            });
+        }
+
+        const validTypes = ['Fast Moving', 'Slow Moving', 'Non Moving'];
+        if (!validTypes.includes(type)) {
+            return res.status(400).json({
+                message: "Invalid type. Must be 'Fast Moving', 'Slow Moving', or 'Non Moving'"
+            });
+        }
+
+        const items = await models.Items.findAll({
+            where: {
+                companyId: Number(companyId)
+            },
+            raw: true
+        });
+
+        const stockTransfers = await models.StockTransfer.findAll({
+            where: {
+                itemId: { [Op.in]: items.map(item => item.id) },
+                quantity: { [Op.ne]: 0 },
+                isRejected: false
+            },
+            raw: true
+        });
+
+        const fastSlowMovingMap = {};
+        for (const element of stockTransfers) {
+            const bucket = getAgingBucket90Days(element.createdAt);
+            if (fastSlowMovingMap[bucket]) {
+                fastSlowMovingMap[bucket] = Array.from(new Set([...fastSlowMovingMap[bucket], element.itemId]));
+            } else {
+                fastSlowMovingMap[bucket] = [element.itemId];
+            }
+        }
+
+        const categorizedItems = {};
+        for (const age in fastSlowMovingMap) {
+            let itemIds = [];
+            if (age === 'Fast Moving') {
+                itemIds = fastSlowMovingMap[age];
+            } else if (age === 'Slow Moving') {
+                itemIds = fastSlowMovingMap[age]?.filter(data => !(fastSlowMovingMap?.['Fast Moving'] || [])?.includes(data));
+            } else {
+                itemIds = fastSlowMovingMap[age]?.filter(data => ![...(fastSlowMovingMap?.['Fast Moving'] || []), ...(fastSlowMovingMap?.['Slow Moving'] || [])]?.includes(data));
+            }
+            categorizedItems[age] = items.filter(item => itemIds.includes(item.id));
+        }
+
+        const requestedData = categorizedItems[type] || [];
+
+        return res.status(200).json({
+            message: `${type} items fetched successfully`,
+            data: requestedData
+        });
+
+    } catch (err) {
+        console.log(err);
+        res.status(500).json({
+            message: "Failed to fetch categorized items",
+            error: err.message || err
+        });
+    }
+}
+
+async function stockLevelAnalysis(req, res) {
+    try {
+        const { companyId, type } = req.body;
+
+        if (!companyId || !type) {
+            return res.status(400).json({
+                message: "companyId and type are required"
+            });
+        }
+
+        const validTypes = ['ideal', 'min', 'max', 'outOfStock'];
+        if (!validTypes.includes(type)) {
+            return res.status(400).json({
+                message: "Invalid type. Must be one of: 'ideal', 'min', 'max', 'outOfStock'"
+            });
+        }
+
+        const items = await models.Items.findAll({
+            where: {
+                companyId: Number(companyId)
+            },
+            raw: true
+        });
+
+        const storeItems = await models.StoreItems.findAll({
+            where: {
+                itemId: {
+                    [Op.in]: items.map(item => item.id),
+                },
+                quantity: {
+                    [Op.gt]: 0
+                },
+                isRejected: false,
+            },
+            attributes: ['quantity', 'itemId'],
+            raw: true
+        });
+
+        const itemsCountMap = {};
+        for (const element of storeItems) {
+            itemsCountMap[element.itemId] = (itemsCountMap[element.itemId] || 0) + element.quantity;
+        }
+
+        const idealItems = [];
+        const minItems = [];
+        const maxItems = [];
+        const outOfStockItems = [];
+
+        for (const element of items) {
+            const count = itemsCountMap[element.id] || 0;
+            // Add current quantity so frontend can see what the stock level is
+            const itemData = { ...element, currentQuantity: count };
+
+            if (!count) {
+                outOfStockItems.push(itemData);
+            }
+
+            if (!element.minStock && !element.maxStock) {
+                idealItems.push(itemData);
+            } else if (element.minStock && element.maxStock) {
+                if (count >= element.minStock && count <= element.maxStock) idealItems.push(itemData);
+                else if (count < element.minStock) minItems.push(itemData);
+                else if (count > element.maxStock) maxItems.push(itemData);
+            } else if (element.minStock && !element.maxStock) {
+                if (count >= element.minStock) idealItems.push(itemData);
+                else minItems.push(itemData);
+            } else if (!element.minStock && element.maxStock) {
+                if (count <= element.maxStock) idealItems.push(itemData);
+                else maxItems.push(itemData);
+            }
+        }
+
+        const categorizedItems = {
+            ideal: idealItems,
+            min: minItems,
+            max: maxItems,
+            outOfStock: outOfStockItems
+        };
+
+        const requestedData = categorizedItems[type] || [];
+
+        return res.status(200).json({
+            message: `${type} stock level analysis fetched successfully`,
+            data: requestedData
+        });
+
+    } catch (err) {
+        console.log(err);
+        res.status(500).json({
+            message: "Failed to fetch stock level analysis",
+            error: err.message || err
+        });
+    }
+}
+
+async function stockAgeing(req, res) {
+    try {
+        const { companyId, type } = req.body;
+
+        if (!companyId || !type) {
+            return res.status(400).json({
+                message: "companyId and type are required"
+            });
+        }
+
+        const validTypes = ['0–30 days', '31–60 days', '61–90 days', '91–180 days', '180+ days'];
+        if (!validTypes.includes(type)) {
+            return res.status(400).json({
+                message: "Invalid type. Must be one of: '0–30 days', '31–60 days', '61–90 days', '91–180 days', '180+ days'"
+            });
+        }
+
+        const items = await models.Items.findAll({
+            where: {
+                companyId: Number(companyId)
+            },
+            raw: true
+        });
+
+        const storeItems = await models.StoreItems.findAll({
+            where: {
+                itemId: {
+                    [Op.in]: items.map(item => item.id),
+                },
+                quantity: {
+                    [Op.gt]: 0
+                },
+                isRejected: false,
+            },
+            attributes: ['id', 'itemId', 'createdAt'],
+            raw: true
+        });
+
+        const stockAgeingMap = {};
+        for (const element of storeItems) {
+            const bucket = getAgingBucket(element.createdAt);
+            if (stockAgeingMap[bucket]) {
+                stockAgeingMap[bucket] = Array.from(new Set([...stockAgeingMap[bucket], element.itemId]));
+            } else {
+                stockAgeingMap[bucket] = [element.itemId];
+            }
+        }
+
+        const responseData = {};
+        for (const bucket in stockAgeingMap) {
+            const itemIds = stockAgeingMap[bucket];
+            responseData[bucket] = items.filter(item => itemIds.includes(item.id));
+        }
+
+        const requestedData = responseData[type] || [];
+
+        return res.status(200).json({
+            message: `${type} stock ageing data fetched successfully`,
+            data: requestedData
+        });
+
+    } catch (err) {
+        console.log(err);
+        res.status(500).json({
+            message: "Failed to fetch stock ageing",
+            error: err.message || err
+        });
+    }
+}
+
+async function onTimeDelayProduction(req, res) {
+    try {
+        const { companyId, start, end, assignedTo, salesOrderNumber, type } = req.body;
+
+        if (!companyId || !type) {
+            return res.status(400).json({
+                message: "companyId and type are required"
+            });
+        }
+
+        const validTypes = ['onTime', 'delay'];
+        if (!validTypes.includes(type)) {
+            return res.status(400).json({
+                message: "Invalid type. Must be 'onTime' or 'delay'"
+            });
+        }
+
+        const whereClause = { companyId: Number(companyId) };
+        if (start && end) {
+            whereClause.createdAt = {
+                [Op.gte]: new Date(start),
+                [Op.lte]: new Date(end)
+            };
+        }
+
+        const production = await models.Production.findAll({
+            where: {
+                ...whereClause,
+                status: {
+                    [Op.ne]: 0
+                },
+                productionId: {
+                    [Op.ne]: null
+                },
+                ...(assignedTo ? { assignedTo } : {}),
+                ...(salesOrderNumber ? {
+                    salesOrderNumber: {
+                        [Op.in]: salesOrderNumber
+                    }
+                } : {})
+            },
+            raw: true
+        });
+
+        const onTimeItems = [];
+        const delayItems = [];
+
+        for (const prod of production) {
+            const completion = new Date(prod.productionCompletionDate);
+            const endDate = new Date(prod.productionEndDate);
+            if (endDate > completion) {
+                delayItems.push(prod);
+            } else {
+                onTimeItems.push(prod);
+            }
+        }
+
+        const categorizedItems = {
+            onTime: onTimeItems,
+            delay: delayItems
+        };
+
+        const requestedData = categorizedItems[type] || [];
+
+        return res.status(200).json({
+            message: `${type} production records fetched successfully`,
+            data: requestedData
+        });
+
+    } catch (err) {
+        console.log(err);
+        res.status(500).json({
+            message: "Failed to fetch onTimeDelayProduction",
+            error: err.message || err
+        });
+    }
+}
+
+async function workOrderStatus(req, res) {
+    try {
+        const { companyId, start, end, assignedTo, salesOrderNumber, type } = req.body;
+
+        if (!companyId || !type) {
+            return res.status(400).json({
+                message: "companyId and type are required"
+            });
+        }
+
+        const validTypes = ['inplanning', 'ongoing', 'onhold', 'completed'];
+        if (!validTypes.includes(type)) {
+            return res.status(400).json({
+                message: "Invalid type. Must be 'inplanning', 'ongoing', 'onhold', or 'completed'"
+            });
+        }
+
+        const whereClause = { companyId: Number(companyId) };
+        if (start && end) {
+            whereClause.createdAt = {
+                [Op.gte]: new Date(start),
+                [Op.lte]: new Date(end)
+            };
+        }
+
+        const production = await models.Production.findAll({
+            where: {
+                ...whereClause,
+                status: {
+                    [Op.ne]: 0
+                },
+                productionId: {
+                    [Op.ne]: null
+                },
+                ...(assignedTo ? { assignedTo } : {}),
+                ...(salesOrderNumber ? {
+                    salesOrderNumber: {
+                        [Op.in]: salesOrderNumber
+                    }
+                } : {})
+            },
+            raw: true
+        });
+
+        const inplanningItems = [];
+        const ongoingItems = [];
+        const onholdItems = [];
+        const completedItems = [];
+
+        for (const prod of production) {
+            if (prod.status == 1) inplanningItems.push(prod);
+            else if (prod.status == 2) ongoingItems.push(prod);
+            else if (prod.status == 3) onholdItems.push(prod);
+            else completedItems.push(prod);
+        }
+
+        const categorizedItems = {
+            inplanning: inplanningItems,
+            ongoing: ongoingItems,
+            onhold: onholdItems,
+            completed: completedItems
+        };
+
+        const requestedData = categorizedItems[type] || [];
+
+        return res.status(200).json({
+            message: `${type} production records fetched successfully`,
+            data: requestedData
+        });
+
+    } catch (err) {
+        console.log(err);
+        res.status(500).json({
+            message: "Failed to fetch workOrder status",
+            error: err.message || err
+        });
+    }
+}
+
 module.exports = {
     dashboard: dashboard,
     getBuyerSupplierCount: getBuyerSupplierCount,
@@ -805,5 +1321,12 @@ module.exports = {
     getTotalUsersByCompany: getTotalUsersByCompany,
     getItemSalesSummaryWithPrediction: getItemSalesSummaryWithPrediction,
     predictSales: predictSales,
-    getDashboardData: getDashboardData
+    getDashboardData: getDashboardData,
+    getStoreWiseItems: getStoreWiseItems,
+    getCategoryWiseItems: getCategoryWiseItems,
+    fastMovingSlowMovingItems: fastMovingSlowMovingItems,
+    stockLevelAnalysis: stockLevelAnalysis,
+    stockAgeing: stockAgeing,
+    onTimeDelayProduction: onTimeDelayProduction,
+    workOrderStatus: workOrderStatus
 };

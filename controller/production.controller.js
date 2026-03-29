@@ -1896,6 +1896,42 @@ async function materialPlanning(req, res) {
             raw: true,
         });
 
+        const existingItems = await models.Items.findAll({
+            where: {
+                companyId,
+                itemId: {
+                    [Op.in]: bomRawMaterials.map(bom => bom.itemId)
+                }
+            },
+            raw: true,
+            attributes: ['id', 'itemId', 'metricsUnit']
+        });
+
+        const itemMap = existingItems.reduce((acc, curr) => {
+            acc[curr.id] = curr;
+            return acc;
+        }, {});
+        const itemIdMap = existingItems.reduce((acc, curr) => {
+            acc[curr.itemId] = curr;
+            return acc;
+        }, {});
+        const alternateUnits = await models.AlternateUnits.findAll({
+            where: {
+                itemId: {
+                    [Op.in]: existingItems.map(item => item.id)
+                }
+            },
+            raw: true
+        });
+
+        const alternateUnitsMap = alternateUnits.reduce((acc, curr) => {
+            if (acc[itemMap[curr.itemId].itemId]) {
+                acc[itemMap[curr.itemId].itemId].push(curr);
+            } else {
+                acc[itemMap[curr.itemId].itemId] = [curr];
+            }
+            return acc;
+        }, {});
         const bomRawMaterialsMap = {};
         bomRawMaterials.forEach(material => {
             const itemKey = bomIdToItemKeyMap[material.bomId];
@@ -1914,9 +1950,16 @@ async function materialPlanning(req, res) {
             const requiredQty = requiredItemsMap[finishedItemKey] || 0;
 
             rawMaterials.forEach(material => {
+                let conversionFactor = 1;
+                if (itemIdMap[material.itemId]?.metricsUnit != material.uom) {
+                    const altUnit = alternateUnitsMap?.[material.itemId].find((altu) => altu.alternateUnits == material.uom);
+                    if (altUnit) {
+                        conversionFactor = altUnit.conversionfactor;
+                    }
+                }
                 const qtyPerUnit =
                     (material.quantity / finishedBom.quantity) *
-                    (material.conversionFactor || 1);
+                    (conversionFactor);
 
                 requiredRawMaterials[material.itemId] =
                     (requiredRawMaterials[material.itemId] || 0) +

@@ -403,7 +403,7 @@ async function getReports(req, res) {
                     productionNavigationId: productionMap[element.productionId]?.id,
                     category: categorysMap[itemsMap[finishedGoodsMap[element.productionId]?.itemId]?.category],
                     subCategory: categorysMap[itemsMap[finishedGoodsMap[element.productionId]?.itemId]?.subCategory],
-                    microCategory: categorysMap[itemsMap[element.itemId]?.microCategory],
+                    microCategory: categorysMap[itemsMap[finishedGoodsMap[element.productionId]?.itemId]?.microCategory],
                     documentNumber: element.id,
                     salesOrderNumber: productionMap[element.productionId]?.documentNumber,
                     pendingQuantity: Math.max(finishedGoodsMap[element.productionId]?.quantity - (element.processCompleteOn || 0), 0)
@@ -1728,13 +1728,13 @@ async function getReports(req, res) {
                 data: gateEntries
             });
         }
-        if (documentType === "Product Ageing Inventory Report"){
+        if (documentType === "Product Ageing Inventory Report") {
             const { stores, itemType, dateAsFor } = req.body;
             const effectiveDateAsFor = (typeof dateAsFor === 'string' && dateAsFor.trim())
                 ? dateAsFor
                 : new Date().toISOString();
-           
-             const uoms = await models.UOM.findAll({
+
+            const uoms = await models.UOM.findAll({
                 where: {
                     [Op.or]: [
                         { companyId: req.body.companyId, status: 1 },
@@ -1746,14 +1746,14 @@ async function getReports(req, res) {
                 acc[curr.id] = curr.code;
                 return acc;
             }, {});
- 
-           
+
+
             // Get first day of selected month at 00:00:00 UTC
             const dateObj = new Date(effectiveDateAsFor);
             if (Number.isNaN(dateObj.getTime())) {
                 return res.status(400).json({ message: "Invalid dateAsFor format. Expected ISO string." });
             }
- 
+
             const firstDayOfMonth = new Date(Date.UTC(
                 dateObj.getUTCFullYear(),
                 dateObj.getUTCMonth(),
@@ -1772,28 +1772,30 @@ async function getReports(req, res) {
                     [Op.in]: itemType
                 };
             }
-           
+
             const items = await models.Items.findAll({
                 where: itemsWhereCondition,
                 raw: true
             });
-           
+
             const itemsMap = items.reduce((acc, curr) => {
                 acc[curr.id] = curr;
                 return acc;
             }, {});
-           
+
             const itemIds = items.map(item => item.id);
-           
+
             // Get store items with filter
             const StoreItems = await models.StoreItems.findAll({
                 where: {
                     itemId: {
                         [Op.in]: itemIds
                     },
-                    ...( Array.isArray(stores) && stores.length > 0 ? { storeId: {
-                        [Op.in]: stores
-                    }} : {}),
+                    ...(Array.isArray(stores) && stores.length > 0 ? {
+                        storeId: {
+                            [Op.in]: stores
+                        }
+                    } : {}),
                     quantity: {
                         [Op.gt]: 0
                     },
@@ -1801,14 +1803,14 @@ async function getReports(req, res) {
                 },
                 raw: true
             });
-           
+
             // Helper function to calculate age bracket
             const getAgeBracket = (createdAtDate) => {
                 const createdAt = new Date(createdAtDate);
                 if (Number.isNaN(createdAt.getTime())) return null;
- 
+
                 const diffInMs = firstDayOfMonth.getTime() - createdAt.getTime();
- 
+
                 if (diffInMs < 0) return null;
                 const diffInDays = diffInMs / (1000 * 60 * 60 * 24);
                 const diffInMonths = diffInDays / 30; // Approximate month calculation
@@ -1819,17 +1821,17 @@ async function getReports(req, res) {
                 if (diffInMonths < 24) return '12-24';
                 return '>24';
             };
-           
+
             // Segregate by age brackets and item
             const ageingReport = {};
-           
+
             for (const storeItem of StoreItems) {
                 const itemDetail = itemsMap[storeItem.itemId];
                 if (!itemDetail) continue;
-               
+
                 const ageBracket = getAgeBracket(storeItem.createdAt);
                 if (!ageBracket) continue;
-               
+
                 if (!ageingReport[storeItem.itemId]) {
                     ageingReport[storeItem.itemId] = {
                         itemId: itemDetail.itemId,
@@ -1838,7 +1840,7 @@ async function getReports(req, res) {
                         category: itemDetail.category,
                         itemType: itemDetail.itemType,
                         metricsUnit: uomMap[itemDetail.metricsUnit],
-                        price : itemDetail.price,
+                        price: itemDetail.price,
                         brackets: {
                             '0-3': [],
                             '3-6': [],
@@ -1850,19 +1852,256 @@ async function getReports(req, res) {
                         totalQuantity: 0
                     };
                 }
-               
+
                 ageingReport[storeItem.itemId].brackets[ageBracket].push({
                     storeId: storeItem.storeId,
                     quantity: storeItem.quantity,
                     price: storeItem.price,
                     createdAt: storeItem.createdAt,
                 });
-               
+
                 ageingReport[storeItem.itemId].totalQuantity += storeItem.quantity;
             }
-           
+
             const data = Object.values(ageingReport);
             return res.status(200).json({ data, total: data.length });
+        }
+        if (documentType === "Date Wise Process Qty") {
+            const { processId, dateRange } = req.body;
+
+            if (!processId) {
+                return res.status(400).json({ message: "processId is required." });
+            }
+
+            const productions = await models.Production.findAll({
+                where: {
+                    companyId: Number(companyId),
+                    status: {
+                        [Op.ne]: 0
+                    }
+                },
+                raw: true,
+                attributes: ['id']
+            });
+            const productionIds = productions.map(p => p.id);
+
+            const process = await models.ProductionProcess.findByPk(processId);
+            const productionSalesProcess = await models.ProductionSalesProcess.findAll({
+                where: {
+                    productionId: {
+                        [Op.in]: productionIds,
+                    },
+                    processName: process?.processName
+                },
+                raw: true,
+                attributes: ['id']
+            });
+            const processIds = productionSalesProcess.map(p => p.id);
+
+            let startDate, endDate;
+            if (dateRange?.length === 2) {
+                startDate = new Date(dateRange[0]);
+                startDate.setHours(0, 0, 0, 0);
+                endDate = new Date(dateRange[1]);
+                endDate.setHours(23, 59, 59, 999);
+            } else {
+                endDate = new Date();
+                endDate.setHours(23, 59, 59, 999);
+                startDate = new Date();
+                startDate.setMonth(startDate.getMonth() - 1);
+                startDate.setHours(0, 0, 0, 0);
+            }
+
+            const processLogs = await models.ProcessLogs.findAll({
+                where: {
+                    companyId: Number(companyId),
+                    processId: {
+                        [Op.in]: processIds
+                    },
+                    createdAt: {
+                        [Op.between]: [startDate, endDate]
+                    }
+                },
+                raw: true,
+                order: [['createdAt', 'DESC']]
+            });
+
+            const dateWiseMap = {};
+
+            for (const log of processLogs) {
+                const dateObj = new Date(log.createdAt);
+                const day = String(dateObj.getDate()).padStart(2, '0');
+                const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+                const year = dateObj.getFullYear();
+                const dateKey = `${day}-${month}-${year}`;
+
+                if (!dateWiseMap[dateKey]) {
+                    dateWiseMap[dateKey] = {
+                        date: dateKey,
+                        documentNumber: dateKey,
+                        quantity: 0
+                    };
+                }
+                dateWiseMap[dateKey].quantity += Number(log.quantity || 0);
+            }
+
+            const data = Object.values(dateWiseMap);
+
+            return res.status(200).json({
+                data,
+                total: data.length
+            });
+        }
+        if (documentType === "Date Wise Item Stock") {
+            const { companyId, currentItem, dateRange } = req.body;
+
+            if (!currentItem) {
+                return res.status(400).json({ message: "currentItem is required." });
+            }
+
+            const item = await models.Items.findByPk(currentItem);
+            const uom = await models.UOM.findByPk(item.metricsUnit);
+            let category = null, subCategory = null, microCategory = null;
+            if (item.category) {
+                category = await models.Categories.findByPk(item.category);
+            }
+            if (item.subCategory) {
+                subCategory = await models.Categories.findByPk(item.subCategory);
+            }
+            if (item.microCategory) {
+                microCategory = await models.Categories.findByPk(item.microCategory);
+            }
+
+            let startDate, endDate;
+            if (dateRange?.length === 2) {
+                startDate = new Date(dateRange[0]);
+                startDate.setHours(0, 0, 0, 0);
+                endDate = new Date(dateRange[1]);
+                endDate.setHours(23, 59, 59, 999);
+            } else {
+                endDate = new Date();
+                endDate.setHours(23, 59, 59, 999);
+                startDate = new Date();
+                startDate.setMonth(startDate.getMonth() - 1);
+                startDate.setHours(0, 0, 0, 0);
+            }
+
+            // 1) Get Opening Balance (all stock movements BEFORE startDate)
+            const priorTransfers = await models.StockTransfer.findAll({
+                where: {
+                    companyId: Number(companyId),
+                    itemId: currentItem,
+                    createdAt: { [Op.lt]: startDate },
+                    isRejected: false,
+                    quantity: {
+                        [Op.ne]: null
+                    },
+                    [Op.or]: [
+                        { toStoreId: null },
+                        { fromStoreId: null }
+                    ]
+                },
+                raw: true,
+                attributes: ['quantity']
+            });
+
+            let runningStock = 0;
+            for (const pt of priorTransfers) {
+                runningStock += Number(pt.quantity || 0);
+            }
+
+            // 2) Get movements IN the date range
+            const stockTransfers = await models.StockTransfer.findAll({
+                where: {
+                    companyId: Number(companyId),
+                    itemId: currentItem,
+                    createdAt: {
+                        [Op.between]: [startDate, endDate]
+                    },
+                    isRejected: false,
+                    quantity: {
+                        [Op.ne]: null
+                    },
+                    [Op.or]: [
+                        { toStoreId: null },
+                        { fromStoreId: null }
+                    ]
+                },
+                raw: true,
+                order: [['createdAt', 'ASC']]
+            });
+
+            // 3) Group by Date
+            const dateWiseMap = {};
+
+            for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
+                const day = String(d.getDate()).padStart(2, '0');
+                const month = String(d.getMonth() + 1).padStart(2, '0');
+                const year = d.getFullYear();
+                const dateKey = `${day}-${month}-${year}`;
+
+                dateWiseMap[dateKey] = {
+                    date: dateKey,
+                    stockIn: 0,
+                    stockOut: 0,
+                    currentStock: 0
+                };
+            }
+
+            for (const trx of stockTransfers) {
+                const dateObj = new Date(trx.createdAt);
+                const day = String(dateObj.getDate()).padStart(2, '0');
+                const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+                const year = dateObj.getFullYear();
+                const dateKey = `${day}-${month}-${year}`;
+
+                if (!dateWiseMap[dateKey]) {
+                    dateWiseMap[dateKey] = {
+                        date: dateKey,
+                        documentNumber: dateKey,
+                        stockIn: 0,
+                        stockOut: 0,
+                        currentStock: 0
+                    };
+                }
+
+                const qty = Number(trx.quantity || 0);
+                if (qty > 0) {
+                    dateWiseMap[dateKey].stockIn += qty;
+                } else if (qty < 0) {
+                    dateWiseMap[dateKey].stockOut += Math.abs(qty);
+                }
+            }
+
+            // 4) Compute running balance day-by-day sequentially
+            const sortedDates = [];
+            for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
+                const day = String(d.getDate()).padStart(2, '0');
+                const month = String(d.getMonth() + 1).padStart(2, '0');
+                const year = d.getFullYear();
+                const dateKey = `${day}-${month}-${year}`;
+                sortedDates.push(dateKey);
+            }
+
+            const data = [];
+            for (const dKey of sortedDates) {
+                if (dateWiseMap[dKey]) {
+                    dateWiseMap[dKey].opening = runningStock;
+                    runningStock += dateWiseMap[dKey].stockIn;
+                    runningStock -= dateWiseMap[dKey].stockOut;
+                    dateWiseMap[dKey].currentStock = runningStock;
+                    dateWiseMap[dKey].uom = uom.code;
+                    dateWiseMap[dKey].category = category?.name;
+                    dateWiseMap[dKey].subCategory = subCategory?.name;
+                    dateWiseMap[dKey].microCategory = microCategory?.name;
+                    data.push(dateWiseMap[dKey]);
+                }
+            }
+
+            return res.status(200).json({
+                data,
+                total: data.length
+            });
         }
 
         const documents = await models.Documents.findAndCountAll({
@@ -1966,9 +2205,7 @@ async function getReports(req, res) {
             const salesOrder = await models.Documents.findAll({
                 where: {
                     companyId: Number(companyId),
-                    documentNumber: {
-                        [Op.in]: documents?.rows?.filter(doc => doc?.orderConfirmationNumber)?.map(doc => doc.orderConfirmationNumber)
-                    },
+                    documentType: 'Sales Order'
                 },
                 raw: true
             });
@@ -2522,7 +2759,7 @@ async function getReports(req, res) {
         const formattedResult = (documents?.rows || documents)?.map(document => {
             let itemToSend = uniqueItems.filter(item => item.documentNumber === document.documentNumber);
             if (documentType === documentTypes.invoice) itemToSend = itemToSend?.map(item => {
-                const salesItemsCount = salesItemsMap?.[document?.orderConfirmationNumber]?.[item.itemId];
+                const salesItemsCount = document.orderConfirmationNumber ? document?.orderConfirmationNumber?.split(",")?.reduce((acc, curr) => acc + (salesItemsMap?.[curr]?.[item.itemId] || 0), 0) : 0;
                 const salesReturnCount = salesReturnItemsMap?.[document?.documentNumber]?.[item.itemId];
                 const existingQuantity = pendingItemsMap?.[document?.orderConfirmationNumber]?.[item.itemId] || 0 + item?.quantity;
                 if (!pendingItemsMap?.[document?.orderConfirmationNumber]) {
@@ -2539,7 +2776,7 @@ async function getReports(req, res) {
                 return ({ ...item, invoiceItemsCount, invoicePrice });
             })
             if (documentType === documentTypes.deliveryChallan || documentType === documentTypes.proformaInvoice) itemToSend = itemToSend?.map(item => {
-                const salesItemsCount = salesItemsMap?.[document?.orderConfirmationNumber]?.[item.itemId];
+                const salesItemsCount = document.orderConfirmationNumber ? document?.orderConfirmationNumber?.split(",")?.reduce((acc, curr) => acc + (salesItemsMap?.[curr]?.[item.itemId] || 0), 0) : 0;
                 return ({ ...item, salesItemsCount });
             })
 
@@ -2581,8 +2818,8 @@ async function getReports(req, res) {
             });
             if (documentType === documentTypes.salesOrder) {
                 itemToSend = itemToSend.map(item => {
-                    const challanQuantity = (deliveryChallanItemsMap?.[document.documentNumber]?.[item?.itemId] || 0)?.toFixed(2);
-                    const invoiceQuantity = (salesItemsMap?.[document.documentNumber]?.[item?.itemId] || 0)?.toFixed(2);
+                    const challanQuantity = (item?.receivedQuantity || 0)?.toFixed(2);
+                    const invoiceQuantity = (item?.pendingQuantity || 0)?.toFixed(2);
                     const salesReturnQuantity = (salesReturnItemsMap?.[document.documentNumber]?.[item.itemId] || 0)?.toFixed(2);
                     const pendingQuantity = Math.max(((item.quantity + Number(salesReturnQuantity)) - (Number(challanQuantity) + Number(invoiceQuantity))), 0)?.toFixed(2);
                     return { ...item, challanQuantity, invoiceQuantity, pendingQuantity, salesReturnQuantity };

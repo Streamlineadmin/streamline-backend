@@ -466,228 +466,239 @@ async function createDocument(req, res) {
     }
 
     if (status && ((documentType === documentTypes.deliveryChallan || documentType === documentTypes.invoice) && orderConfirmationNumber)) {
-      const existingDocument = await models.Documents.findOne({
-        where: { documentNumber: orderConfirmationNumber, companyId },
+      const currentItemsMap = items.reduce((acc, current) => {
+        acc[current.itemId] = Number(current.quantity);
+        return acc;
+      }, {});
+      const orderConfirmationNumbers = await models.Documents.findAll({
+        where: {
+          companyId,
+          documentNumber: {
+            [Op.in]: orderConfirmationNumber.split(",")
+          },
+          documentType: 'Sales Order'
+        },
+        attributes: ['documentNumber'],
+        order: [['createdAt', 'ASC']]
       });
-      if (existingDocument) {
-        // Find all Document Items against orderConfirmationNumber 
-        const documentItems = await models.DocumentItems.findAll({
-          where: {
-            companyId,
-            documentNumber: orderConfirmationNumber
-          }
+      for (const oc_number of orderConfirmationNumbers) {
+        const existingDocument = await models.Documents.findOne({
+          where: { documentNumber: oc_number.documentNumber, companyId },
         });
+        if (existingDocument) {
+          // Find all Document Items against orderConfirmationNumber 
+          const documentItems = await models.DocumentItems.findAll({
+            where: {
+              companyId,
+              documentNumber: oc_number.documentNumber
+            }
+          });
 
-        // Create a map of documentsItems with Items id as key and quantity as value
-        const documentsItemMap = documentItems?.reduce((acc, current) => {
-          acc[current.itemId] = current.quantity;
-          return acc;
-        }, {});
+          // Create a map of documentsItems with Items id as key and quantity as value
+          const documentsItemMap = documentItems?.reduce((acc, current) => {
+            acc[current.itemId] = current.quantity;
+            return acc;
+          }, {});
 
-        // find all previously created Delivery Challan or invoice against same orderConfirmationNumber
-        const deliveryChallan = await models.Documents.findAll({
-          where: {
-            orderConfirmationNumber,
-            documentType,
-            companyId,
-            status: {
-              [Op.notIn]: [0, 2]
+          // Create deliverychallan or invoice items map where item id is key and quantity as value
+          const deliveryChallanItemsMap = documentItems?.reduce((acc, current) => {
+            acc[current.itemId] = documentType === "Invoice" ? current.pendingQuantity : current?.receivedQuantity
+            return acc;
+          }, {});
+          // Add quantity of existing items in dellivery challan items map
+          for (const item of items) {
+            if (!documentsItemMap?.[item.itemId] || !currentItemsMap?.[item.itemId]) continue;
+            const remainingNeeded = Math.max(0, documentsItemMap[item.itemId] - (deliveryChallanItemsMap[item.itemId] || 0));
+            const amountToConsume = Math.min(remainingNeeded, currentItemsMap[item.itemId]);
+            if (deliveryChallanItemsMap[item.itemId]) deliveryChallanItemsMap[item.itemId] += amountToConsume;
+            else deliveryChallanItemsMap[item.itemId] = amountToConsume;
+            currentItemsMap[item.itemId] -= amountToConsume;
+            await models.DocumentItems.update(
+              documentType === "Invoice"
+                ? { pendingQuantity: deliveryChallanItemsMap[item.itemId] }
+                : { receivedQuantity: deliveryChallanItemsMap[item.itemId] },
+              {
+                where: {
+                  documentNumber: oc_number.documentNumber,
+                  itemId: item.itemId,
+                  companyId
+                }
+              }
+            );
+          }
+
+          let statusCode = 0, handleStatus = existingDocument.status, returned = false, existingDocStatus = existingDocument.status;
+          if (handleStatus > 32) {
+            returned = handleStatus;
+            if (handleStatus == 33 || handleStatus == 37) {
+              existingDocStatus = 10;
+            }
+            else if (handleStatus == 34 || handleStatus == 38) {
+              existingDocStatus = 11;
+            }
+            else if (handleStatus == 35 || handleStatus == 39) {
+              existingDocStatus = 12;
+            }
+            else if (handleStatus == 36 || handleStatus == 40) {
+              existingDocStatus = 13;
+            }
+            else if (handleStatus == 41 || handleStatus == 45) {
+              existingDocStatus = 19;
+            }
+            else if (handleStatus == 42 || handleStatus == 46) {
+              existingDocStatus = 20;
+            }
+            else if (handleStatus == 43 || handleStatus == 47) {
+              existingDocStatus = 21;
+            }
+            else if (handleStatus == 44 || handleStatus == 48) {
+              existingDocStatus = 22;
             }
           }
-        });
 
-        const documentNumbers = deliveryChallan.map(doc => doc.documentNumber);
-
-        // find All Document Items against previously created delivery challan or Invoice
-        const deliveryChallanItems = await models.DocumentItems.findAll({
-          where: {
-            documentNumber: documentNumbers,
-            companyId
+          // comapare documentsItem map and delivery challam items map 
+          for (const elem of Object.keys(documentsItemMap)) {
+            if (documentsItemMap[elem] > deliveryChallanItemsMap[elem] || !deliveryChallanItemsMap[elem]) {
+              statusCode = documentType === documentTypes.invoice ? 12 : 10;
+              break;
+            }
           }
-        });
 
-        // Create deliverychallan or invoice items map where item id is key and quantity as value
-        const deliveryChallanItemsMap = deliveryChallanItems?.reduce((acc, current) => {
-          !acc[current?.itemId] ? acc[current?.itemId] = current.quantity : acc[current?.itemId] += current.quantity;
-          return acc;
-        }, {});
-        // Add quantity of existing items in dellivery challan items map
-        for (const item of items) {
-          if (deliveryChallanItemsMap[item.itemId]) deliveryChallanItemsMap[item.itemId] += Number(item.quantity);
-          else deliveryChallanItemsMap[item.itemId] = Number(item.quantity);
+          if (!statusCode) {
+            if (documentType === documentTypes.invoice) {
+              // handle completely billing status
+              if (existingDocStatus === 1 || existingDocStatus === 12) {
+                handleStatus = 13;
+              }
+              // handle partially delivered completely billed
+              if (existingDocStatus === 10 || existingDocStatus == 19) {
+                handleStatus = 20;
+              }
+              // handle completely delivered completely billed
+              if (existingDocStatus === 11 || existingDocStatus === 21) {
+                handleStatus = 22;
+              }
+            } else {
+              // handle completely deliver status
+              if (existingDocStatus === 1 || existingDocStatus === 10) {
+                handleStatus = 11;
+              }
+              // handle partially billed completely deliver
+              if (existingDocStatus === 12 || existingDocStatus == 19) {
+                handleStatus = 21;
+              }
+              // handle completely delivered completely billed
+              if (existingDocStatus === 13 || existingDocStatus === 20) {
+                handleStatus = 22;
+              }
+            }
+          }
+          else {
+            if (documentType === documentTypes.invoice) {
+              // handle partially billing status
+              if (existingDocStatus === 1 || existingDocStatus === 12) {
+                handleStatus = 12;
+              }
+              // handle partially delivered partially billed
+              if (existingDocStatus === 10) {
+                handleStatus = 19;
+              }
+              // handle completely delivered partially billed
+              if (existingDocStatus === 11) {
+                handleStatus = 21;
+              }
+            } else {
+              // handle partially deliver status
+              if (existingDocStatus === 1 || existingDocStatus === 10) {
+                handleStatus = 10;
+              }
+              // handle partially billed partially deliver
+              if (existingDocStatus === 12) {
+                handleStatus = 19;
+              }
+              // handle partially delivered completely billed
+              if (existingDocStatus === 13) {
+                handleStatus = 20;
+              }
+            }
+          }
+
+          if (returned) {
+            let partial = false;
+            if (returned == 33 || returned == 34 || returned == 35 || returned == 36 ||
+              returned == 41 || returned == 42 || returned == 43 || returned == 44
+            ) partial = true;
+            if (handleStatus == 10) {
+              if (partial) {
+                handleStatus = 33;
+              }
+              else {
+                handleStatus = 37;
+              }
+            }
+            else if (handleStatus == 11) {
+              if (partial) {
+                handleStatus = 34;
+              }
+              else {
+                handleStatus = 38;
+              }
+            }
+            else if (handleStatus == 12) {
+              if (partial) {
+                handleStatus = 35;
+              }
+              else {
+                handleStatus = 39;
+              }
+            }
+            else if (handleStatus == 13) {
+              if (partial) {
+                handleStatus = 36;
+              }
+              else {
+                handleStatus = 40;
+              }
+            }
+            else if (handleStatus == 19) {
+              if (partial) {
+                handleStatus = 41;
+              }
+              else {
+                handleStatus = 45;
+              }
+            }
+            else if (handleStatus == 20) {
+              if (partial) {
+                handleStatus = 42;
+              }
+              else {
+                handleStatus = 46;
+              }
+            }
+            else if (handleStatus == 21) {
+              if (partial) {
+                handleStatus = 43;
+              }
+              else {
+                handleStatus = 47;
+              }
+            }
+            else if (handleStatus == 22) {
+              if (partial) {
+                handleStatus = 44;
+              }
+              else {
+                handleStatus = 48;
+              }
+            }
+          }
+
+          // update the status accordingly
+          await existingDocument.update({
+            status: handleStatus
+          });
         }
-
-        let statusCode = 0, handleStatus = existingDocument.status, returned = false, existingDocStatus = existingDocument.status;
-        if (handleStatus > 32) {
-          returned = handleStatus;
-          if (handleStatus == 33 || handleStatus == 37) {
-            existingDocStatus = 10;
-          }
-          else if (handleStatus == 34 || handleStatus == 38) {
-            existingDocStatus = 11;
-          }
-          else if (handleStatus == 35 || handleStatus == 39) {
-            existingDocStatus = 12;
-          }
-          else if (handleStatus == 36 || handleStatus == 40) {
-            existingDocStatus = 13;
-          }
-          else if (handleStatus == 41 || handleStatus == 45) {
-            existingDocStatus = 19;
-          }
-          else if (handleStatus == 42 || handleStatus == 46) {
-            existingDocStatus = 20;
-          }
-          else if (handleStatus == 43 || handleStatus == 47) {
-            existingDocStatus = 21;
-          }
-          else if (handleStatus == 44 || handleStatus == 48) {
-            existingDocStatus = 22;
-          }
-        }
-
-        // comapare documentsItem map and delivery challam items map 
-        for (const elem of Object.keys(documentsItemMap)) {
-          if (documentsItemMap[elem] > deliveryChallanItemsMap[elem] || !deliveryChallanItemsMap[elem]) {
-            statusCode = documentType === documentTypes.invoice ? 12 : 10;
-            break;
-          }
-        }
-
-        if (!statusCode) {
-          if (documentType === documentTypes.invoice) {
-            // handle completely billing status
-            if (existingDocStatus === 1 || existingDocStatus === 12) {
-              handleStatus = 13;
-            }
-            // handle partially delivered completely billed
-            if (existingDocStatus === 10 || existingDocStatus == 19) {
-              handleStatus = 20;
-            }
-            // handle completely delivered completely billed
-            if (existingDocStatus === 11 || existingDocStatus === 21) {
-              handleStatus = 22;
-            }
-          } else {
-            // handle completely deliver status
-            if (existingDocStatus === 1 || existingDocStatus === 10) {
-              handleStatus = 11;
-            }
-            // handle partially billed completely deliver
-            if (existingDocStatus === 12 || existingDocStatus == 19) {
-              handleStatus = 21;
-            }
-            // handle completely delivered completely billed
-            if (existingDocStatus === 13 || existingDocStatus === 20) {
-              handleStatus = 22;
-            }
-          }
-        }
-        else {
-          if (documentType === documentTypes.invoice) {
-            // handle partially billing status
-            if (existingDocStatus === 1 || existingDocStatus === 12) {
-              handleStatus = 12;
-            }
-            // handle partially delivered partially billed
-            if (existingDocStatus === 10) {
-              handleStatus = 19;
-            }
-            // handle completely delivered partially billed
-            if (existingDocStatus === 11) {
-              handleStatus = 21;
-            }
-          } else {
-            // handle partially deliver status
-            if (existingDocStatus === 1 || existingDocStatus === 10) {
-              handleStatus = 10;
-            }
-            // handle partially billed partially deliver
-            if (existingDocStatus === 12) {
-              handleStatus = 19;
-            }
-            // handle partially delivered completely billed
-            if (existingDocStatus === 13) {
-              handleStatus = 20;
-            }
-          }
-        }
-
-        if (returned) {
-          let partial = false;
-          if (returned == 33 || returned == 34 || returned == 35 || returned == 36 ||
-            returned == 41 || returned == 42 || returned == 43 || returned == 44
-          ) partial = true;
-          if (handleStatus == 10) {
-            if (partial) {
-              handleStatus = 33;
-            }
-            else {
-              handleStatus = 37;
-            }
-          }
-          else if (handleStatus == 11) {
-            if (partial) {
-              handleStatus = 34;
-            }
-            else {
-              handleStatus = 38;
-            }
-          }
-          else if (handleStatus == 12) {
-            if (partial) {
-              handleStatus = 35;
-            }
-            else {
-              handleStatus = 39;
-            }
-          }
-          else if (handleStatus == 13) {
-            if (partial) {
-              handleStatus = 36;
-            }
-            else {
-              handleStatus = 40;
-            }
-          }
-          else if (handleStatus == 19) {
-            if (partial) {
-              handleStatus = 41;
-            }
-            else {
-              handleStatus = 45;
-            }
-          }
-          else if (handleStatus == 20) {
-            if (partial) {
-              handleStatus = 42;
-            }
-            else {
-              handleStatus = 46;
-            }
-          }
-          else if (handleStatus == 21) {
-            if (partial) {
-              handleStatus = 43;
-            }
-            else {
-              handleStatus = 47;
-            }
-          }
-          else if (handleStatus == 22) {
-            if (partial) {
-              handleStatus = 44;
-            }
-            else {
-              handleStatus = 48;
-            }
-          }
-        }
-
-        // update the status accordingly
-        await existingDocument.update({
-          status: handleStatus
-        });
       }
     }
 
@@ -1728,8 +1739,6 @@ async function createDocument(req, res) {
       }
     }
 
-
-
     if (status && (documentType === documentTypes.serviceChallan || documentType == 'Service Confirmation Challan')) {
 
       const settings = await models.Settings.findOne({
@@ -2561,7 +2570,6 @@ async function createDocument(req, res) {
       }
 
       if ((documentType === 'Purchase Credit Note' || documentType === 'Purchase Debit Note') && !purchaseOrderNumber) {
-        console.log("i am heree.")
         const purchaseInvoice = await models.Documents.findOne({
           where: {
             companyId,
@@ -2570,11 +2578,30 @@ async function createDocument(req, res) {
           }
         });
         if (purchaseInvoice) {
-          console.log("i am hereee..")
           const linkedDocuments = isValidJSON(purchaseInvoice.linkedDocuments) || [];
           if (!linkedDocuments.includes(documentNumber)) {
             linkedDocuments.push(documentNumber);
             await purchaseInvoice.update({ linkedDocuments });
+          }
+        }
+      }
+
+      if (documentType === "Purchase Order" && indent_number) {
+        const purchaseRequests = await models.Documents.findAll({
+          where: {
+            companyId,
+            documentNumber: {
+              [Op.in]: indent_number.split(",")
+            },
+            documentType: 'Purchase Request'
+          },
+          attributes: ['id', 'linkedDocuments']
+        });
+        for (const purchaseRequest of purchaseRequests) {
+          const linkedDocuments = isValidJSON(purchaseRequest.linkedDocuments) || [];
+          if (!linkedDocuments.includes(documentNumber)) {
+            linkedDocuments.push(documentNumber);
+            await purchaseRequest.update({ linkedDocuments });
           }
         }
       }
@@ -3512,6 +3539,26 @@ async function discardDocument(req, res) {
       });
       if (linkedDocument) {
         return res.status(409).json({ message: 'You can not discard this document, It is linked with other documents.' })
+      }
+      if (document.indent_number) {
+        const indentNumbers = document.indent_number.split(",");
+        const purchaseRequests = await models.Documents.findAll({
+          where: {
+            companyId,
+            documentNumber: {
+              [Op.in]: indentNumbers
+            },
+            documentType: 'Purchase Request'
+          },
+          attributes: ['id', 'linkedDocuments']
+        });
+        for (const purchaseRequest of purchaseRequests) {
+          const linkedDocuments = isValidJSON(purchaseRequest.linkedDocuments) || [];
+          if (linkedDocuments.includes(document.documentNumber)) {
+            linkedDocuments.splice(linkedDocuments.indexOf(document.documentNumber), 1);
+            await purchaseRequest.update({ linkedDocuments });
+          }
+        }
       }
     }
     if (document.documentType === documentTypes.goodsReceive) {
@@ -5430,7 +5477,7 @@ async function createEInvoice(req, res) {
     const items = document.items?.map((item, index) => {
       const qty = Number(item?.quantity || 1);
       const price = Number(item?.price || 100);
-      const taxRate = Number(item?.tax || 18);
+      const taxRate = Number(item?.tax || 0);
       const totalBeforeTax = qty * price;
       const totalTax = (totalBeforeTax * taxRate) / 100;
       const cgst = isIgst ? 0 : totalTax / 2;

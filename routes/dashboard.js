@@ -14,4 +14,11 @@ router.post("/predictNext30DaysTotalValue", dashboardController.predictNext30Day
 router.post("/getItemSalesSummaryWithPrediction", dashboardController.getItemSalesSummaryWithPrediction);
 router.post("/predictSales", dashboardController.predictSales);
 router.post("/getDashboardData", dashboardController.getDashboardData);
+router.post("/getStoreWiseItems", dashboardController.getStoreWiseItems);
+router.post("/getCategoryWiseItems", dashboardController.getCategoryWiseItems);
+router.post("/fastMovingSlowMovingItems", dashboardController.fastMovingSlowMovingItems);
+router.post("/stockLevelAnalysis", dashboardController.stockLevelAnalysis);
+router.post("/stockAgeing", dashboardController.stockAgeing);
+router.post("/onTimeDelayProduction", dashboardController.onTimeDelayProduction);
+router.post("/workOrderStatus", dashboardController.workOrderStatus);
 module.exports = router;
