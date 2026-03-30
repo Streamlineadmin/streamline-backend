@@ -12,65 +12,47 @@ async function getCategories(req, res) {
     }
 
     try {
-        // Step 2: Fetch main categories where parentId is null and companyId matches
-        const categories = await models.Categories.findAll({
-            where: {
-                parentId: null,
-                companyId,
-            },
+        // Fetch all categories for the company in a single optimized query
+        // Using raw: true avoids expensive Sequelize model instantiation
+        const allCategories = await models.Categories.findAll({
+            where: { companyId },
+            raw: true
         });
 
-        if (!categories || categories.length === 0) {
+        if (!allCategories || allCategories.length === 0) {
             return res.status(200).json({
                 message: 'No categories found for the provided companyId',
                 data: [],
             });
         }
 
-        // Step 3: Fetch subcategories and microcategories
-        const categoriesWithChildren = await Promise.all(
-            categories.map(async (category) => {
-                const subcategories = await models.Categories.findAll({
-                    where: {
-                        parentId: category.id, // Fetch subcategories based on category id
-                        companyId,
-                    },
-                });
+        // Build the parent-child tree structure in memory using O(N) approach
+        const categoryMap = {};
+        const rootCategories = [];
 
-                // Fetch microcategories for each subcategory
-                const subcategoriesWithMicrocategories = await Promise.all(
-                    subcategories.map(async (subcategory) => {
-                        const microcategories = await models.Categories.findAll({
-                            where: {
-                                parentId: subcategory.id, // Fetch microcategories based on subcategory id
-                                companyId,
-                            },
-                        });
+        // First pass: initialize child arrays and populate the lookup map
+        for (const category of allCategories) {
+            category.child = [];
+            categoryMap[category.id] = category;
+        }
 
-                        return {
-                            ...subcategory.toJSON(), // Convert to plain object
-                            child: microcategories.map((microcategory) => microcategory.toJSON()),
-                        };
-                    })
-                );
+        // Second pass: organize categories into a hierarchical tree
+        for (const category of allCategories) {
+            if (category.parentId) {
+                if (categoryMap[category.parentId]) {
+                    categoryMap[category.parentId].child.push(category);
+                }
+            } else {
+                rootCategories.push(category);
+            }
+        }
 
-                return {
-                    ...category.toJSON(), // Convert to plain object
-                    child: subcategoriesWithMicrocategories,
-                };
-            })
-        );
-
-        // Step 4: Respond with the categories including subcategories and microcategories
         return res.status(200).json({
             message: 'Categories with subcategories and microcategories fetched successfully',
-            data: categoriesWithChildren,
+            data: rootCategories,
         });
     } catch (error) {
-        // Log the error for debugging
         console.error('Error fetching categories:', error);
-
-        // Step 5: Return error response
         return res.status(500).json({
             message: 'An error occurred while fetching categories',
             error: error.message,
