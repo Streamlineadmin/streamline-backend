@@ -5426,7 +5426,7 @@ async function approveDocument(req, res) {
 
 async function createEInvoice(req, res) {
   try {
-    const { document, userName, password } = req.body;
+    const { document, userName, password, gst, pin } = req.body;
     const uoms = await models.UOM.findAll({
       where: {
         [Op.or]: [
@@ -5440,13 +5440,13 @@ async function createEInvoice(req, res) {
       return acc;
     }, {});
     const authResponse = await axios.get(
-      "https://apisandbox.whitebooks.in/einvoice/authenticate",
+      "https://api.perione.in/einvoice/authenticate",
       {
         params: { email: process.env.EMAIL },
         headers: {
-          "client_id": process.env.LOCAL_CLIENT_ID,
-          "client_secret": process.env.LOCAL_CLIENT_SECRET,
-          "gstin": document?.supplierGSTNumber,
+          "client_id": process.env.CLIENT_ID,
+          "client_secret": process.env.CLIENT_SECRET,
+          "gstin": gst,
           "username": userName,
           "password": password,
           "ip_address": "192.68.45.37",
@@ -5465,7 +5465,7 @@ async function createEInvoice(req, res) {
     const supplierAddress = isValidJSON(document?.supplierBillingAddress);
     const buyerAddress = isValidJSON(document?.buyerDeliveryAddress);
 
-    const isIgst = document?.supplyState !== supplierAddress?.state;
+    const isIgst = document?.supplyState?.toLowerCase?.() !== supplierAddress?.state?.toLowerCase?.();
 
     // Compute totals from items
     let AssVal = 0,
@@ -5510,64 +5510,80 @@ async function createEInvoice(req, res) {
     });
 
     // STEP 3: Build E-Invoice Payload
+    const round2 = (num) => {
+      return Number(parseFloat(num || 0).toFixed(2));
+    };
+
     const eInvoice = {
       Version: "1.1",
       TranDtls: {
         TaxSch: "GST",
-        SupTyp: "B2B"
+        SupTyp: "B2B",
       },
       DocDtls: {
         Typ: "INV",
         No: document?.documentNumber,
         Dt: getTodayDateInIST()
       },
+
       SellerDtls: {
-        Gstin: document?.supplierGSTNumber,
+        Gstin: gst,
         LglNm: document?.supplierName,
         TrdNm: document?.supplierName,
-        Addr1: supplierAddress?.addressLineOne || ' ',
+        Addr1: supplierAddress?.addressLineOne || 'Test',
         Addr2: supplierAddress?.city || ' ',
         Loc: supplierAddress?.state || ' ',
-        Pin: supplierAddress?.pincode + '' || ' ',
-        Stcd: document?.supplierGSTNumber?.slice(0, 2),
+        Pin: String(pin || ''),
+        Stcd: gst?.slice(0, 2),
         Ph: document?.supplierContactNo,
         Em: document?.supplierEmail
       },
+
       BuyerDtls: {
         Gstin: document?.buyerGSTNumber,
         LglNm: document?.buyerName,
         TrdNm: document?.buyerName,
         Pos: gstStateCodes?.[document?.supplyState] || '23',
-        Addr1: buyerAddress?.addressLineOne || ' ',
+        Addr1: buyerAddress?.addressLineOne || 'Test',
         Addr2: buyerAddress?.city || ' ',
         Loc: buyerAddress?.state || ' ',
-        Pin: buyerAddress?.pincode + '' || ' ',
+        Pin: String(buyerAddress?.pincode || ''),
         Stcd: document?.buyerGSTNumber?.slice(0, 2),
         Ph: document?.buyerContactNumber,
         Em: document?.buyerEmail
       },
 
-      ItemList: items,
+      ItemList: items.map(item => ({
+        ...item,
+        UnitPrice: round2(item.UnitPrice),
+        TotAmt: round2(item.TotAmt),
+        AssAmt: round2(item.AssAmt),
+        IgstAmt: round2(item.IgstAmt),
+        CgstAmt: round2(item.CgstAmt),
+        SgstAmt: round2(item.SgstAmt),
+        TotItemVal: round2(item.TotItemVal),
+      })),
+
       ValDtls: {
-        AssVal: Number(AssVal),
-        CgstVal: Number(CgstVal),
-        SgstVal: Number(SgstVal),
-        IgstVal: Number(IgstVal),
-        TotInvVal: Number(TotInvVal)
+        AssVal: round2(AssVal),
+        CgstVal: round2(CgstVal),
+        SgstVal: round2(SgstVal),
+        IgstVal: round2(IgstVal),
+        TotInvVal: round2(TotInvVal)
       }
     };
 
     // STEP 4: Generate E-Invoice
     const response = await axios.post(
-      "https://apisandbox.whitebooks.in/einvoice/type/GENERATE/version/V1_03",
+      "https://api.perione.in/einvoice/type/GENERATE/version/V1_03",
       eInvoice,
       {
         params: { email: process.env.EMAIL },
         headers: {
           "Content-Type": "application/json",
-          "client_id": process.env.LOCAL_CLIENT_ID,
-          "client_secret": process.env.LOCAL_CLIENT_SECRET,
-          "gstin": document?.supplierGSTNumber,
+          "client_id": process.env.CLIENT_ID,
+          "client_secret": process.env.CLIENT_SECRET,
+          "gstin": gst,
           "username": userName,
           "password": password,
           "auth-token": authToken,
@@ -5575,8 +5591,6 @@ async function createEInvoice(req, res) {
         },
       }
     );
-
-    console.log(response?.data, "EINVOICE RESPONSE");
 
     // STEP 5: Extract IRN + QR
     const irnNumber = response?.data?.data?.Irn || null;

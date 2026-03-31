@@ -2,11 +2,13 @@ const models = require("../models");
 
 async function createCredential(req, res) {
     try {
-        const { companyId, userName, password } = req.body;
+        const { companyId, userName, password, gstin, pin } = req.body;
         await models.EInvoiceCredntial.create({
             companyId,
             userName,
-            password
+            password,
+            gstin,
+            pin
         });
         return res.status(200).json({
             message: 'Credentials Saved Successfully.',
@@ -33,7 +35,7 @@ async function getCredential(req, res) {
 
 async function updateCredential(req, res) {
     try {
-        const { userName, password, companyId } = req.body;
+        const { userName, password, companyId, gstin, pin } = req.body;
 
         const credential = await models.EInvoiceCredntial.findOne({
             where: { companyId },
@@ -43,7 +45,7 @@ async function updateCredential(req, res) {
             return res.status(404).json({ message: "Credentials not found." });
         }
 
-        await credential.update({ userName, password });
+        await credential.update({ userName, password, gstin, pin });
 
         return res.status(200).json({ message: "Credentials updated successfully." });
     } catch (error) {
