@@ -8,7 +8,6 @@ async function createBOMDetails(req, res) {
   const t = await models.sequelize.transaction();
   try {
     const {
-      bomId,
       bomName,
       status,
       bomDescription,
@@ -16,14 +15,39 @@ async function createBOMDetails(req, res) {
       userId,
       attachments = [],
     } = req.body;
+    let { bomId } = req.body;
+
+    const bomSeries = await models.BOMSeries.findOne({
+      where: {
+        companyId,
+        default: 1,
+      },
+      transaction: t,
+      lock: t.LOCK.UPDATE,
+    });
+
+    if (bomSeries) {
+      bomId = bomSeries.prefix + bomSeries.nextNumber;
+      await bomSeries.update(
+        { nextNumber: bomSeries.nextNumber + 1 },
+        { transaction: t }
+      );
+    }
+
+    if (!bomId) {
+      await t.rollback();
+      return res.status(400).json({ message: "bomId is required or BOM series not configured!" });
+    }
+
     const exists = await models.BOMDetails.findOne({
-      where: { bomId, companyId, userId },
+      where: { bomId, companyId },
       transaction: t,
     });
     if (exists) {
       await t.rollback();
       return res.status(409).json({ message: "BOM details already exist!" });
     }
+    
     // create BOM details
     const newDetail = await models.BOMDetails.create(
       { bomId, bomName, status, bomDescription, companyId, userId },
@@ -39,24 +63,6 @@ async function createBOMDetails(req, res) {
         userId,
       }));
       await models.BOMAttachments.bulkCreate(bulkData, { transaction: t });
-    }
-
-    const bomSeries = await models.BOMSeries.findOne({
-      where: {
-        companyId,
-        default: 1,
-      },
-    });
-
-    if (bomSeries) {
-      await models.BOMSeries.update(
-        { nextNumber: bomSeries.nextNumber + 1 },
-        {
-          where: {
-            id: bomSeries.id,
-          },
-        }
-      );
     }
 
     await t.commit();
@@ -724,7 +730,7 @@ async function duplicateBom(req, res) {
     const newBOMId = newBom.id;
 
     // 4️⃣ Helper to bulk copy child tables
-    const bulkCopy = async (Model, records) => {
+    const bulkCopy = async (Model, records, foreignKeyOverrides = { bomId: newBOMId }) => {
       if (!records?.length) return;
 
       await Model.bulkCreate(
@@ -733,9 +739,11 @@ async function duplicateBom(req, res) {
           delete obj.id;
           delete obj.createdAt;
           delete obj.updatedAt;
+          delete obj.bomId;
+          delete obj.BOMID;
           return {
             ...obj,
-            bomId: newBOMId,
+            ...foreignKeyOverrides,
           };
         }),
         { transaction }
@@ -749,7 +757,7 @@ async function duplicateBom(req, res) {
     await bulkCopy(models.BOMRawMaterial, bom.rawMaterials);
     await bulkCopy(models.BOMScrapMaterial, bom.scrapMaterials);
     await bulkCopy(models.BOMAdditionalCharges, bom.additionalCharges);
-    await bulkCopy(models.BOMAttachments, bom.attachments);
+    await bulkCopy(models.BOMAttachments, bom.attachments, { BOMID: newBomseries });
 
     // 6️⃣ Update series
     await bomSeries.update(

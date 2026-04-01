@@ -5543,7 +5543,7 @@ async function createEInvoice(req, res) {
         Gstin: document?.buyerGSTNumber,
         LglNm: document?.buyerName,
         TrdNm: document?.buyerName,
-        Pos: gstStateCodes?.[document?.supplyState] || '23',
+        Pos: gstStateCodes?.[document?.supplyState?.toLowerCase?.()] || '23',
         Addr1: buyerAddress?.addressLineOne || 'Test',
         Addr2: buyerAddress?.city || ' ',
         Loc: buyerAddress?.state || ' ',
