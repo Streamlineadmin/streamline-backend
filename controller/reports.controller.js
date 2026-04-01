@@ -1528,7 +1528,7 @@ async function getReports(req, res) {
                 total: stockTransfers.length
             });
         }
-        if (documentType === 'Process Ledger') {
+         if (documentType === 'Process Ledger') {
             const { productionId } = req.body;
             if (!productionId) {
                 return res.json({
@@ -1536,11 +1536,11 @@ async function getReports(req, res) {
                     total: 0
                 });
             }
-
+ 
             // 1. Fetch all descendant productions recursively
             let currentLevelIds = [productionId];
             const allProductionIds = [productionId];
-
+ 
             while (currentLevelIds.length > 0) {
                 const children = await models.Production.findAll({
                     where: { parentProductionId: { [Op.in]: currentLevelIds } },
@@ -1554,31 +1554,58 @@ async function getReports(req, res) {
                     currentLevelIds = [];
                 }
             }
-
+ 
             // Fetch the Production models to map integer ID to string productionId
             const productionsDetail = await models.Production.findAll({
                 where: { id: { [Op.in]: allProductionIds } },
-                attributes: ['id', 'productionId'],
+                attributes: ['id', 'productionId', 'bomId'],
                 raw: true
             });
             const prodStringMap = productionsDetail.reduce((acc, curr) => {
                 acc[curr.id] = curr.productionId;
                 return acc;
             }, {});
-
+ 
+            const bomIdsSet = new Set();
+ 
+            const prodBOMMap = productionsDetail.reduce((acc, curr) => {
+                acc[curr.id] = curr.bomId;
+                if (curr.bomId !== null && curr.bomId !== undefined) {
+                    bomIdsSet.add(curr.bomId);
+                }
+                return acc;
+            }, {});
+ 
+            const finishedGoodsData = await models.BOMDetails.findAll({
+                where: { id: { [Op.in]: Array.from(bomIdsSet) } },
+                include: [
+                    {
+                        model: models.BOMFinishedGoods,
+                        as: "finishedGoods",
+                    },
+                ],
+                nest: true
+            });
+ 
+            const finishedGoodsMap = {};
+ 
+            finishedGoodsData.forEach((bomDetail) => {
+                finishedGoodsMap[bomDetail.id] = bomDetail.finishedGoods?.[0] || null;
+            });
+ 
             const processLogs = await models.ProcessLogs.findAll({
                 where: { productionId: { [Op.in]: allProductionIds } },
                 order: [['createdAt', 'ASC']],
                 raw: true
             });
-
+ 
             if (!processLogs.length) {
                 return res.json({
                     data: [],
                     total: 0
                 });
             }
-
+ 
             // 2. Fetch process names
             const process = await models.ProductionSalesProcess.findAll({
                 where: {
@@ -1586,47 +1613,55 @@ async function getReports(req, res) {
                 },
                 raw: true
             });
-
+ 
             const processMap = process.reduce((acc, curr) => {
                 const prodStringId = prodStringMap[curr.productionId] || curr.productionId;
                 acc[curr.id] = `${curr.processName} (${prodStringId})`;
                 return acc;
             }, {});
-
+ 
+            const prodToFGMap = process.reduce((acc, curr) => {
+                const bomId = prodBOMMap[curr.productionId];
+                const finishedGood = finishedGoodsMap[bomId];
+                const bomFinishedGoodName = finishedGood?.itemName || '';
+                acc[curr.id] = bomFinishedGoodName || '';
+                return acc;
+            }, {});
+ 
             // 3. Get first & last date
             const firstDate = new Date(processLogs[0].createdAt);
             const lastDate = processLogs.length > 1 ? new Date(
                 processLogs[processLogs.length - 1].createdAt
             ) : new Date(processLogs[0].createdAt);
-
+ 
             // 4. Create full date range
             const dateRange = [];
             let d = new Date(firstDate);
-
+ 
             while (d <= lastDate) {
                 dateRange.push(d.toISOString().slice(0, 10));
                 d.setDate(d.getDate() + 1);
             }
-
+ 
             // 5. Group quantity by date + process
             const grouped = {};
-
+ 
             processLogs.forEach(log => {
                 const date = new Date(log.createdAt)
                     .toISOString()
                     .slice(0, 10);
-
+ 
                 if (!grouped[date]) grouped[date] = {};
                 if (!grouped[date][log.processId])
                     grouped[date][log.processId] = 0;
-
+ 
                 grouped[date][log.processId] += Number(log.quantity || 0);
             });
-
+ 
             // 6. Build ledger
             const cumulative = {};
             const ledger = [];
-
+ 
             dateRange.forEach(date => {
                 const row1 = {
                     date,
@@ -1638,25 +1673,27 @@ async function getReports(req, res) {
                     processes: {},
                     production: "Total Production"
                 };
-
+ 
                 Object.keys(processMap).forEach(pid => {
                     const processName = processMap[pid];
+                    const finishedGoodName = prodToFGMap[pid] || '';
                     const todayQty = grouped?.[date]?.[pid] || 0;
-
+ 
                     cumulative[pid] = (cumulative[pid] || 0) + todayQty;
-
+ 
                     row1.processes[processName] = {
                         todayProduction: todayQty,
+                        finishedGood: finishedGoodName
                     };
                     row2.processes[processName] = {
                         totalProduction: cumulative[pid]
                     };
                 });
-
+ 
                 ledger.push(row1);
                 ledger.push(row2);
             });
-
+ 
             return res.json({
                 data: ledger,
                 total: ledger.length
