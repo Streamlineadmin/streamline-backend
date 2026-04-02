@@ -39,6 +39,7 @@ module.exports = (sequelize, DataTypes) => {
         exactRawMaterial: DataTypes.BOOLEAN,
         defaultStores: DataTypes.JSON,
         challanExactQuantity: DataTypes.BOOLEAN,
+        uniqueBomName: DataTypes.BOOLEAN,
     }, {
         sequelize,
         modelName: 'Settings',

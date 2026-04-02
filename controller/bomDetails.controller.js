@@ -17,6 +17,12 @@ async function createBOMDetails(req, res) {
     } = req.body;
     let { bomId } = req.body;
 
+    const settings = await models.Settings.findOne({
+      where: { companyId },
+      transaction: t,
+      lock: t.LOCK.UPDATE,
+    });
+
     const bomSeries = await models.BOMSeries.findOne({
       where: {
         companyId,
@@ -47,7 +53,19 @@ async function createBOMDetails(req, res) {
       await t.rollback();
       return res.status(409).json({ message: "BOM details already exist!" });
     }
-    
+
+    if (settings?.uniqueBomName) {
+      const duplicateName = await models.BOMDetails.findOne({
+        where: { bomName, companyId },
+        transaction: t,
+      });
+
+      if (duplicateName) {
+        await t.rollback();
+        return res.status(409).json({ message: "BOM name already exists for this company!" });
+      }
+    }
+
     // create BOM details
     const newDetail = await models.BOMDetails.create(
       { bomId, bomName, status, bomDescription, companyId, userId },
@@ -135,23 +153,6 @@ async function updateBOMDetails(req, res) {
       await t.rollback();
       return res.status(404).json({ message: "BOM not found" });
     }
-
-    // Check for duplicate BOM name within company, excluding current bomId
-    // const duplicateName = await models.BOMDetails.findOne({
-    //   where: {
-    //     bomName,
-    //     companyId,
-    //     bomId: { [models.Sequelize.Op.ne]: bomId },
-    //   },
-    //   transaction: t,
-    // });
-
-    // if (duplicateName) {
-    //   await t.rollback();
-    //   return res
-    //     .status(409)
-    //     .json({ message: "BOM name already exists for this company!" });
-    // }
 
     // Update BOM
     await models.BOMAttachments.destroy({

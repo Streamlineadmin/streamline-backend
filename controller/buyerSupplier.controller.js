@@ -266,6 +266,8 @@ async function bulkUploadBuyerSuppliers(req, res) {
             "* Address Type",
             "* City",
             "* State",
+            "* Person Name",
+            "* Phone"
         ];
 
         for (const row of sheetData) {
@@ -279,9 +281,9 @@ async function bulkUploadBuyerSuppliers(req, res) {
             }
 
             const {
-                "Person Name": personName,
+                "* Person Name": personName,
                 "Person Email": personEmail,
-                "Phone": phone,
+                "* Phone": phone,
                 "* Company Name": companyName,
                 "Company Email": companyEmail,
                 "* Company Type": companyType,
