@@ -12,7 +12,9 @@ module.exports = (sequelize, DataTypes) => {
         {
             userName:DataTypes.STRING,
             password: DataTypes.STRING,
-            companyId: DataTypes.INTEGER
+            companyId: DataTypes.INTEGER,
+            gstin: DataTypes.STRING,
+            pin: DataTypes.STRING,
         },
         {
             sequelize,
