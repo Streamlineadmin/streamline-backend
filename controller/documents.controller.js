@@ -11,9 +11,9 @@ const fs = require("fs");
 
 async function createDocument(req, res) {
   try {
+    let { documentNumber = null } = req.body;
     const {
       documentType = null,
-      documentNumber = null,
       documentTo = null,
       buyerName = null,
       buyerBillingAddress = null,
@@ -125,6 +125,37 @@ async function createDocument(req, res) {
     let message = '';
 
     if (!isDraft) {
+      if (documentType != documentTypes.purchaseInvoice) {
+        const t = await models.sequelize.transaction();
+        try {
+          if (seriesId) {
+            const documentSeriesTarget = await models.DocumentSeries.findOne({
+              where: { id: seriesId },
+              transaction: t,
+              lock: t.LOCK.UPDATE
+            });
+            if (documentSeriesTarget) {
+              documentNumber = documentSeriesTarget.prefix + documentSeriesTarget.nextNumber;
+              await documentSeriesTarget.update({ nextNumber: documentSeriesTarget.nextNumber + 1 }, { transaction: t });
+            }
+          } else {
+            const defaultSeriesTarget = await models.DocumentSeries.findOne({
+              where: { companyId: Number(companyId), DocType: documentType, default: 1 },
+              transaction: t,
+              lock: t.LOCK.UPDATE
+            });
+            if (defaultSeriesTarget) {
+              documentNumber = defaultSeriesTarget.prefix + defaultSeriesTarget.nextNumber;
+              await defaultSeriesTarget.update({ nextNumber: defaultSeriesTarget.nextNumber + 1 }, { transaction: t });
+            }
+          }
+          await t.commit();
+        } catch (error) {
+          await t.rollback();
+          throw error;
+        }
+      }
+
       const doc = await models.Documents.findOne({
         where: {
           documentNumber,
@@ -341,30 +372,7 @@ async function createDocument(req, res) {
       }
     });
 
-    if (documentType != documentTypes.purchaseInvoice && !isDraft) {
-      if (seriesId) {
-        const documentSeries = await models.DocumentSeries.findOne({
-          where: {
-            id: seriesId
-          }
-        });
-        if (documentSeries) {
-          await documentSeries.update({ nextNumber: documentSeries.nextNumber + 1 });
-        }
-      }
-      else {
-        const defaultSeries = await models.DocumentSeries.findOne({
-          where: {
-            companyId: Number(companyId),
-            DocType: documentType,
-            default: 1
-          }
-        });
-        if (defaultSeries) {
-          await defaultSeries.update({ nextNumber: defaultSeries.nextNumber + 1 });
-        }
-      }
-    }
+
 
     if (status && documentType === documentTypes.purchaseOrder && indent_number) {
       const indent_numbers = indent_number.split(',');
