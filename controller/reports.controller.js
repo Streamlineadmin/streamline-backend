@@ -1686,7 +1686,8 @@ async function getReports(req, res) {
                         finishedGood: finishedGoodName
                     };
                     row2.processes[processName] = {
-                        totalProduction: cumulative[pid]
+                        totalProduction: cumulative[pid],
+                        finishedGood: finishedGoodName
                     };
                 });
  

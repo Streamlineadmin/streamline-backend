@@ -940,7 +940,8 @@ async function createDocument(req, res) {
             customFields: item?.customFields,
             imageUrl: item?.imageUrl,
             category: item?.category,
-            store: item?.store
+            store: item?.store,
+            poNumbers: documentType === 'Invoice' ? item?.poNumbers ? item.poNumbers : null : null,
           })
         })
       ),
@@ -4923,7 +4924,8 @@ async function editDocument(req, res) {
             customFields: item?.customFields,
             imageUrl: item?.imageUrl,
             category: item?.category,
-            store: item?.store
+            store: item?.store,
+            poNumbers: documentType === 'Invoice' ? item?.poNumbers ? item.poNumbers : null : null,
           })
         })
       ),
@@ -5843,7 +5845,6 @@ async function emailDocument(req, res) {
   }
 }
 
-
 module.exports = {
   getDocuments,
   getDocumentById,
@@ -5860,5 +5861,5 @@ module.exports = {
   createEInvoice,
   createEWayBill,
   fetchCurrentDoc,
-  emailDocument
+  emailDocument,
 };
