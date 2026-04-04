@@ -5614,7 +5614,7 @@ async function createEInvoice(req, res) {
     });
 
     if (existingDocument) {
-      await existingDocument.update({ irnNumber, qrCode });
+      await existingDocument.update({ irnNumber, qrCode, irnDate: new Date() });
     }
 
     return res.status(200).json({
@@ -5729,7 +5729,7 @@ const createEWayBill = async (req, res) => {
 
 
     const response = await axios.post(
-      "https://api.mastergst.com/ewaybillapi/v1.03/ewayapi/genewaybill",
+      "https://staging.mastergst.com/ewaybillapi/v1.03/ewayapi/genewaybill",
       eWayBillPayload,
       {
         headers: {
@@ -5808,7 +5808,7 @@ async function emailDocument(req, res) {
     <div style="display: flex; align-items: center; margin: 10px 0;">
       <a href="https://easemargin.com" target="_blank" style="text-decoration:none; color: inherit; display:flex; align-items:center;">
         Powered By 
-        <img src="https://testapi.easemargin.com/uploads/1750521347467-ease%20logo.png" 
+        <img src="https://teststaging.easemargin.com/uploads/1750521347467-ease%20logo.png" 
              style="width:90px; height:16px; object-fit:contain; margin-left:5px;" />
       </a>
     </div>
@@ -5845,6 +5845,84 @@ async function emailDocument(req, res) {
   }
 }
 
+async function cancelEInvoice(req, res) {
+  const { document, userName, password, gst, irnNumber } = req.body;
+  try {
+    const authResponse = await axios.get(
+      "https://api.perione.in/einvoice/authenticate",
+      {
+        params: { email: process.env.EMAIL },
+        headers: {
+          "Content-Type": "application/json",
+          "client_id": process.env.CLIENT_ID,
+          "client_secret": process.env.CLIENT_SECRET,
+          "gstin": gst,
+          "username": userName,
+          "password": password,
+          "ip_address": "192.68.45.37",
+        },
+      }
+    );
+
+    const authToken = authResponse?.data?.data?.AuthToken;
+    if (!authToken) {
+      return res.status(400).json({
+        message: "Failed to generate Auth Token",
+        errors: authResponse?.data?.data || authResponse?.data
+      });
+    }
+    const response = await axios.post(
+      "https://api.perione.in/einvoice/type/CANCEL/version/V1_03",
+      {
+        Irn: irnNumber,
+        CnlRsn: "1",
+        CnlRem: "Wrong entry"
+      },
+      {
+        params: { email: process.env.EMAIL },
+        headers: {
+          "client_id": process.env.CLIENT_ID,
+          "client_secret": process.env.CLIENT_SECRET,
+          "gstin": gst,
+          "username": userName,
+          "password": password,
+          "auth-token": authToken,
+          "ip_address": "192.68.45.37",
+        },
+      }
+    );
+
+    if (!response?.data) {
+      return res.status(400).json({
+        message: "Cancel API failed",
+        errors: cancelData
+      });
+    }
+
+    const existingDocument = await models.Documents.findOne({
+      where: {
+        companyId: document.companyId,
+        documentNumber: document.documentNumber,
+      },
+    });
+
+    if (existingDocument) {
+      await existingDocument.update({ irnNumber: null, qrCode: null });
+    }
+
+    res.status(200).json({
+      message: "E-Invoice Cancelled Successfully.",
+      data: response?.data
+    });
+  } catch (error) {
+    console.error(error.response?.data || error.message);
+    res.status(500).json({
+      message: "Internal Server Error",
+      error: error.response?.data || error.message,
+    });
+  }
+}
+
 module.exports = {
   getDocuments,
   getDocumentById,
@@ -5862,4 +5940,5 @@ module.exports = {
   createEWayBill,
   fetchCurrentDoc,
   emailDocument,
+  cancelEInvoice
 };
