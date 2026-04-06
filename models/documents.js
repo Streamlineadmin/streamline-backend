@@ -186,7 +186,8 @@ module.exports = (sequelize, DataTypes) => {
     ewayBillCreated: DataTypes.BOOLEAN,
     contactPerson: DataTypes.STRING,
     linkedDocuments: DataTypes.JSON,
-    hideColumns: DataTypes.JSON
+    hideColumns: DataTypes.JSON,
+    irnDate: DataTypes.DATE,
   }, {
     sequelize,
     modelName: 'Documents',

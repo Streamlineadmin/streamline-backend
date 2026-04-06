@@ -11,9 +11,9 @@ const fs = require("fs");
 
 async function createDocument(req, res) {
   try {
+    let { documentNumber = null } = req.body;
     const {
       documentType = null,
-      documentNumber = null,
       documentTo = null,
       buyerName = null,
       buyerBillingAddress = null,
@@ -125,6 +125,37 @@ async function createDocument(req, res) {
     let message = '';
 
     if (!isDraft) {
+      if (documentType != documentTypes.purchaseInvoice) {
+        const t = await models.sequelize.transaction();
+        try {
+          if (seriesId) {
+            const documentSeriesTarget = await models.DocumentSeries.findOne({
+              where: { id: seriesId },
+              transaction: t,
+              lock: t.LOCK.UPDATE
+            });
+            if (documentSeriesTarget) {
+              documentNumber = documentSeriesTarget.prefix + documentSeriesTarget.nextNumber;
+              await documentSeriesTarget.update({ nextNumber: documentSeriesTarget.nextNumber + 1 }, { transaction: t });
+            }
+          } else {
+            const defaultSeriesTarget = await models.DocumentSeries.findOne({
+              where: { companyId: Number(companyId), DocType: documentType, default: 1 },
+              transaction: t,
+              lock: t.LOCK.UPDATE
+            });
+            if (defaultSeriesTarget) {
+              documentNumber = defaultSeriesTarget.prefix + defaultSeriesTarget.nextNumber;
+              await defaultSeriesTarget.update({ nextNumber: defaultSeriesTarget.nextNumber + 1 }, { transaction: t });
+            }
+          }
+          await t.commit();
+        } catch (error) {
+          await t.rollback();
+          throw error;
+        }
+      }
+
       const doc = await models.Documents.findOne({
         where: {
           documentNumber,
@@ -341,30 +372,7 @@ async function createDocument(req, res) {
       }
     });
 
-    if (documentType != documentTypes.purchaseInvoice && !isDraft) {
-      if (seriesId) {
-        const documentSeries = await models.DocumentSeries.findOne({
-          where: {
-            id: seriesId
-          }
-        });
-        if (documentSeries) {
-          await documentSeries.update({ nextNumber: documentSeries.nextNumber + 1 });
-        }
-      }
-      else {
-        const defaultSeries = await models.DocumentSeries.findOne({
-          where: {
-            companyId: Number(companyId),
-            DocType: documentType,
-            default: 1
-          }
-        });
-        if (defaultSeries) {
-          await defaultSeries.update({ nextNumber: defaultSeries.nextNumber + 1 });
-        }
-      }
-    }
+
 
     if (status && documentType === documentTypes.purchaseOrder && indent_number) {
       const indent_numbers = indent_number.split(',');
@@ -940,7 +948,8 @@ async function createDocument(req, res) {
             customFields: item?.customFields,
             imageUrl: item?.imageUrl,
             category: item?.category,
-            store: item?.store
+            store: item?.store,
+            poNumbers: documentType === 'Invoice' ? item?.poNumbers ? item.poNumbers : null : null,
           })
         })
       ),
@@ -4923,7 +4932,8 @@ async function editDocument(req, res) {
             customFields: item?.customFields,
             imageUrl: item?.imageUrl,
             category: item?.category,
-            store: item?.store
+            store: item?.store,
+            poNumbers: documentType === 'Invoice' ? item?.poNumbers ? item.poNumbers : null : null,
           })
         })
       ),
@@ -5612,7 +5622,7 @@ async function createEInvoice(req, res) {
     });
 
     if (existingDocument) {
-      await existingDocument.update({ irnNumber, qrCode });
+      await existingDocument.update({ irnNumber, qrCode, irnDate: new Date() });
     }
 
     return res.status(200).json({
@@ -5727,7 +5737,7 @@ const createEWayBill = async (req, res) => {
 
 
     const response = await axios.post(
-      "https://api.mastergst.com/ewaybillapi/v1.03/ewayapi/genewaybill",
+      "https://staging.mastergst.com/ewaybillapi/v1.03/ewayapi/genewaybill",
       eWayBillPayload,
       {
         headers: {
@@ -5806,7 +5816,7 @@ async function emailDocument(req, res) {
     <div style="display: flex; align-items: center; margin: 10px 0;">
       <a href="https://easemargin.com" target="_blank" style="text-decoration:none; color: inherit; display:flex; align-items:center;">
         Powered By 
-        <img src="https://testapi.easemargin.com/uploads/1750521347467-ease%20logo.png" 
+        <img src="https://teststaging.easemargin.com/uploads/1750521347467-ease%20logo.png" 
              style="width:90px; height:16px; object-fit:contain; margin-left:5px;" />
       </a>
     </div>
@@ -5843,6 +5853,83 @@ async function emailDocument(req, res) {
   }
 }
 
+async function cancelEInvoice(req, res) {
+  const { document, userName, password, gst, irnNumber } = req.body;
+  try {
+    const authResponse = await axios.get(
+      "https://api.perione.in/einvoice/authenticate",
+      {
+        params: { email: process.env.EMAIL },
+        headers: {
+          "Content-Type": "application/json",
+          "client_id": process.env.CLIENT_ID,
+          "client_secret": process.env.CLIENT_SECRET,
+          "gstin": gst,
+          "username": userName,
+          "password": password,
+          "ip_address": "192.68.45.37",
+        },
+      }
+    );
+
+    const authToken = authResponse?.data?.data?.AuthToken;
+    if (!authToken) {
+      return res.status(400).json({
+        message: "Failed to generate Auth Token",
+        errors: authResponse?.data?.data || authResponse?.data
+      });
+    }
+    const response = await axios.post(
+      "https://api.perione.in/einvoice/type/CANCEL/version/V1_03",
+      {
+        Irn: irnNumber,
+        CnlRsn: "1",
+        CnlRem: "Wrong entry"
+      },
+      {
+        params: { email: process.env.EMAIL },
+        headers: {
+          "client_id": process.env.CLIENT_ID,
+          "client_secret": process.env.CLIENT_SECRET,
+          "gstin": gst,
+          "username": userName,
+          "password": password,
+          "auth-token": authToken,
+          "ip_address": "192.68.45.37",
+        },
+      }
+    );
+
+    if (!response?.data) {
+      return res.status(400).json({
+        message: "Cancel API failed",
+        errors: cancelData
+      });
+    }
+
+    const existingDocument = await models.Documents.findOne({
+      where: {
+        companyId: document.companyId,
+        documentNumber: document.documentNumber,
+      },
+    });
+
+    if (existingDocument) {
+      await existingDocument.update({ irnNumber: null, qrCode: null });
+    }
+
+    res.status(200).json({
+      message: "E-Invoice Cancelled Successfully.",
+      data: response?.data
+    });
+  } catch (error) {
+    console.error(error.response?.data || error.message);
+    res.status(500).json({
+      message: "Internal Server Error",
+      error: error.response?.data || error.message,
+    });
+  }
+}
 
 module.exports = {
   getDocuments,
@@ -5860,5 +5947,6 @@ module.exports = {
   createEInvoice,
   createEWayBill,
   fetchCurrentDoc,
-  emailDocument
+  emailDocument,
+  cancelEInvoice
 };
