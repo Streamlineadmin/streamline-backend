@@ -258,19 +258,23 @@ async function updateProfile(req, res) {
             role,
             pan,
             gstNumber,
-            cin
+            cin,
+            msmeNumber,
+            range,
+            division,
+            commissionrate
         } = req.body;
-
+ 
         if (!userId) {
             return res.status(400).json({ message: "User ID is required" });
         }
-
+ 
         const user = await models.Users.findOne({
             where: {
                 id: userId
             }
         });
-
+ 
         // Update User Table
         const [affectedRows] = await models.Users.update(
             {
@@ -284,14 +288,18 @@ async function updateProfile(req, res) {
                 pan,
                 gstNumber,
                 cin,
+                msmeNumber,
+                range,
+                division,
+                commissionrate
             },
             { where: { id: userId } }
         );
-
+ 
         // if (affectedRows === 0) {
         //     return res.status(404).json({ message: "User not found or no changes made." });
         // }
-
+ 
         if ((role == 1 || role == 2) && user && companyName) {
             await models.Users.update(
                 {
@@ -300,25 +308,25 @@ async function updateProfile(req, res) {
                 { where: { companyId: user.companyId } }
             );
         }
-
-
+ 
+ 
         // Fetch the updated user details
         const updatedUser = await models.Users.findOne({
             where: { id: userId },
-            attributes: ['id', 'name', 'email', 'companyName', 'companyId', 'contactNo', 'role', 'website', 'businessType', 'pan', 'gstNumber', 'cin', 'profileURL', 'signature']
+            attributes: ['id', 'name', 'email', 'companyName', 'companyId', 'contactNo', 'role', 'website', 'businessType', 'pan', 'gstNumber', 'cin', 'profileURL', 'signature', 'msmeNumber', 'range', 'division', 'commissionrate']
         });
-
+ 
         const rolePermissionsData = await models.RolePermissions.findAll({
             where: { companyId: user.companyId, role: user.role },
             raw: true
         });
-
+ 
         let rolesAccess = [];
         if (rolePermissionsData.length) {
             // Collect unique IDs
             const permissionIds = [...new Set(rolePermissionsData.map(rp => rp.permission))];
             const subpermissionIds = [...new Set(rolePermissionsData.map(rp => rp.subpermission))];
-
+ 
             // 4️⃣ Fetch all features & subfeatures in one go
             const [features, subfeatures] = await Promise.all([
                 models.PermissionsFeatures.findAll({
@@ -332,10 +340,10 @@ async function updateProfile(req, res) {
                     raw: true
                 })
             ]);
-
+ 
             const featureMap = Object.fromEntries(features.map(f => [f.id, f.feature]));
             const subfeatureMap = Object.fromEntries(subfeatures.map(s => [s.id, s.subfeature]));
-
+ 
             // 5️⃣ Build access array
             rolesAccess = rolePermissionsData.map(rp => ({
                 feature: featureMap[rp.permission] || null,
@@ -346,7 +354,7 @@ async function updateProfile(req, res) {
                 delete: rp.delete
             }));
         }
-
+ 
         // 6️⃣ Attach admin logo if needed
         let logoUrl = user.profileURL || "";
         if (user.role !== 1 && !logoUrl) {
@@ -357,7 +365,7 @@ async function updateProfile(req, res) {
             });
             logoUrl = admin?.profileURL || "";
         }
-
+ 
         // 7️⃣ JWT payload
         const payload = {
             userId: user.id,
@@ -376,11 +384,15 @@ async function updateProfile(req, res) {
             cin: updatedUser.cin,
             permissions: rolesAccess,
             logoUrl,
-            signature: updatedUser.signature
+            signature: updatedUser.signature,
+            msmeNumber: updatedUser.msmeNumber,
+            range: updatedUser.range,
+            division: updatedUser.division,
+            commissionrate: updatedUser.commissionrate
         };
-
+ 
         const token = jwt.sign(payload, process.env.JWT_SECRET || "secret", { expiresIn: "1h" });
-
+ 
         // Format response
         res.status(200).json({
             message: "Profile updated successfully.",
@@ -396,9 +408,13 @@ async function updateProfile(req, res) {
             pan: updatedUser.pan,
             gstNumber: updatedUser.gstNumber,
             cin: updatedUser.cin,
+            msmeNumber: updatedUser.msmeNumber,
+            range: updatedUser.range,
+            division: updatedUser.division,
+            commissionrate: updatedUser.commissionrate,
             token
         });
-
+ 
     } catch (error) {
         console.error("Error updating profile:", error);
         res.status(500).json({ message: "Something went wrong, please try again later!", error });
@@ -408,35 +424,35 @@ async function updateProfile(req, res) {
 async function updateProfileURL(req, res) {
     try {
         const { userId, profileURL } = req.body;
-
+ 
         if (!userId || !profileURL) {
             return res.status(400).json({ message: "User ID and Profile URL are required" });
         }
-
+ 
         // First, check if the user exists
         const user = await models.Users.findOne({ where: { id: userId } });
-
+ 
         if (!user) {
             return res.status(404).json({ message: "User not found" });
         }
-
+ 
         // Update the profile URL
         await models.Users.update(
             { profileURL: profileURL },
             { where: { id: userId } }
         );
-
+ 
         const rolePermissionsData = await models.RolePermissions.findAll({
             where: { companyId: user.companyId, role: user.role },
             raw: true
         });
-
+ 
         let rolesAccess = [];
         if (rolePermissionsData.length) {
             // Collect unique IDs
             const permissionIds = [...new Set(rolePermissionsData.map(rp => rp.permission))];
             const subpermissionIds = [...new Set(rolePermissionsData.map(rp => rp.subpermission))];
-
+ 
             // 4️⃣ Fetch all features & subfeatures in one go
             const [features, subfeatures] = await Promise.all([
                 models.PermissionsFeatures.findAll({
@@ -450,10 +466,10 @@ async function updateProfileURL(req, res) {
                     raw: true
                 })
             ]);
-
+ 
             const featureMap = Object.fromEntries(features.map(f => [f.id, f.feature]));
             const subfeatureMap = Object.fromEntries(subfeatures.map(s => [s.id, s.subfeature]));
-
+ 
             // 5️⃣ Build access array
             rolesAccess = rolePermissionsData.map(rp => ({
                 feature: featureMap[rp.permission] || null,
@@ -464,7 +480,7 @@ async function updateProfileURL(req, res) {
                 delete: rp.delete
             }));
         }
-
+ 
         // 6️⃣ Attach admin logo if needed
         let logoUrl = profileURL || "";
         if (user.role !== 1 && !logoUrl) {
@@ -475,7 +491,7 @@ async function updateProfileURL(req, res) {
             });
             logoUrl = admin?.profileURL || "";
         }
-
+ 
         // 7️⃣ JWT payload
         const payload = {
             userId: user.id,
@@ -494,18 +510,22 @@ async function updateProfileURL(req, res) {
             cin: user.cin,
             permissions: rolesAccess,
             signature: user.signature,
-            logoUrl
+            logoUrl,
+            msmeNumber: user.msmeNumber,
+            range: user.range,
+            division: user.division,
+            commissionrate: user.commissionrate
         };
-
+ 
         const token = jwt.sign(payload, process.env.JWT_SECRET || "secret", { expiresIn: "1h" });
-
+ 
         // Return the updated user data
         res.status(200).json({
             message: "Profile URL updated successfully",
             token,
             email: user.email
         });
-
+ 
     } catch (error) {
         console.error("Error updating profile URL:", error);
         res.status(500).json({
@@ -518,35 +538,35 @@ async function updateProfileURL(req, res) {
 async function updateSignature(req, res) {
     try {
         const { userId, signature } = req.body;
-
+ 
         if (!userId || !signature) {
             return res.status(400).json({ message: "User ID and Signature are required" });
         }
-
+ 
         // First, check if the user exists
         const user = await models.Users.findOne({ where: { id: userId } });
-
+ 
         if (!user) {
             return res.status(404).json({ message: "User not found" });
         }
-
+ 
         // Update the signature
         await models.Users.update(
             { signature: signature },
             { where: { id: userId } }
         );
-
+ 
         const rolePermissionsData = await models.RolePermissions.findAll({
             where: { companyId: user.companyId, role: user.role },
             raw: true
         });
-
+ 
         let rolesAccess = [];
         if (rolePermissionsData.length) {
             // Collect unique IDs
             const permissionIds = [...new Set(rolePermissionsData.map(rp => rp.permission))];
             const subpermissionIds = [...new Set(rolePermissionsData.map(rp => rp.subpermission))];
-
+ 
             // Fetch all features & subfeatures in one go
             const [features, subfeatures] = await Promise.all([
                 models.PermissionsFeatures.findAll({
@@ -560,10 +580,10 @@ async function updateSignature(req, res) {
                     raw: true
                 })
             ]);
-
+ 
             const featureMap = Object.fromEntries(features.map(f => [f.id, f.feature]));
             const subfeatureMap = Object.fromEntries(subfeatures.map(s => [s.id, s.subfeature]));
-
+ 
             // Build access array
             rolesAccess = rolePermissionsData.map(rp => ({
                 feature: featureMap[rp.permission] || null,
@@ -574,7 +594,7 @@ async function updateSignature(req, res) {
                 delete: rp.delete
             }));
         }
-
+ 
         // Attach admin logo if needed
         let logoUrl = user.profileURL || "";
         if (user.role !== 1 && !logoUrl) {
@@ -585,7 +605,7 @@ async function updateSignature(req, res) {
             });
             logoUrl = admin?.profileURL || "";
         }
-
+ 
         // JWT payload
         const payload = {
             userId: user.id,
@@ -604,18 +624,23 @@ async function updateSignature(req, res) {
             cin: user.cin,
             signature: signature,
             permissions: rolesAccess,
-            logoUrl
+            logoUrl,
+            msmeNumber: user.msmeNumber,
+            range: user.range,
+            division: user.division,
+            commissionrate: user.commissionrate
+ 
         };
-
+ 
         const token = jwt.sign(payload, process.env.JWT_SECRET || "secret", { expiresIn: "1h" });
-
+ 
         // Return the updated user data
         res.status(200).json({
             message: "Signature updated successfully",
             token,
             email: user.email
         });
-
+ 
     } catch (error) {
         console.error("Error updating signature:", error);
         res.status(500).json({
