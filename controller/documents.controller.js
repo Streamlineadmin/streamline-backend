@@ -5546,7 +5546,7 @@ async function createEInvoice(req, res) {
         Pin: String(pin || ''),
         Stcd: gst?.slice(0, 2),
         Ph: document?.supplierContactNo,
-        Em: document?.supplierEmail
+        ...(document?.supplierEmail ? { Em: document.supplierEmail } : {})
       },
 
       BuyerDtls: {
@@ -5560,7 +5560,7 @@ async function createEInvoice(req, res) {
         Pin: String(buyerAddress?.pincode || ''),
         Stcd: document?.buyerGSTNumber?.slice(0, 2),
         Ph: document?.buyerContactNumber,
-        Em: document?.buyerEmail
+        ...(document?.buyerEmail ? { Em: document.buyerEmail } : {})
       },
 
       ItemList: items.map(item => ({

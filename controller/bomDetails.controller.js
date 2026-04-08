@@ -154,6 +154,27 @@ async function updateBOMDetails(req, res) {
       return res.status(404).json({ message: "BOM not found" });
     }
 
+    const settings = await models.Settings.findOne({
+      where: { companyId },
+      transaction: t,
+    });
+
+    if (settings?.uniqueBomName) {
+      const duplicateName = await models.BOMDetails.findOne({
+        where: {
+          bomName,
+          companyId,
+          bomId: { [Op.ne]: bomId },
+        },
+        transaction: t,
+      });
+
+      if (duplicateName) {
+        await t.rollback();
+        return res.status(409).json({ message: "BOM name already exists for this company!" });
+      }
+    }
+
     // Update BOM
     await models.BOMAttachments.destroy({
       where: { BOMID: bomId },

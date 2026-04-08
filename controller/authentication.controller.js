@@ -364,7 +364,11 @@ async function login(req, res) {
             permissions: rolesAccess,
             logoUrl,
             signature: user.signature,
-            registeredFromMobile : user?.registeredFromMobile
+            registeredFromMobile : user?.registeredFromMobile,
+            msmeNumber: user.msmeNumber,
+            range: user.range,
+            division: user.division,
+            commissionrate: user.commissionrate
         };
 
         const token = jwt.sign(payload, process.env.JWT_SECRET || "secret", { expiresIn: "1h" });

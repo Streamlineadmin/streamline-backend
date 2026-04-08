@@ -34,7 +34,11 @@ module.exports = (sequelize, DataTypes) => {
     gstNumber: DataTypes.STRING,
     cin: DataTypes.STRING,
     signature: DataTypes.STRING,
-    registeredFromMobile: DataTypes.INTEGER
+    registeredFromMobile: DataTypes.INTEGER,
+    msmeNumber: DataTypes.STRING,
+    range: DataTypes.STRING,
+    division: DataTypes.STRING,
+    commissionrate: DataTypes.STRING,
   }, {
     sequelize,
     modelName: 'Users',
