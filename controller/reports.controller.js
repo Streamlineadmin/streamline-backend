@@ -1629,18 +1629,29 @@ async function getReports(req, res) {
                 return acc;
             }, {});
  
+            const toIST_YMD = (dateString) => {
+                const d = new Date(dateString);
+                const istD = new Date(d.toLocaleString("en-US", {timeZone: "Asia/Kolkata"}));
+                const year = istD.getFullYear();
+                const month = String(istD.getMonth() + 1).padStart(2, '0');
+                const day = String(istD.getDate()).padStart(2, '0');
+                return `${year}-${month}-${day}`;
+            };
+
             // 3. Get first & last date
-            const firstDate = new Date(processLogs[0].createdAt);
-            const lastDate = processLogs.length > 1 ? new Date(
-                processLogs[processLogs.length - 1].createdAt
-            ) : new Date(processLogs[0].createdAt);
+            const firstDateStr = toIST_YMD(processLogs[0].createdAt);
+            const lastDateStr = toIST_YMD(processLogs[processLogs.length - 1].createdAt);
  
             // 4. Create full date range
             const dateRange = [];
-            let d = new Date(firstDate);
+            let d = new Date(firstDateStr + "T00:00:00");
+            const endD = new Date(lastDateStr + "T00:00:00");
  
-            while (d <= lastDate) {
-                dateRange.push(d.toISOString().slice(0, 10));
+            while (d <= endD) {
+                const y = d.getFullYear();
+                const m = String(d.getMonth() + 1).padStart(2, '0');
+                const day = String(d.getDate()).padStart(2, '0');
+                dateRange.push(`${y}-${m}-${day}`);
                 d.setDate(d.getDate() + 1);
             }
  
@@ -1648,9 +1659,7 @@ async function getReports(req, res) {
             const grouped = {};
  
             processLogs.forEach(log => {
-                const date = new Date(log.createdAt)
-                    .toISOString()
-                    .slice(0, 10);
+                const date = toIST_YMD(log.createdAt);
  
                 if (!grouped[date]) grouped[date] = {};
                 if (!grouped[date][log.processId])
