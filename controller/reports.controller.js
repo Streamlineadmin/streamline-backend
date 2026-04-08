@@ -601,7 +601,8 @@ async function getReports(req, res) {
                         ...approval.data,
                         ...item,
                         approvalId: approval?.data?.approvalId,
-                        documentNumber: item.id
+                        documentNumber: item.id,
+                        navigationId: approval?.data?.id
                     });
                 }
             }
