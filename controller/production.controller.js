@@ -4120,6 +4120,57 @@ async function saveReworkQuantity(req, res) {
         });
     }
 }
+async function deleteLogs(req, res) {
+    const t = await models.sequelize.transaction();
+    try {
+        const { productionId, processId } = req.body;
+        
+        if (!productionId || !processId) {
+            await t.rollback();
+            return res.status(400).json({ message: "productionId and processId are required." });
+        }
+
+        const latestLog = await models.ProcessLogs.findOne({
+            where: { productionId, processId },
+            order: [['createdAt', 'DESC']],
+            transaction: t
+        });
+
+        if (!latestLog) {
+            await t.rollback();
+            return res.status(404).json({ message: "No process logs found to delete." });
+        }
+
+        const processStats = await models.ProductionSalesProcess.findOne({
+            where: { productionId, id: processId },
+            transaction: t
+        });
+
+        if (processStats) {
+            const newCompleted = Math.max(0, (processStats.processCompleteOn || 0) - latestLog.quantity);
+            await processStats.update({ processCompleteOn: newCompleted }, { transaction: t });
+        }
+
+        await latestLog.destroy({ transaction: t });
+
+        await models.ProductionHistory.create({
+            productionId,
+            actionType: `Process Log Deleted.`,
+            summary: `Log for ${processStats?.processName || 'process'} with quantity ${latestLog.quantity} was deleted.`
+        }, { transaction: t });
+        
+        await t.commit();
+        return res.status(200).json({ message: "Latest process log deleted successfully." });
+
+    } catch (error) {
+        await t.rollback();
+        console.error("deleteLogs Error:", error);
+        return res.status(500).json({
+            message: "Something went wrong while deleting logs",
+            error: error.message || error
+        });
+    }
+}
 
 async function getAllProductions(req, res) {
     try {
@@ -4173,5 +4224,6 @@ module.exports = {
     updateStartDate: updateStartDate,
     minStockMaterialPlanning: minStockMaterialPlanning,
     saveReworkQuantity: saveReworkQuantity,
-    getAllProductions: getAllProductions
+    getAllProductions: getAllProductions,
+    deleteLogs: deleteLogs
 }
