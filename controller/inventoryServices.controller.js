@@ -12,7 +12,7 @@ function addService(req, res) {
       ],
     },
   })
-    .then((serviceResult) => {
+    .then(async (serviceResult) => {
       if (serviceResult) {
         let message = "";
         if (
@@ -38,6 +38,7 @@ function addService(req, res) {
               "Mandatory fields missing: serviceId, serviceName, and companyId are required.",
           });
         }
+        const seriesId = req.body.seriesId || null;
 
         const serviceData = {
           serviceId: req.body.serviceId,
@@ -57,19 +58,31 @@ function addService(req, res) {
           status: req.body.status || 1,
         };
 
-        models.InventoryServices.create(serviceData)
-          .then((result) => {
-            res.status(201).json({
-              message: "Service added successfully",
-              service: result,
+        const result = await models.sequelize.transaction(async (t) => {
+          if (seriesId) {
+            const documentSeriesTarget = await models.DocumentSeries.findOne({
+              where: { id: seriesId },
+              transaction: t,
+              lock: t.LOCK.UPDATE,
             });
-          })
-          .catch((error) => {
-            res.status(500).json({
-              message: "Something went wrong, please try again later!",
-              error: error.message || error,
-            });
+
+            if (documentSeriesTarget) {
+              await documentSeriesTarget.update(
+                { nextNumber: documentSeriesTarget.nextNumber + 1 },
+                { transaction: t }
+              );
+            }
+          }
+
+          return models.InventoryServices.create(serviceData, {
+            transaction: t,
           });
+        });
+
+        res.status(201).json({
+          message: "Service added successfully",
+          service: result,
+        });
       }
     })
     .catch((error) => {
@@ -194,21 +207,21 @@ function deleteService(req, res) {
 
 function getAllServices(req, res) {
   models.InventoryServices.findAll({
-          where: {
-              companyId: req.body.companyId
-          }
-      }).then(result => {
-          if (!result || result.length === 0) {
-              return res.status(200).json([]);
-          }
-          res.status(200).json(result);
-      })
-          .catch(error => {
-              console.error("No service found", error);
-              res.status(500).json({
-                  message: "Something went wrong, please try again later!"
-              });
-          });
+    where: {
+      companyId: req.body.companyId
+    }
+  }).then(result => {
+    if (!result || result.length === 0) {
+      return res.status(200).json([]);
+    }
+    res.status(200).json(result);
+  })
+    .catch(error => {
+      console.error("No service found", error);
+      res.status(500).json({
+        message: "Something went wrong, please try again later!"
+      });
+    });
 
 }
 
