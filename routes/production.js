@@ -30,5 +30,6 @@ router.post('/updateStartDate', productionController.updateStartDate);
 router.post('/minStockMaterialPlanning', productionController.minStockMaterialPlanning);
 router.post('/saveReworkQuantity', productionController.saveReworkQuantity);
 router.post('/getAllProductions', productionController.getAllProductions);
+router.post('/deleteLogs', productionController.deleteLogs);
 
 module.exports = router;
