@@ -4568,7 +4568,8 @@ async function editDocument(req, res) {
       department = '',
       showUnits = null,
       batches = null,
-      supplyState = ''
+      supplyState = '',
+      requestForApproval
     } = req.body;
 
     const document = await models.Documents.findOne({
@@ -4790,7 +4791,7 @@ async function editDocument(req, res) {
       signature,
       companyId,
       createdBy,
-      status,
+      status: requestForApproval ? 29 : status,
       ip_address,
       paymentDate,
       POCName,

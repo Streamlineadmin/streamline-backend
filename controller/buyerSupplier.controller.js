@@ -394,15 +394,15 @@ async function getCompanyDetailsByGstNumber(req, res) {
             return res.status(400).json({ message: "GST number is required" });
         }
 
-        const response = await axios.get("https://api.whitebooks.in/public/search", {
+        const response = await axios.get("https://api.perione.in/public/search", {
             params: {
-                email: "apisales@whitebooks.in",
+                email: process.env.EMAIL,
                 gstin: gstNumber,
             },
             headers: {
                 "Content-Type": "application/json",
-                client_id: process.env.CLIENT_ID,
-                client_secret: process.env.CLIENT_SECRET
+                client_id: process.env.GST_CLIENT_ID,
+                client_secret: process.env.GST_CLIENT_SECRET
             },
         });
 
