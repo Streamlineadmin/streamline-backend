@@ -413,7 +413,7 @@ async function startProduction(req, res) {
 
 async function getProductions(req, res) {
     try {
-        const { companyId, endDate, startDate, isDiscard } = req.body;
+        const { companyId, endDate, startDate, isDiscard, status } = req.body;
         let finalStartDate;
         let finalEndDate;
 
@@ -463,7 +463,7 @@ async function getProductions(req, res) {
                 companyId: Number(companyId),
                 bulkProductionId: null,
                 status: {
-                    [Op.in]: isDiscard ? [0] : [1, 2, 3, 4]
+                    [Op.in]: isDiscard ? status : [1, 2, 3, 4]
                 },
                 createdAt: {
                     [Op.between]: [finalStartDate, finalEndDate]
@@ -560,7 +560,7 @@ async function getProductions(req, res) {
 
 async function getBulkProductions(req, res) {
     try {
-        const { companyId, startDate, endDate, isDiscard } = req.body;
+        const { companyId, startDate, endDate, isDiscard, status } = req.body;
         let finalStartDate;
         let finalEndDate;
 
@@ -583,7 +583,7 @@ async function getBulkProductions(req, res) {
                     [Op.between]: [finalStartDate, finalEndDate]
                 },
                 status: {
-                    [Op.in]: isDiscard ? [0] : [1, 2, 3, 4]
+                    [Op.in]: isDiscard ? status : [1, 2, 3, 4]
                 }
 
             },
@@ -3014,7 +3014,7 @@ async function startBulkProduction(req, res) {
 
 async function remainingProduction(req, res) {
     try {
-        const { companyId, startDate, endDate, isDiscard } = req.body;
+        const { companyId, startDate, endDate, isDiscard, status } = req.body;
         let finalStartDate;
         let finalEndDate;
 
@@ -4124,7 +4124,7 @@ async function deleteLogs(req, res) {
     const t = await models.sequelize.transaction();
     try {
         const { productionId, processId } = req.body;
-        
+
         if (!productionId || !processId) {
             await t.rollback();
             return res.status(400).json({ message: "productionId and processId are required." });
@@ -4158,7 +4158,7 @@ async function deleteLogs(req, res) {
             actionType: `Process Log Deleted.`,
             summary: `Log for ${processStats?.processName || 'process'} with quantity ${latestLog.quantity} was deleted.`
         }, { transaction: t });
-        
+
         await t.commit();
         return res.status(200).json({ message: "Latest process log deleted successfully." });
 
