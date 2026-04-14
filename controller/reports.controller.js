@@ -1742,13 +1742,13 @@ async function getReports(req, res) {
             oneMonthAgoIst.setMonth(nowIst.getMonth() - 1);
 
             // ✅ SINGLE conversion point (IST → UTC)
-            const startUtc = startDate || istToUtc(oneMonthAgoIst);
-            const endUtc = endDate || istToUtc(nowIst);
+            const startUtc = startDate;
+            const endUtc = endDate;
 
             // ---------- QUERY ----------
             const whereClause = {
                 companyId: Number(companyId),
-                createdAt: { [Op.between]: [startUtc, endUtc] },
+                ...(startUtc && endUtc ? { createdAt: { [Op.between]: [startUtc, endUtc] } } : {}),
             };
 
             const users = await models.Users.findAll({
@@ -2226,31 +2226,42 @@ async function getReports(req, res) {
             return res.status(200).json({ data: shortItems, total: shortItems.length });
 
         }
-
         if (documentType === 'Service Challan Report') {
-            const { dateRange } = req.body;
+            const { dateRange, quickRange } = req.body;
 
             let startDate = null, endDate = null;
-            if (dateRange?.length === 2) {
-                const startIst = new Date(new Date(dateRange[0]).getTime());
-                const endIst = new Date(new Date(dateRange[1]).getTime());
+            const IST_OFFSET = 5.5 * 60 * 60 * 1000;
+            let createdAtFilter = {};
+
+            if (quickRange) {
+                const nowIst = new Date(Date.now() + IST_OFFSET);
+                const startIst = new Date(nowIst);
+                startIst.setDate(nowIst.getDate() - quickRange);
+
+                startDate = startIst;
+                endDate = nowIst;
+            } else if (dateRange?.length === 2) {
+                const startIst = new Date(dateRange[0]);
+                const endIst = new Date(dateRange[1]);
                 startIst.setHours(0, 0, 0, 0);
                 endIst.setHours(23, 59, 59, 999);
-                startDate = new Date(startIst.getTime() - IST_OFFSET);
-                endDate = new Date(endIst.getTime());
+                startDate = startIst;
+                endDate = endIst;
+            }
+
+            if (startDate && endDate) {
+                createdAtFilter = {
+                    createdAt: {
+                        [Op.between]: [istToUtc(startDate), istToUtc(endDate)]
+                    }
+                };
             }
 
             const serviceChallans = await models.Documents.findAll({
                 where: {
                     companyId: Number(companyId),
                     documentType: 'Service Challan',
-                    ...(Array.isArray(dateRange) && dateRange.length === 2 && dateRange[0] && dateRange[1] && {
-                        createdAt: {
-                            [Op.between]: [
-                                startDate, endDate
-                            ]
-                        }
-                    })
+                    ...createdAtFilter
                 },
                 raw: true
             })
@@ -2276,6 +2287,22 @@ async function getReports(req, res) {
             });
             const categoryMap = categorys?.reduce((acc, curr) => {
                 acc[curr.id] = curr.name;
+                return acc;
+            }, {});
+
+
+            const productions = await models.Production.findAll({
+                where: {
+                    companyId: Number(companyId),
+                    serviceOrderNumber: {
+                        [Op.in]: serviceChallans.map(challan => challan.serviceOrderNumber)
+                    }
+                },
+                raw: true
+
+            })
+            const productionsMap = productions.reduce((acc, curr) => {
+                acc[curr.serviceOrderNumber] = curr;
                 return acc;
             }, {});
 
@@ -2330,14 +2357,18 @@ async function getReports(req, res) {
                 }))
             })
 
-            const data = dataWithItems.map(challan => ({
+            const data = dataWithItems.map((challan, index) => ({
                 ...challan,
+                challanNumber: challan.documentNumber,
+                documentNumber: challan.documentNumber + challan.itemId + index,
                 grn_number: grnChallanDocumentsMap[challan?.documentNumber]?.map(doc => doc?.documentNumber)?.join(',') || '',
                 grn_date: grnChallanDocumentsMap[challan?.documentNumber]?.map(doc => doc?.documentDate)?.join(',') || '',
                 metricsUnit: uomMap[challan?.metricsUnit] || '',
                 category: categoryMap[challan?.category] || '',
                 subCategory: categoryMap[challan?.subCategory] || '',
                 microCategory: categoryMap[challan?.microCategory] || '',
+                productionId: productionsMap[challan.serviceOrderNumber]?.productionId || '',
+                productionNavigationId: productionsMap[challan.serviceOrderNumber]?.id || '',
             }))
 
             return res.status(200).json({ data, total: data?.length });

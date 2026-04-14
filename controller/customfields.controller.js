@@ -94,7 +94,7 @@ async function deleteCustomfields(req, res) {
 
 async function editPermissions(req, res) {
   try {
-    const { id, permissions } = req.body;
+    const { id, permissions, onColumns } = req.body;
     if (!id || !Array.isArray(permissions)) {
       return res.status(400).json({ message: "Invalid input. 'id' and 'permissions' array are required." });
     }
@@ -105,7 +105,7 @@ async function editPermissions(req, res) {
       return res.status(404).json({ message: 'Custom Field not found.' });
     }
 
-    await customField.update({ visibleOn: permissions });
+    await customField.update({ visibleOn: permissions, onColumns: onColumns || [] });
 
     return res.status(200).json({
       message: "Permissions updated successfully."

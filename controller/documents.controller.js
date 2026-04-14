@@ -5789,7 +5789,7 @@ const createEWayBill = async (req, res) => {
 async function emailDocument(req, res) {
   const directory = path.join(__dirname, '..', 'uploads', req.file.filename);
   try {
-    const { fileName, to, subject, htmlContent, companyId, userId } = req.body;
+    const { fileName, to, subject, htmlContent, companyId, userId, cc, bcc } = req.body;
 
     const emailCredential = await models.EMailCredential.findOne({
       where: {
@@ -5829,6 +5829,8 @@ async function emailDocument(req, res) {
     await transporter.sendMail({
       from: from,
       to,
+      ...(cc && cc.length ? { cc } : {}),
+      ...(bcc && bcc.length ? { bcc } : {}),
       subject: subject || "Sharing Document",
       html: formattedHtml,
       attachments: [
