@@ -3612,19 +3612,24 @@ async function discardDocument(req, res) {
           documentNumber: document.documentNumber,
         }
       });
-      const store = await models.Store.findOne({
-        where: {
-          name: document.store,
-          companyId
-        }
-      });
       const stockHistory = [];
-      await models.StoreItems.update({ quantity: 0 }, {
-        where: {
-          documentNumber: document.documentNumber,
-          storeId: store.id
+      if (document.store) {
+        const store = await models.Store.findOne({
+          where: { name: document.store, companyId }
+        });
+        if (store) {
+          await models.StoreItems.update({ quantity: 0 }, {
+            where: { documentNumber: document.documentNumber, storeId: store.id }
+          });
         }
-      });
+      } else {
+        const storeIds = [...new Set(stockTransfers.map(st => st.toStoreId).filter(Boolean))];
+        for (const sId of storeIds) {
+          await models.StoreItems.update({ quantity: 0 }, {
+            where: { documentNumber: document.documentNumber, storeId: sId }
+          });
+        }
+      }
       const transferNumber = generateTransferNumber();
       for (const stockTransfer of stockTransfers) {
         stockHistory.push({
@@ -3682,19 +3687,24 @@ async function discardDocument(req, res) {
           documentNumber: document.documentNumber,
         }
       });
-      const store = await models.Store.findOne({
-        where: {
-          name: document.store,
-          companyId
-        }
-      });
       const stockHistory = [];
-      await models.StoreItems.update({ quantity: 0 }, {
-        where: {
-          documentNumber: document.documentNumber,
-          storeId: store.id
+      if (document.store) {
+        const store = await models.Store.findOne({
+          where: { name: document.store, companyId }
+        });
+        if (store) {
+          await models.StoreItems.update({ quantity: 0 }, {
+            where: { documentNumber: document.documentNumber, storeId: store.id }
+          });
         }
-      });
+      } else {
+        const storeIds = [...new Set(stockTransfers.map(st => st.toStoreId).filter(Boolean))];
+        for (const sId of storeIds) {
+          await models.StoreItems.update({ quantity: 0 }, {
+            where: { documentNumber: document.documentNumber, storeId: sId }
+          });
+        }
+      }
       const transferNumber = generateTransferNumber();
       for (const stockTransfer of stockTransfers) {
         stockHistory.push({
@@ -3745,31 +3755,35 @@ async function discardDocument(req, res) {
           documentNumber: document.documentNumber,
         }
       });
-      const store = await models.Store.findOne({
-        where: {
-          name: document.store,
-          companyId
-        }
-      });
-      const rejectStore = await models.Store.findOne({
-        where: {
-          name: document.rejectedStore,
-          companyId
-        }
-      })
       const stockHistory = [];
-      await models.StoreItems.update({ quantity: 0 }, {
-        where: {
-          documentNumber: document.documentNumber,
-          storeId: store.id,
+      if (document.store) {
+        const store = await models.Store.findOne({
+          where: { name: document.store, companyId }
+        });
+        if (store) {
+          await models.StoreItems.update({ quantity: 0 }, {
+            where: { documentNumber: document.documentNumber, storeId: store.id }
+          });
         }
-      });
-      await models.StoreItems.update({ quantity: 0 }, {
-        where: {
-          documentNumber: document.documentNumber,
-          storeId: rejectStore.id,
+      }
+      if (document.rejectedStore) {
+        const rejectStore = await models.Store.findOne({
+          where: { name: document.rejectedStore, companyId }
+        });
+        if (rejectStore) {
+          await models.StoreItems.update({ quantity: 0 }, {
+            where: { documentNumber: document.documentNumber, storeId: rejectStore.id }
+          });
         }
-      });
+      }
+      if (!document.store || !document.rejectedStore) {
+        const storeIds = [...new Set(stockTransfers.map(st => st.toStoreId).filter(Boolean))];
+        for (const sId of storeIds) {
+          await models.StoreItems.update({ quantity: 0 }, {
+            where: { documentNumber: document.documentNumber, storeId: sId }
+          });
+        }
+      }
       const transferNumber = generateTransferNumber();
       for (const stockTransfer of stockTransfers) {
         stockHistory.push({
@@ -3889,19 +3903,24 @@ async function discardDocument(req, res) {
             documentNumber: document.documentNumber,
           }
         });
-        const store = await models.Store.findOne({
-          where: {
-            companyId,
-            name: document?.store,
-          }
-        });
         const stockHistory = [];
-        await models.StoreItems.update({ quantity: 0 }, {
-          where: {
-            documentNumber: document.documentNumber,
-            storeId: store.id
+        if (document.store) {
+          const store = await models.Store.findOne({
+            where: { companyId, name: document.store }
+          });
+          if (store) {
+            await models.StoreItems.update({ quantity: 0 }, {
+              where: { documentNumber: document.documentNumber, storeId: store.id }
+            });
           }
-        });
+        } else {
+          const storeIds = [...new Set(stockTransfers.map(st => st.toStoreId).filter(Boolean))];
+          for (const sId of storeIds) {
+            await models.StoreItems.update({ quantity: 0 }, {
+              where: { documentNumber: document.documentNumber, storeId: sId }
+            });
+          }
+        }
         const transferNumber = generateTransferNumber();
         for (const stockTransfer of stockTransfers) {
           stockHistory.push({
@@ -3968,19 +3987,24 @@ async function discardDocument(req, res) {
           documentNumber: document.documentNumber,
         }
       });
-      const store = await models.Store.findOne({
-        where: {
-          companyId,
-          name: document.store,
-        }
-      });
       const stockHistory = [];
-      await models.StoreItems.update({ quantity: 0 }, {
-        where: {
-          documentNumber: document.documentNumber,
-          storeId: store?.id
+      if (document.store) {
+        const store = await models.Store.findOne({
+          where: { companyId, name: document.store }
+        });
+        if (store) {
+          await models.StoreItems.update({ quantity: 0 }, {
+            where: { documentNumber: document.documentNumber, storeId: store.id }
+          });
         }
-      });
+      } else {
+        const storeIds = [...new Set(stockTransfers.map(st => st.toStoreId).filter(Boolean))];
+        for (const sId of storeIds) {
+          await models.StoreItems.update({ quantity: 0 }, {
+            where: { documentNumber: document.documentNumber, storeId: sId }
+          });
+        }
+      }
       const transferNumber = generateTransferNumber();
       for (const stockTransfer of stockTransfers) {
         stockHistory.push({
@@ -4221,7 +4245,7 @@ async function discardDocument(req, res) {
     await document.update({ status: 2 });
     res.status(200).json({ message: 'Document Discarded Successfully.' });
   } catch (error) {
-    console.log(error);
+    console.log(error,'error in discard docs');
     res.status(500).json({ message: 'Internal Server Error' })
   }
 }
