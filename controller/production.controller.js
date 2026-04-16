@@ -3497,29 +3497,30 @@ async function discardProduction(req, res) {
 }
 
 async function bulkIssue(req, res) {
+    const t = await models.sequelize.transaction();
     try {
         const { productionId, quantity, companyId,
             userId, auto, skip, finishedGoodStoreMap,
             rawMaterialStoreMap, scrapMaterialStoreMap } =
             req.body;
         let totalPrice = 0;
-        const production = await models.Production.findByPk(productionId);
+        const production = await models.Production.findByPk(productionId, { transaction: t });
         await production.update({
             status: 2, ...(production.productionStartDate
                 ? {}
                 : { productionStartDate: new Date().toISOString() })
-        });
+        }, { transaction: t });
         const [finishedGoods, rawMaterials, scraps, processes, charges] = await Promise.all([
-            models.ProductionFinishedGoods.findAll({ where: { productionId } }),
-            models.ProductionRawMaterials.findAll({ where: { productionId } }),
-            models.ProductionScrapMaterials.findAll({ where: { productionId } }),
-            models.ProductionSalesProcess.findAll({ where: { productionId } }),
-            models.ProductionAdditionalCharges.findAll({ where: { productionId } }),
+            models.ProductionFinishedGoods.findAll({ where: { productionId }, transaction: t }),
+            models.ProductionRawMaterials.findAll({ where: { productionId }, transaction: t }),
+            models.ProductionScrapMaterials.findAll({ where: { productionId }, transaction: t }),
+            models.ProductionSalesProcess.findAll({ where: { productionId }, transaction: t }),
+            models.ProductionAdditionalCharges.findAll({ where: { productionId }, transaction: t }),
         ]);
         for (const element of charges) {
             const unit = element.amount / finishedGoods[0].quantity;
-            auto && await element.update({ totalCost: (element.totalCost || 0) + (unit * quantity) });
-            !auto && await element.update({ currentCost: (element.currentCost || 0) + (unit * quantity) });
+            auto && await element.update({ totalCost: (element.totalCost || 0) + (unit * quantity) }, { transaction: t });
+            !auto && await element.update({ currentCost: (element.currentCost || 0) + (unit * quantity) }, { transaction: t });
             totalPrice += unit * quantity;
         }
         for (const element of processes) {
@@ -3529,21 +3530,22 @@ async function bulkIssue(req, res) {
             totalPrice += cost;
             const current = timeToSeconds(auto ? element.totalPlannedTime : element?.currentPlannedTime);
             const result = secondsToTime(unit + current);
-            await element.update({ ...(auto ? { totalPlannedTime: result, averageCost: (element.averageCost || 0) + cost } : { currentPlannedTime: result, currentaverageCost: (element.currentaverageCost || 0) + cost }), processCompleteOn: (element.processCompleteOn || 0) + quantity });
+            await element.update({ ...(auto ? { totalPlannedTime: result, averageCost: (element.averageCost || 0) + cost } : { currentPlannedTime: result, currentaverageCost: (element.currentaverageCost || 0) + cost }), processCompleteOn: (element.processCompleteOn || 0) + quantity }, { transaction: t });
             await models.ProcessLogs.create({
                 companyId: production.companyId,
                 productionId: production.id,
                 processId: element.id,
                 quantity: quantity,
                 userId
-            });
+            }, { transaction: t });
         }
         for (const element of scraps) {
             const settings = isValidJSON(element?.isManual) || {};
             const approvalCount = await models.InventoryApproval.count({
                 where: {
                     companyId
-                }
+                },
+                transaction: t
             });
             const approval = await models.InventoryApproval.create({
                 approvalId: `INA${approvalCount + 1}`,
@@ -3554,34 +3556,38 @@ async function bulkIssue(req, res) {
                 companyId: companyId,
                 status: 1,
                 approvedBy: null
-            });
+            }, { transaction: t });
             const unit = element.quantity / finishedGoods[0].quantity;
             if (!element.store) continue;
             const rawMaterial = await models.ProductionRawMaterials.findOne({
                 where: {
                     itemId: element.itemId,
                     productionId: element.productionId
-                }
+                },
+                transaction: t
             });
 
             await models.ProductionScrapMaterials.update({ producedQuantity: (element?.producedQuantity || 0) + (unit * quantity) }, {
                 where: {
                     id: element.id
-                }
+                },
+                transaction: t
             });
 
             const store = await models.Store.findOne({
                 where: {
                     companyId: Number(companyId),
                     name: scrapMaterialStoreMap?.[element.itemId]?.replaceAll("-fromrejectstore", "")
-                }
+                },
+                transaction: t
             });
 
             const item = await models.Items.findOne({
                 where: {
                     companyId: Number(companyId),
                     itemId: element.itemId
-                }
+                },
+                transaction: t
             });
 
             await models.StoreItems.create({
@@ -3594,7 +3600,7 @@ async function bulkIssue(req, res) {
                 isRejected: element?.isReject || false,
                 approvalId: approval.id,
                 quantityForApproval: (unit * quantity) * (element?.conversionFactor || 1)
-            });
+            }, { transaction: t });
 
             await models.StockTransfer.create({
                 transferNumber: generateTransferNumber(),
@@ -3611,19 +3617,20 @@ async function bulkIssue(req, res) {
                 isRejected: element?.isReject || false,
                 approvalId: approval.id,
                 quantityForApproval: (unit * quantity) * (element?.conversionFactor || 1)
-            });
+            }, { transaction: t });
 
         }
 
         const [stores, items] = await Promise.all([
-            models.Store.findAll({ where: { companyId: Number(companyId) } }),
+            models.Store.findAll({ where: { companyId: Number(companyId) }, transaction: t }),
             models.Items.findAll({
                 where: {
                     companyId,
                     itemId: {
                         [Op.in]: rawMaterials.map(data => data.itemId)
                     }
-                }
+                },
+                transaction: t
             })
         ]);
         const storeMap = new Map(stores.map(store => [store.name, store]));
@@ -3636,7 +3643,8 @@ async function bulkIssue(req, res) {
             const approvalCount = await models.InventoryApproval.count({
                 where: {
                     companyId
-                }
+                },
+                transaction: t
             });
             const approval = await models.InventoryApproval.create({
                 approvalId: `INA${approvalCount + 1}`,
@@ -3647,7 +3655,7 @@ async function bulkIssue(req, res) {
                 companyId: companyId,
                 status: 1,
                 approvedBy: null
-            });
+            }, { transaction: t });
 
             const stockTransferPayloads = [];
             const storeName = rawMaterialStoreMap[element.itemId];
@@ -3661,7 +3669,8 @@ async function bulkIssue(req, res) {
                     itemId: item.id,
                     isRejected
                 },
-                order: [['createdAt', 'ASC']]
+                order: [['createdAt', 'ASC']],
+                transaction: t
             });
             let price = 0;
             let remainingQuantity = (unit * quantity) * (element?.conversionFactor || 1);
@@ -3670,7 +3679,7 @@ async function bulkIssue(req, res) {
                 if (stock.quantity <= 0) continue;
                 const deductQty = Math.min(stock.quantity, remainingQuantity);
                 remainingQuantity -= deductQty;
-                await stock.update({ quantity: stock.quantity - deductQty });
+                await stock.update({ quantity: stock.quantity - deductQty }, { transaction: t });
                 stockTransferPayloads.push({
                     transferNumber: generateTransferNumber(),
                     fromStoreId: store.id,
@@ -3697,7 +3706,8 @@ async function bulkIssue(req, res) {
                     averagePrice: (element.averagePrice || 0) + price
                 },
                 {
-                    where: { id: element.id }
+                    where: { id: element.id },
+                    transaction: t
                 }
             );
             !auto && await models.ProductionRawMaterials.update(
@@ -3706,22 +3716,24 @@ async function bulkIssue(req, res) {
                     currentAverage: (element.currentAverage || 0) + price
                 },
                 {
-                    where: { id: element.id }
+                    where: { id: element.id },
+                    transaction: t
                 }
             );
 
             if (stockTransferPayloads.length > 0) {
-                await models.StockTransfer.bulkCreate(stockTransferPayloads);
+                await models.StockTransfer.bulkCreate(stockTransferPayloads, { transaction: t });
             }
         }
         for (const element of finishedGoods) {
             if (!finishedGoodStoreMap?.[element.itemId]) continue;
-            await element.update({ producedQuantity: (element.producedQuantity || 0) + quantity, ...(auto ? { passedQuantity: (element.passedQuantity || 0) + quantity, cost: (element.cost || 0) + totalPrice } : {}), ...(!auto ? { quantityToTest: (element.quantityToTest || 0) + quantity } : {}) });
+            await element.update({ producedQuantity: (element.producedQuantity || 0) + quantity, ...(auto ? { passedQuantity: (element.passedQuantity || 0) + quantity, cost: (element.cost || 0) + totalPrice } : {}), ...(!auto ? { quantityToTest: (element.quantityToTest || 0) + quantity } : {}) }, { transaction: t });
             if (auto) {
                 const approvalCount = await models.InventoryApproval.count({
                     where: {
                         companyId
-                    }
+                    },
+                    transaction: t
                 });
                 const approval = await models.InventoryApproval.create({
                     approvalId: `INA${approvalCount + 1}`,
@@ -3732,8 +3744,8 @@ async function bulkIssue(req, res) {
                     companyId: companyId,
                     status: 1,
                     approvedBy: null
-                });
-                const item = await models.Items.findOne({ where: { companyId: Number(companyId), itemId: element.itemId } });
+                }, { transaction: t });
+                const item = await models.Items.findOne({ where: { companyId: Number(companyId), itemId: element.itemId }, transaction: t });
                 const stores = storeMap.get(finishedGoodStoreMap[element.itemId]);
                 const costPerUnit = totalPrice / quantity;
 
@@ -3746,7 +3758,7 @@ async function bulkIssue(req, res) {
                     price: costPerUnit,
                     approvalId: approval.id,
                     quantityForApproval: quantity * (finishedGoods[0]?.conversionFactor || 1)
-                });
+                }, { transaction: t });
 
                 await models.StockTransfer.create({
                     transferNumber: generateTransferNumber(),
@@ -3762,14 +3774,14 @@ async function bulkIssue(req, res) {
                     productionNavigationId: production.id,
                     approvalId: approval.id,
                     quantityForApproval: quantity * (finishedGoods[0]?.conversionFactor || 1)
-                });
+                }, { transaction: t });
             }
             if (element.passedQuantity >= element.quantity) {
                 await production.update({
                     status: 4, ...(production.productionCompletionDate
                         ? {}
                         : { productionCompletionDate: new Date().toISOString() })
-                });
+                }, { transaction: t });
             }
         }
 
@@ -3777,13 +3789,16 @@ async function bulkIssue(req, res) {
             productionId,
             actionType: `Bulk Issue Requested.`,
             summary: `Bulk Issue Requested For ${quantity} Units.`
-        });
+        }, { transaction: t });
+
+        await t.commit();
 
         res.status(200).json({
             message: 'Bulk Issue Successfully.'
         });
     } catch (error) {
-        console.log(error);
+        if (t) await t.rollback();
+        console.log("Bulk Issue Error:", error);
         res.status(500).json({
             message: "Internal Server Error"
         });
