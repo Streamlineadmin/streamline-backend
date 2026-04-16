@@ -34,7 +34,11 @@ module.exports = (sequelize, DataTypes) => {
       defaultValue: []
     },
     category: DataTypes.INTEGER,
-    unique: DataTypes.BOOLEAN
+    unique: DataTypes.BOOLEAN,
+    onColumns: {
+      type: DataTypes.JSON,
+      defaultValue: []
+    },
   }, {
     sequelize,
     modelName: 'CustomFields',

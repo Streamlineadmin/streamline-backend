@@ -1529,7 +1529,7 @@ async function getReports(req, res) {
                 total: stockTransfers.length
             });
         }
-         if (documentType === 'Process Ledger') {
+        if (documentType === 'Process Ledger') {
             const { productionId } = req.body;
             if (!productionId) {
                 return res.json({
@@ -1537,11 +1537,11 @@ async function getReports(req, res) {
                     total: 0
                 });
             }
- 
+
             // 1. Fetch all descendant productions recursively
             let currentLevelIds = [productionId];
             const allProductionIds = [productionId];
- 
+
             while (currentLevelIds.length > 0) {
                 const children = await models.Production.findAll({
                     where: { parentProductionId: { [Op.in]: currentLevelIds } },
@@ -1555,7 +1555,7 @@ async function getReports(req, res) {
                     currentLevelIds = [];
                 }
             }
- 
+
             // Fetch the Production models to map integer ID to string productionId
             const productionsDetail = await models.Production.findAll({
                 where: { id: { [Op.in]: allProductionIds } },
@@ -1566,9 +1566,9 @@ async function getReports(req, res) {
                 acc[curr.id] = curr.productionId;
                 return acc;
             }, {});
- 
+
             const bomIdsSet = new Set();
- 
+
             const prodBOMMap = productionsDetail.reduce((acc, curr) => {
                 acc[curr.id] = curr.bomId;
                 if (curr.bomId !== null && curr.bomId !== undefined) {
@@ -1576,7 +1576,7 @@ async function getReports(req, res) {
                 }
                 return acc;
             }, {});
- 
+
             const finishedGoodsData = await models.BOMDetails.findAll({
                 where: { id: { [Op.in]: Array.from(bomIdsSet) } },
                 include: [
@@ -1587,26 +1587,26 @@ async function getReports(req, res) {
                 ],
                 nest: true
             });
- 
+
             const finishedGoodsMap = {};
- 
+
             finishedGoodsData.forEach((bomDetail) => {
                 finishedGoodsMap[bomDetail.id] = bomDetail.finishedGoods?.[0] || null;
             });
- 
+
             const processLogs = await models.ProcessLogs.findAll({
                 where: { productionId: { [Op.in]: allProductionIds } },
                 order: [['createdAt', 'ASC']],
                 raw: true
             });
- 
+
             if (!processLogs.length) {
                 return res.json({
                     data: [],
                     total: 0
                 });
             }
- 
+
             // 2. Fetch process names
             const process = await models.ProductionSalesProcess.findAll({
                 where: {
@@ -1614,13 +1614,13 @@ async function getReports(req, res) {
                 },
                 raw: true
             });
- 
+
             const processMap = process.reduce((acc, curr) => {
                 const prodStringId = prodStringMap[curr.productionId] || curr.productionId;
                 acc[curr.id] = `${curr.processName} (${prodStringId})`;
                 return acc;
             }, {});
- 
+
             const prodToFGMap = process.reduce((acc, curr) => {
                 const bomId = prodBOMMap[curr.productionId];
                 const finishedGood = finishedGoodsMap[bomId];
@@ -1628,10 +1628,10 @@ async function getReports(req, res) {
                 acc[curr.id] = bomFinishedGoodName || '';
                 return acc;
             }, {});
- 
+
             const toIST_YMD = (dateString) => {
                 const d = new Date(dateString);
-                const istD = new Date(d.toLocaleString("en-US", {timeZone: "Asia/Kolkata"}));
+                const istD = new Date(d.toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
                 const year = istD.getFullYear();
                 const month = String(istD.getMonth() + 1).padStart(2, '0');
                 const day = String(istD.getDate()).padStart(2, '0');
@@ -1641,12 +1641,12 @@ async function getReports(req, res) {
             // 3. Get first & last date
             const firstDateStr = toIST_YMD(processLogs[0].createdAt);
             const lastDateStr = toIST_YMD(processLogs[processLogs.length - 1].createdAt);
- 
+
             // 4. Create full date range
             const dateRange = [];
             let d = new Date(firstDateStr + "T00:00:00");
             const endD = new Date(lastDateStr + "T00:00:00");
- 
+
             while (d <= endD) {
                 const y = d.getFullYear();
                 const m = String(d.getMonth() + 1).padStart(2, '0');
@@ -1654,24 +1654,24 @@ async function getReports(req, res) {
                 dateRange.push(`${y}-${m}-${day}`);
                 d.setDate(d.getDate() + 1);
             }
- 
+
             // 5. Group quantity by date + process
             const grouped = {};
- 
+
             processLogs.forEach(log => {
                 const date = toIST_YMD(log.createdAt);
- 
+
                 if (!grouped[date]) grouped[date] = {};
                 if (!grouped[date][log.processId])
                     grouped[date][log.processId] = 0;
- 
+
                 grouped[date][log.processId] += Number(log.quantity || 0);
             });
- 
+
             // 6. Build ledger
             const cumulative = {};
             const ledger = [];
- 
+
             dateRange.forEach(date => {
                 const row1 = {
                     date,
@@ -1683,14 +1683,14 @@ async function getReports(req, res) {
                     processes: {},
                     production: "Total Production"
                 };
- 
+
                 Object.keys(processMap).forEach(pid => {
                     const processName = processMap[pid];
                     const finishedGoodName = prodToFGMap[pid] || '';
                     const todayQty = grouped?.[date]?.[pid] || 0;
- 
+
                     cumulative[pid] = (cumulative[pid] || 0) + todayQty;
- 
+
                     row1.processes[processName] = {
                         todayProduction: todayQty,
                         finishedGood: finishedGoodName
@@ -1700,11 +1700,11 @@ async function getReports(req, res) {
                         finishedGood: finishedGoodName
                     };
                 });
- 
+
                 ledger.push(row1);
                 ledger.push(row2);
             });
- 
+
             return res.json({
                 data: ledger,
                 total: ledger.length
@@ -1742,13 +1742,13 @@ async function getReports(req, res) {
             oneMonthAgoIst.setMonth(nowIst.getMonth() - 1);
 
             // ✅ SINGLE conversion point (IST → UTC)
-            const startUtc = startDate || istToUtc(oneMonthAgoIst);
-            const endUtc = endDate || istToUtc(nowIst);
+            const startUtc = startDate;
+            const endUtc = endDate;
 
             // ---------- QUERY ----------
             const whereClause = {
                 companyId: Number(companyId),
-                createdAt: { [Op.between]: [startUtc, endUtc] },
+                ...(startUtc && endUtc ? { createdAt: { [Op.between]: [startUtc, endUtc] } } : {}),
             };
 
             const users = await models.Users.findAll({
@@ -2150,6 +2150,228 @@ async function getReports(req, res) {
                 data,
                 total: data.length
             });
+        }
+        if (documentType === 'Stock Shortage Report') {
+            const { category } = req.body;
+            const items = await models.Items.findAll({
+                where: {
+                    companyId: Number(companyId),
+                    ...((category && category.length > 0) ? { category: category } : {})
+                },
+                raw: true
+            });
+
+            const uoms = await models.UOM.findAll({
+                where: {
+                    [Op.or]: [
+                        { companyId: req.body.companyId, status: 1 },
+                        { companyId: null, status: 0 }
+                    ]
+                }
+            });
+
+            const uomMap = uoms.reduce((acc, curr) => {
+                acc[curr.id] = curr.code;
+                return acc;
+            }, {});
+
+            const categorys = await models.Categories.findAll({
+                where: {
+                    companyId: Number(companyId)
+                }
+            });
+            const categoryMap = categorys?.reduce((acc, curr) => {
+                acc[curr.id] = curr.name;
+                return acc;
+            }, {});
+
+            const storeItems = await models.StoreItems.findAll({
+                where: {
+                    itemId: {
+                        [Op.in]: items.map(item => item.id),
+                    },
+                    isRejected: false,
+                    quantity: {
+                        [Op.gt]: 0
+                    }
+                }
+                ,
+                raw: true
+            })
+
+            const itemsCountMap = {};
+            for (const element of storeItems) {
+                itemsCountMap[element.itemId] = (itemsCountMap[element.itemId] || 0) + element.quantity;
+            }
+
+            const shortItems = [];
+
+            for (const item of items) {
+                const count = itemsCountMap[item.id] || 0;
+                const itemData = {
+                    ...item,
+                    currentQuantity: count,
+                    shortage: count ? Math.abs((item.minStock || 0) - count) : (item.minStock || 0),
+                    metricsUnit: uomMap[item.metricsUnit],
+                    category: categoryMap[item.category],
+                    subCategory: categoryMap[item.subCategory],
+                    microCategory: categoryMap[item.microCategory],
+                };
+
+                if (count === undefined || count === null || (item.minStock && item.minStock > 0 && count < item.minStock)) {
+                    shortItems.push(itemData);
+                }
+            }
+
+            return res.status(200).json({ data: shortItems, total: shortItems.length });
+
+        }
+        if (documentType === 'Service Challan Report') {
+            const { dateRange, quickRange } = req.body;
+
+            let startDate = null, endDate = null;
+            const IST_OFFSET = 5.5 * 60 * 60 * 1000;
+            let createdAtFilter = {};
+
+            if (quickRange) {
+                const nowIst = new Date(Date.now() + IST_OFFSET);
+                const startIst = new Date(nowIst);
+                startIst.setDate(nowIst.getDate() - quickRange);
+
+                startDate = startIst;
+                endDate = nowIst;
+            } else if (dateRange?.length === 2) {
+                const startIst = new Date(dateRange[0]);
+                const endIst = new Date(dateRange[1]);
+                startIst.setHours(0, 0, 0, 0);
+                endIst.setHours(23, 59, 59, 999);
+                startDate = startIst;
+                endDate = endIst;
+            }
+
+            if (startDate && endDate) {
+                createdAtFilter = {
+                    createdAt: {
+                        [Op.between]: [istToUtc(startDate), istToUtc(endDate)]
+                    }
+                };
+            }
+
+            const serviceChallans = await models.Documents.findAll({
+                where: {
+                    companyId: Number(companyId),
+                    documentType: 'Service Challan',
+                    ...createdAtFilter
+                },
+                raw: true
+            })
+
+            const uoms = await models.UOM.findAll({
+                where: {
+                    [Op.or]: [
+                        { companyId: req.body.companyId, status: 1 },
+                        { companyId: null, status: 0 }
+                    ]
+                }
+            });
+
+            const uomMap = uoms.reduce((acc, curr) => {
+                acc[curr.id] = curr.code;
+                return acc;
+            }, {});
+
+            const categorys = await models.Categories.findAll({
+                where: {
+                    companyId: Number(companyId)
+                }
+            });
+            const categoryMap = categorys?.reduce((acc, curr) => {
+                acc[curr.id] = curr.name;
+                return acc;
+            }, {});
+
+
+            const productions = await models.Production.findAll({
+                where: {
+                    companyId: Number(companyId),
+                    serviceOrderNumber: {
+                        [Op.in]: serviceChallans.map(challan => challan.serviceOrderNumber)
+                    }
+                },
+                raw: true
+
+            })
+            const productionsMap = productions.reduce((acc, curr) => {
+                acc[curr.serviceOrderNumber] = curr;
+                return acc;
+            }, {});
+
+            const grn_documents = await models.Documents.findAll({
+                where: {
+                    companyId: Number(companyId),
+                    documentType: 'Service Grn',
+                    challan_number: {
+                        [Op.in]: serviceChallans.map(challan => challan.documentNumber)
+                    }
+                }, raw: true
+            })
+
+
+            const grnChallanDocumentsMap = grn_documents.reduce((acc, curr) => {
+                if (!acc[curr.challan_number]) {
+                    acc[curr.challan_number] = [];
+                }
+                acc[curr.challan_number].push(curr);
+                return acc;
+            }, {});
+
+            const items = await models.DocumentItems.findAll({
+                where: {
+                    documentNumber: {
+                        [Op.in]: serviceChallans.map(challan => challan.documentNumber)
+                    }
+                },
+                raw: true,
+                nest: true,
+                include: {
+                    model: models.Items,
+                    as: "itemDetails",
+                    attributes: ['itemId', 'itemName', 'category', 'subCategory', 'microCategory', 'metricsUnit'],
+                }
+            })
+
+            const itemsMap = items.reduce((acc, curr) => {
+                const { itemDetails, ...rest } = curr;
+                acc[curr.documentNumber] = acc[curr.documentNumber] || [];
+                acc[curr.documentNumber].push({
+                    ...rest,
+                    ...(itemDetails || {})
+                });
+                return acc;
+            }, {});
+
+            const dataWithItems = serviceChallans.flatMap(challan => {
+                return (itemsMap[challan.documentNumber] || []).map(item => ({
+                    ...challan,
+                    ...item,
+                }))
+            })
+
+            const data = dataWithItems.map((challan, index) => ({
+                ...challan,
+                challanNumber: challan.documentNumber,
+                documentNumber: challan.documentNumber + challan.itemId + index,
+                grn_number: grnChallanDocumentsMap[challan?.documentNumber]?.map(doc => doc?.documentNumber)?.join(',') || '',
+                grn_date: grnChallanDocumentsMap[challan?.documentNumber]?.map(doc => doc?.documentDate)?.join(',') || '',
+                metricsUnit: uomMap[challan?.metricsUnit] || '',
+                category: categoryMap[challan?.category] || '',
+                subCategory: categoryMap[challan?.subCategory] || '',
+                microCategory: categoryMap[challan?.microCategory] || '',
+                productionId: productionsMap[challan.serviceOrderNumber]?.productionId || '',
+                productionNavigationId: productionsMap[challan.serviceOrderNumber]?.id || '',
+            }))
+
+            return res.status(200).json({ data, total: data?.length });
         }
 
         const documents = await models.Documents.findAndCountAll({
