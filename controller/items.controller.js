@@ -960,35 +960,43 @@ async function addBulkItem(req, res) {
         }
 
         if (itemsData.length) {
-            const newItems = await models.Items.bulkCreate(itemsData, { returning: true });
-            if (storeItems?.length > 0) {
-                const approvalCount = await models.InventoryApproval.count({
-                    where: {
-                        companyId
+            const t = await models.sequelize.transaction();
+            try {
+                const newItems = await models.Items.bulkCreate(itemsData, { returning: true, transaction: t });
+                if (storeItems?.length > 0) {
+                    const approvalCount = await models.InventoryApproval.count({
+                        where: {
+                            companyId
+                        },
+                        transaction: t
+                    });
+                    const approval = await models.InventoryApproval.create({
+                        approvalId: `INA${approvalCount + 1}`,
+                        documentType: 'Bulk Upload',
+                        documentNumber: '',
+                        approvalStatus: settings?.['stockUpdate'] == 'manual' ? 'Pending' : 'Auto Approved',
+                        requestedBy: userId,
+                        companyId: companyId,
+                        status: 1,
+                        approvedBy: null,
+                    }, { transaction: t });
+                    const newItemsMap = newItems?.reduce((acc, curr) => {
+                        acc[curr.itemId] = curr.id;
+                        return acc;
+                    }, {});
+                    for (let i = 0; i < storeItems.length; ++i) {
+                        storeItems[i].itemId = newItemsMap[storeItems[i].itemId];
+                        storeItems[i].approvalId = approval.id;
+                        stockTransfer[i].itemId = newItemsMap[stockTransfer[i].itemId];
+                        stockTransfer[i].approvalId = approval.id;
                     }
-                });
-                const approval = await models.InventoryApproval.create({
-                    approvalId: `INA${approvalCount + 1}`,
-                    documentType: 'Bulk Upload',
-                    documentNumber: '',
-                    approvalStatus: settings?.['stockUpdate'] == 'manual' ? 'Pending' : 'Auto Approved',
-                    requestedBy: userId,
-                    companyId: companyId,
-                    status: 1,
-                    approvedBy: null,
-                });
-                const newItemsMap = newItems?.reduce((acc, curr) => {
-                    acc[curr.itemId] = curr.id;
-                    return acc;
-                }, {});
-                for (let i = 0; i < storeItems.length; ++i) {
-                    storeItems[i].itemId = newItemsMap[storeItems[i].itemId];
-                    storeItems[i].approvalId = approval.id;
-                    stockTransfer[i].itemId = newItemsMap[stockTransfer[i].itemId];
-                    stockTransfer[i].approvalId = approval.id;
+                    await models.StoreItems.bulkCreate(storeItems, { transaction: t });
+                    await models.StockTransfer.bulkCreate(stockTransfer, { transaction: t });
                 }
-                await models.StoreItems.bulkCreate(storeItems);
-                await models.StockTransfer.bulkCreate(stockTransfer);
+                await t.commit();
+            } catch (err) {
+                await t.rollback();
+                throw err;
             }
         }
 
@@ -1150,23 +1158,31 @@ async function bulkEditItems(req, res) {
         }
 
         if (updateData.length) {
-            await models.Items.bulkCreate(updateData, {
-                updateOnDuplicate: [
-                    'itemName',
-                    'category',
-                    'subCategory',
-                    'microCategory',
-                    'price',
-                    'minStock',
-                    'maxStock',
-                    'description',
-                    'taxType',
-                    'tax',
-                    'itemType',
-                    'customFields',
-                    'updatedAt'
-                ],
-            });
+            const t = await models.sequelize.transaction();
+            try {
+                await models.Items.bulkCreate(updateData, {
+                    updateOnDuplicate: [
+                        'itemName',
+                        'category',
+                        'subCategory',
+                        'microCategory',
+                        'price',
+                        'minStock',
+                        'maxStock',
+                        'description',
+                        'taxType',
+                        'tax',
+                        'itemType',
+                        'customFields',
+                        'updatedAt'
+                    ],
+                    transaction: t
+                });
+                await t.commit();
+            } catch (err) {
+                await t.rollback();
+                throw err;
+            }
         }
 
         let msg =
@@ -1231,10 +1247,13 @@ async function stockReconcilation(req, res) {
             },
             raw: true
         });
+        const t = await models.sequelize.transaction();
+        try {
         const approvalCount = await models.InventoryApproval.count({
             where: {
                 companyId
-            }
+            },
+            transaction: t
         });
         const approval = await models.InventoryApproval.create({
             approvalId: `INA${approvalCount + 1}`,
@@ -1245,7 +1264,7 @@ async function stockReconcilation(req, res) {
             companyId: companyId,
             status: 1,
             approvedBy: null
-        });
+        }, { transaction: t });
 
         const bulkStockTransfers = [], bulkStoreItems = [], itemIds = [], finalStock = {};
 
@@ -1417,12 +1436,18 @@ async function stockReconcilation(req, res) {
                 }
             }
         }
-        await models.StockTransfer.bulkCreate(bulkStockTransfers);
+        await models.StockTransfer.bulkCreate(bulkStockTransfers, { transaction: t });
         await models.StoreItems.bulkCreate(bulkStoreItems, {
-            updateOnDuplicate: ['quantity']
+            updateOnDuplicate: ['quantity'],
+            transaction: t
         });
         if (!bulkStockTransfers?.length) {
-            await approval.destroy();
+            await approval.destroy({ transaction: t });
+        }
+        await t.commit();
+        } catch (txnErr) {
+            await t.rollback();
+            throw txnErr;
         }
         msg = !errorArray.length ? settings?.['stockReconcilation'] != 'manual' ? 'Stocks Reconcile Successfully.' : 'Inventory Approval generated for current request.' : errorArray.length != items.length ? 'Few Items are Not Found. We Download Those Rows for you.' : 'All Items are Not Found. We Download Those Rows for you.'
         return res.status(200).json({ message: msg, invalidData: errorArray });
@@ -1514,9 +1539,17 @@ async function bulkUploadAlternateUnit(req, res) {
         }
 
         if (newAlternateUnits.length) {
-            await models.AlternateUnits.bulkCreate(newAlternateUnits, {
-                updateOnDuplicate: ['conversionfactor']
-            });
+            const t = await models.sequelize.transaction();
+            try {
+                await models.AlternateUnits.bulkCreate(newAlternateUnits, {
+                    updateOnDuplicate: ['conversionfactor'],
+                    transaction: t
+                });
+                await t.commit();
+            } catch (err) {
+                await t.rollback();
+                throw err;
+            }
         }
 
         const msg = errorArray.length === 0
@@ -1687,16 +1720,23 @@ async function bulkStockUpdate(req, res) {
                 });
             }
         }
+        const t = await models.sequelize.transaction();
+        try {
         if (bulkStockTransfers.length) {
             await Promise.all([
-                models.StockTransfer.bulkCreate(bulkStockTransfers),
+                models.StockTransfer.bulkCreate(bulkStockTransfers, { transaction: t }),
                 bulkStoreItems.length
-                    ? models.StoreItems.bulkCreate(bulkStoreItems, { updateOnDuplicate: ['quantity'] })
+                    ? models.StoreItems.bulkCreate(bulkStoreItems, { updateOnDuplicate: ['quantity'], transaction: t })
                     : Promise.resolve()
             ]);
         }
         else {
-            await approval.destroy();
+            await approval.destroy({ transaction: t });
+        }
+        await t.commit();
+        } catch (txnErr) {
+            await t.rollback();
+            throw txnErr;
         }
         const msg = !errorArray.length
             ? isManual

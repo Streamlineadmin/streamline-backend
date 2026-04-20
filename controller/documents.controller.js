@@ -378,8 +378,9 @@ async function createDocument(req, res) {
       const indent_numbers = indent_number.split(',');
       const conversionFactorMap = {};
       const itemsMap = items.reduce((item, current) => {
-        item[current.itemId] = current.quantity;
-        conversionFactorMap[current.itemId] = current.conversionFactor || 1;
+        const key = current?.uniqueId || current.itemId;
+        item[key] = current.quantity;
+        conversionFactorMap[key] = current.conversionFactor || 1;
         return item;
       }, {});
       for (const ind_number of indent_numbers) {
@@ -400,27 +401,28 @@ async function createDocument(req, res) {
           const consumeItemsMap = {};
 
           for (const current of purchaseRequestItems) {
+            const key = current?.uniqueId || current.itemId;
             let quantity = 0, remaining = 0;
             if (current.receivedToday) quantity += current.receivedToday;
-            if (itemsMap[current.itemId]) {
-              if ((quantity + (itemsMap[current.itemId] * ((conversionFactorMap[current.itemId] || 1) / (current.conversionFactor || 1)))) > current.quantity) {
-                remaining = (quantity + (itemsMap[current.itemId] * ((conversionFactorMap[current.itemId] || 1) / (current.conversionFactor || 1)))) - current.quantity;
+            if (itemsMap[key]) {
+              if ((quantity + (itemsMap[key] * ((conversionFactorMap[key] || 1) / (current.conversionFactor || 1)))) > current.quantity) {
+                remaining = (quantity + (itemsMap[key] * ((conversionFactorMap[key] || 1) / (current.conversionFactor || 1)))) - current.quantity;
                 quantity = current.quantity;
                 current.receivedToday = quantity;
-                consumeItemsMap[current?.itemId] = (itemsMap[current.itemId] * ((conversionFactorMap[current.itemId] || 1) / (current.conversionFactor || 1))) - remaining;
+                consumeItemsMap[key] = (itemsMap[key] * ((conversionFactorMap[key] || 1) / (current.conversionFactor || 1))) - remaining;
               }
               else {
-                quantity += (itemsMap[current.itemId] * ((conversionFactorMap[current.itemId] || 1) / (current.conversionFactor || 1)));
+                quantity += (itemsMap[key] * ((conversionFactorMap[key] || 1) / (current.conversionFactor || 1)));
                 current.receivedToday = quantity;
               }
             }
 
-            itemsMap[current.itemId] && await current.update({ receivedToday: quantity });
-            itemsMap[current.itemId] = remaining;
-            if (purchaseRequestItemsMap[current.itemId]) {
-              purchaseRequestItemsMap[current.itemId] += current.quantity;
+            itemsMap[key] && await current.update({ receivedToday: quantity });
+            itemsMap[key] = remaining;
+            if (purchaseRequestItemsMap[key]) {
+              purchaseRequestItemsMap[key] += current.quantity;
             } else {
-              purchaseRequestItemsMap[current.itemId] = current.quantity;
+              purchaseRequestItemsMap[key] = current.quantity;
             }
           }
 
@@ -475,7 +477,8 @@ async function createDocument(req, res) {
 
     if (status && ((documentType === documentTypes.deliveryChallan || documentType === documentTypes.invoice) && orderConfirmationNumber)) {
       const currentItemsMap = items.reduce((acc, current) => {
-        acc[current.itemId] = Number(current.quantity);
+        const key = current?.uniqueId || current.itemId;
+        acc[key] = Number(current.quantity);
         return acc;
       }, {});
       const orderConfirmationNumbers = await models.Documents.findAll({
@@ -502,29 +505,32 @@ async function createDocument(req, res) {
             }
           });
 
-          // Create a map of documentsItems with Items id as key and quantity as value
+          // Create a map of documentsItems with uniqueId/itemId as key and quantity as value
           const documentsItemMap = documentItems?.reduce((acc, current) => {
-            acc[current.itemId] = current.quantity;
+            const key = current?.uniqueId || current.itemId;
+            acc[key] = current.quantity;
             return acc;
           }, {});
 
-          // Create deliverychallan or invoice items map where item id is key and quantity as value
+          // Create deliverychallan or invoice items map where uniqueId/itemId is key and quantity as value
           const deliveryChallanItemsMap = documentItems?.reduce((acc, current) => {
-            acc[current.itemId] = documentType === "Invoice" ? current.pendingQuantity : current?.receivedQuantity
+            const key = current?.uniqueId || current.itemId;
+            acc[key] = documentType === "Invoice" ? current.pendingQuantity : current?.receivedQuantity
             return acc;
           }, {});
           // Add quantity of existing items in dellivery challan items map
           for (const item of items) {
-            if (!documentsItemMap?.[item.itemId] || !currentItemsMap?.[item.itemId]) continue;
-            const remainingNeeded = Math.max(0, documentsItemMap[item.itemId] - (deliveryChallanItemsMap[item.itemId] || 0));
-            const amountToConsume = Math.min(remainingNeeded, currentItemsMap[item.itemId]);
-            if (deliveryChallanItemsMap[item.itemId]) deliveryChallanItemsMap[item.itemId] += amountToConsume;
-            else deliveryChallanItemsMap[item.itemId] = amountToConsume;
-            currentItemsMap[item.itemId] -= amountToConsume;
+            const key = item?.uniqueId || item.itemId;
+            if (!documentsItemMap?.[key] || !currentItemsMap?.[key]) continue;
+            const remainingNeeded = Math.max(0, documentsItemMap[key] - (deliveryChallanItemsMap[key] || 0));
+            const amountToConsume = Math.min(remainingNeeded, currentItemsMap[key]);
+            if (deliveryChallanItemsMap[key]) deliveryChallanItemsMap[key] += amountToConsume;
+            else deliveryChallanItemsMap[key] = amountToConsume;
+            currentItemsMap[key] -= amountToConsume;
             await models.DocumentItems.update(
               documentType === "Invoice"
-                ? { pendingQuantity: deliveryChallanItemsMap[item.itemId] }
-                : { receivedQuantity: deliveryChallanItemsMap[item.itemId] },
+                ? { pendingQuantity: deliveryChallanItemsMap[key] }
+                : { receivedQuantity: deliveryChallanItemsMap[key] },
               {
                 where: {
                   documentNumber: oc_number.documentNumber,
@@ -721,7 +727,8 @@ async function createDocument(req, res) {
         }
       });
       const documentsItemMap = documentItems?.reduce((acc, current) => {
-        acc[current.itemId] = current.quantity;
+        const key = current?.uniqueId || current.itemId;
+        acc[key] = current.quantity;
         return acc;
       }, {});
 
@@ -746,13 +753,15 @@ async function createDocument(req, res) {
       });
 
       const purchaseDocItemsMap = purchaseDocItems?.reduce((acc, current) => {
-        !acc[current?.itemId] ? acc[current?.itemId] = (current.receivedToday || current.quantity) : acc[current?.itemId] += (current.receivedToday || current.quantity);
+        const key = current?.uniqueId || current?.itemId;
+        !acc[key] ? acc[key] = (current.receivedToday || current.quantity) : acc[key] += (current.receivedToday || current.quantity);
         return acc;
       }, {});
       // Add quantity of existing items in purchase documents items map
       for (const item of items) {
-        if (purchaseDocItemsMap[item.itemId]) purchaseDocItemsMap[item.itemId] += Number(item.receivedToday || item.quantity);
-        else purchaseDocItemsMap[item.itemId] = Number(item.receivedToday || item.quantity);
+        const key = item?.uniqueId || item.itemId;
+        if (purchaseDocItemsMap[key]) purchaseDocItemsMap[key] += Number(item.receivedToday || item.quantity);
+        else purchaseDocItemsMap[key] = Number(item.receivedToday || item.quantity);
       }
 
       console.log('objectdata', purchaseDocItemsMap, documentsItemMap)
@@ -1592,10 +1601,11 @@ async function createDocument(req, res) {
           documentNumber: orderConfirmationNumber
         },
         raw: true,
-        attributes: ['quantity', 'itemId']
+        attributes: ['quantity', 'itemId', 'uniqueId']
       });
       const salesItemsMap = salesItems.reduce((acc, curr) => {
-        acc[curr.itemId] = (acc[curr.itemId] || 0) + curr.quantity;
+        const key = curr?.uniqueId || curr.itemId;
+        acc[key] = (acc[key] || 0) + curr.quantity;
         return acc;
       }, {});
       const previousSalesReturn = await models.Documents.findAll({
@@ -1619,10 +1629,11 @@ async function createDocument(req, res) {
 
         },
         raw: true,
-        attributes: ['quantity', 'itemId']
+        attributes: ['quantity', 'itemId', 'uniqueId']
       });
       const previousSalesReturnItemsMap = previousSalesReturnItems.reduce((acc, curr) => {
-        acc[curr.itemId] = (acc[curr.itemId] || 0) + curr.quantity;
+        const key = curr?.uniqueId || curr.itemId;
+        acc[key] = (acc[key] || 0) + curr.quantity;
         return acc;
       }, {});
       let partial = false;
@@ -4418,7 +4429,8 @@ async function getSalesDocumentItems(req, res) {
         raw: true
       });
       const itemsmap = documentItems?.reduce((acc, curr) => {
-        acc[curr.itemId] = (acc[curr.itemId] || 0) + curr.receivedToday;
+        const key = curr?.uniqueId || curr.itemId;
+        acc[key] = (acc[key] || 0) + curr.receivedToday;
         return acc;
       }, {});
 
@@ -4431,7 +4443,8 @@ async function getSalesDocumentItems(req, res) {
       });
 
       const challanItemsMap = challanItems?.reduce((acc, curr) => {
-        acc[curr.itemId] = (acc[curr.itemId] || 0) + curr.quantity;
+        const key = curr?.uniqueId || curr.itemId;
+        acc[key] = (acc[key] || 0) + curr.quantity;
         return acc;
       }, {});
 
@@ -4466,7 +4479,8 @@ async function getSalesDocumentItems(req, res) {
       raw: true
     });
     const itemsmap = documentItems?.reduce((acc, curr) => {
-      acc[curr.itemId] = (acc[curr.itemId] || 0) + curr.quantity;
+      const key = curr?.uniqueId || curr.itemId;
+      acc[key] = (acc[key] || 0) + curr.quantity;
       return acc;
     }, {});
 
@@ -4479,7 +4493,8 @@ async function getSalesDocumentItems(req, res) {
     });
 
     const salesOrderItemsMap = salesOrderItems?.reduce((acc, curr) => {
-      acc[curr.itemId] = (acc[curr.itemId] || 0) + curr.quantity;
+      const key = curr?.uniqueId || curr.itemId;
+      acc[key] = (acc[key] || 0) + curr.quantity;
       return acc;
     }, {});
 
