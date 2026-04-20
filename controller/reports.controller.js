@@ -2462,7 +2462,7 @@ async function getReports(req, res) {
 
         const uniqueItemsMap = new Map();
         for (const item of items) {
-            const key = `${item.documentNumber}_${item.itemId}`;
+            const key = `${item.documentNumber}_${item?.uniqueId || item.itemId}`;
             item.customFields = isValidJSON(item.customFields);
             if (!uniqueItemsMap.has(key)) {
                 uniqueItemsMap.set(key, item);

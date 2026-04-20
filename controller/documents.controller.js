@@ -950,6 +950,7 @@ async function createDocument(req, res) {
             category: item?.category,
             store: item?.store,
             poNumbers: documentType === 'Invoice' ? item?.poNumbers ? item.poNumbers : null : null,
+            uniqueId: item?.uniqueId || crypto.randomUUID(),
           })
         })
       ),
@@ -1102,7 +1103,7 @@ async function createDocument(req, res) {
 
         const priceMap = purchaseItems?.reduce((acc, curr) => {
           const percent = (Number(curr.totalBeforeTax) / total) * 100;
-          acc[curr.itemId] = ((Number(curr.totalAfterTax)) + ((percent * additionalCost) / 100)) / curr.quantity;
+          acc[curr?.uniqueId || curr.itemId] = ((Number(curr.totalAfterTax)) + ((percent * additionalCost) / 100)) / curr.quantity;
           return acc;
         }, {});
 
@@ -1122,7 +1123,7 @@ async function createDocument(req, res) {
           });
           if (Array.isArray(purchaseItems) && purchaseItems.length) {
             purchaseItems.forEach((item) => {
-              priceMap[item.itemId] = Number(item.totalAfterTax) / item.quantity
+              priceMap[item?.uniqueId || item.itemId] = Number(item.totalAfterTax) / item.quantity
             })
           }
         }
@@ -1136,7 +1137,7 @@ async function createDocument(req, res) {
             quantity: settings?.['purchaseDocument'] == 'manual' ? 0 : ((item?.receivedToday * (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1))) || 0),
             status: 1,
             addedBy: createdBy,
-            price: (priceMap?.[item.itemId] || item?.price) / (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1)),
+            price: (priceMap?.[item?.uniqueId || item.itemId] || item?.price) / (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1)),
             documentNumber: document.documentNumber,
             approvalId: approval.id,
             quantityForApproval: (item?.receivedToday * (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1))) || 0
@@ -1156,7 +1157,7 @@ async function createDocument(req, res) {
             transferredBy: createdBy,
             comment: '',
             companyId,
-            price: (priceMap?.[item.itemId] || item?.price) / (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1)),
+            price: (priceMap?.[item?.uniqueId || item.itemId] || item?.price) / (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1)),
             documentNumber: document.documentNumber,
             documentType,
             approvalId: approval.id,
@@ -2288,7 +2289,8 @@ async function createDocument(req, res) {
         totalBeforeTax: finishedGood?.totalBeforeTax,
         totalTax: finishedGood?.totalTax,
         totalAfterTax: finishedGood?.totalAfterTax,
-        category: finishedGood?.category
+        category: finishedGood?.category,
+        uniqueId: crypto.randomUUID(),
       });
       if (addStockOn === 'GRN' || documentType === 'Service Confirmation Qr') {
         const settings = await models.Settings.findOne({
@@ -3053,7 +3055,7 @@ async function getDocuments(req, res) {
 
     const uniqueItemsMap = new Map();
     for (const item of items) {
-      const key = `${item.documentNumber}_${item.itemId}`;
+      const key = `${item.documentNumber}_${item?.uniqueId || item.itemId}`;
       if (!uniqueItemsMap.has(key)) {
         uniqueItemsMap.set(key, item);
       }
@@ -4245,7 +4247,7 @@ async function discardDocument(req, res) {
     await document.update({ status: 2 });
     res.status(200).json({ message: 'Document Discarded Successfully.' });
   } catch (error) {
-    console.log(error,'error in discard docs');
+    console.log(error, 'error in discard docs');
     res.status(500).json({ message: 'Internal Server Error' })
   }
 }
@@ -4342,11 +4344,11 @@ async function getDocumentItems(req, res) {
         documentNumber: { [Op.in]: documentNumbers },
         companyId: req.body.companyId
       },
-      attributes: ['itemId', 'receivedToday']
+      attributes: ['itemId', 'uniqueId', 'receivedToday']
     });
 
     const receivedByItem = documentItems.reduce((acc, item) => {
-      acc[item.itemId] = (acc[item.itemId] || 0) + item.receivedToday;
+      acc[item?.uniqueId || item.itemId] = (acc[item?.uniqueId || item.itemId] || 0) + item.receivedToday;
       return acc;
     }, {});
 
@@ -4959,6 +4961,7 @@ async function editDocument(req, res) {
             category: item?.category,
             store: item?.store,
             poNumbers: documentType === 'Invoice' ? item?.poNumbers ? item.poNumbers : null : null,
+            uniqueId: item?.uniqueId || crypto.randomUUID(),
           })
         })
       ),
