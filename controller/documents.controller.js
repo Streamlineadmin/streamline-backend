@@ -937,8 +937,8 @@ async function createDocument(req, res) {
             totalBeforeTax: item.totalBeforeTax,
             totalAfterTax: item.totalAfterTax,
             receivedToday: item.receivedToday || 0,
-            pendingQuantity: item.pendingQuantity || 0,
-            receivedQuantity: item.receivedQuantity || 0,
+            pendingQuantity: documentType == "Sales Order" ? 0 : (item.pendingQuantity || 0),
+            receivedQuantity: documentType == "Sales Order" ? 0 : (item.receivedQuantity || 0),
             auQuantity: item?.auQuantity,
             alternateUnit: item?.alternateUnit,
             conversionFactor: item?.conversionFactor,
@@ -4245,7 +4245,7 @@ async function discardDocument(req, res) {
     await document.update({ status: 2 });
     res.status(200).json({ message: 'Document Discarded Successfully.' });
   } catch (error) {
-    console.log(error,'error in discard docs');
+    console.log(error, 'error in discard docs');
     res.status(500).json({ message: 'Internal Server Error' })
   }
 }
