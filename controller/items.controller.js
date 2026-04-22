@@ -62,12 +62,35 @@ async function addItem(req, res) {
             }
         }
 
+        let actualItemId = itemId;
+        if (useCustomSeries && useCustomSeries !== "false" && useCustomSeries !== false) {
+           const tSeries = await models.sequelize.transaction();
+            try {
+                const itemSeries = await models.ItemSeries.findOne({
+                    where: { default: 1, companyId },
+                    lock: tSeries.LOCK.UPDATE,
+                    transaction: tSeries
+                });
+
+                if (itemSeries) {
+                    const prefix = itemSeries.prefix || '';
+                    const paddedNumber = String(itemSeries.nextNumber).padStart(itemSeries.number || 0, '0');
+                    actualItemId = `${prefix}${paddedNumber}`;
+                    await itemSeries.update({ nextNumber: itemSeries.nextNumber + 1 }, { transaction: tSeries });
+                }
+                await tSeries.commit();
+            } catch (e) {
+                await tSeries.rollback();
+                throw e;
+            }
+        }
+
         // ✅ Check if item already exists
         const itemResult = await models.Items.findOne({
             where: {
                 companyId,
                 [models.Sequelize.Op.or]: [
-                    { itemId },
+                    { itemId: actualItemId },
                     // { itemName }
                 ]
             }
@@ -79,7 +102,7 @@ async function addItem(req, res) {
 
         // ✅ Prepare item data
         const itemData = {
-            itemId,
+            itemId: actualItemId,
             itemName,
             itemType,
             metricsUnit,
@@ -154,18 +177,7 @@ async function addItem(req, res) {
             });
         }
 
-        // ✅ Update ItemSeries if custom series is used
-        if (useCustomSeries && useCustomSeries != "false") {
-            await models.ItemSeries.increment(
-                { nextNumber: 1 },
-                {
-                    where: {
-                        default: 1,
-                        companyId
-                    }
-                }
-            );
-        }
+        // (ItemSeries increment logic removed since it is now done atomically during ID generation)
 
         // ✅ Add to StoreItems
         const storeItemData = {
