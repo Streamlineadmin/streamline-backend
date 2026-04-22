@@ -2327,6 +2327,7 @@ async function getReports(req, res) {
 
             const items = await models.DocumentItems.findAll({
                 where: {
+                    companyId: Number(companyId),
                     documentNumber: {
                         [Op.in]: serviceChallans.map(challan => challan.documentNumber)
                     }
