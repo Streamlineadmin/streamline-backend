@@ -3321,7 +3321,7 @@ async function fetchCurrentDoc(req, res) {
 }
 
 async function discardDocument(req, res) {
-  const { documentId, companyId } = req.body;
+  const { documentId, companyId, userId } = req.body;
   let linkedDocument = null;
   try {
     const document = await models.Documents.findOne({
@@ -3331,6 +3331,11 @@ async function discardDocument(req, res) {
     if (!document) {
       return res.status(404).json({ message: "Document not found!" });
     }
+
+    if (document.status == 2) {
+      return res.status(400).json({ message: "Document is already discarded!" });
+    }
+
     if (document.documentType === documentTypes.salesEnquiry) {
       linkedDocument = await models.Documents.findOne({
         where: {
@@ -3424,7 +3429,7 @@ async function discardDocument(req, res) {
           quantity: stockTransfer.quantity * -1,
           toStoreId: stockTransfer.fromStoreId,
           transferDate: new Date().toISOString(),
-          transferredBy: stockTransfer.transferredBy,
+          transferredBy: userId,
           comment: '',
           companyId: stockTransfer.companyId,
           price: stockTransfer?.price,
@@ -3482,7 +3487,7 @@ async function discardDocument(req, res) {
           quantity: stockTransfer.quantity * -1,
           toStoreId: stockTransfer.fromStoreId,
           transferDate: new Date().toISOString(),
-          transferredBy: stockTransfer.transferredBy,
+          transferredBy: userId,
           comment: '',
           companyId: stockTransfer.companyId,
           price: stockTransfer?.price,
@@ -3652,7 +3657,7 @@ async function discardDocument(req, res) {
           quantity: stockTransfer.quantity * -1,
           toStoreId: null,
           transferDate: new Date().toISOString(),
-          transferredBy: stockTransfer.transferredBy,
+          transferredBy: userId,
           comment: '',
           companyId: stockTransfer.companyId,
           price: stockTransfer?.price,
@@ -3727,7 +3732,7 @@ async function discardDocument(req, res) {
           quantity: stockTransfer.quantity * -1,
           toStoreId: null,
           transferDate: new Date().toISOString(),
-          transferredBy: stockTransfer.transferredBy,
+          transferredBy: userId,
           comment: '',
           companyId: stockTransfer.companyId,
           price: stockTransfer?.price,
@@ -3806,7 +3811,7 @@ async function discardDocument(req, res) {
           quantity: stockTransfer.quantity * -1,
           toStoreId: null,
           transferDate: new Date().toISOString(),
-          transferredBy: stockTransfer.transferredBy,
+          transferredBy: userId,
           comment: '',
           companyId: stockTransfer.companyId,
           price: stockTransfer?.price,
@@ -3849,7 +3854,7 @@ async function discardDocument(req, res) {
           quantity: stockTransfer.quantity * -1,
           toStoreId: stockTransfer.fromStoreId,
           transferDate: new Date().toISOString(),
-          transferredBy: stockTransfer.transferredBy,
+          transferredBy: userId,
           comment: '',
           companyId: stockTransfer.companyId,
           price: stockTransfer?.price,
@@ -3943,7 +3948,7 @@ async function discardDocument(req, res) {
             quantity: stockTransfer.quantity * -1,
             toStoreId: null,
             transferDate: new Date().toISOString(),
-            transferredBy: stockTransfer.transferredBy,
+            transferredBy: userId,
             comment: '',
             companyId: stockTransfer.companyId,
             price: stockTransfer?.price,
@@ -4027,7 +4032,7 @@ async function discardDocument(req, res) {
           quantity: stockTransfer.quantity * -1,
           toStoreId: null,
           transferDate: new Date().toISOString(),
-          transferredBy: stockTransfer.transferredBy,
+          transferredBy: userId,
           comment: '',
           companyId: stockTransfer.companyId,
           price: stockTransfer?.price,
@@ -5976,6 +5981,52 @@ async function cancelEInvoice(req, res) {
   }
 }
 
+async function getChallanDocumentItems(req, res) {
+  try {
+    const { challan_number } = req.body;
+    if (!challan_number) {
+      return res.status(404).json({ message: 'Challan number not found.' });
+    }
+
+    const purchaseOrders = await models.Documents.findAll({
+      where:
+      {
+        challan_number,
+        companyId: Number(req.body.companyId),
+        documentType: "Service Grn",
+        status: {
+          [Op.ne]: 2
+        }
+      },
+      attributes: ['documentNumber']
+    });
+
+    if (!purchaseOrders.length) {
+      return res.status(200).json({ receivedByItem: {} });
+    }
+
+    const documentNumbers = purchaseOrders.map(doc => doc.documentNumber);
+
+    const documentItems = await models.DocumentItems.findAll({
+      where: {
+        documentNumber: { [Op.in]: documentNumbers },
+        companyId: req.body.companyId
+      },
+      attributes: ['itemId', 'uniqueId', 'receivedToday']
+    });
+
+    const receivedByItem = documentItems.reduce((acc, item) => {
+      acc[item?.uniqueId || item.itemId] = (acc[item?.uniqueId || item.itemId] || 0) + item.receivedToday;
+      return acc;
+    }, {});
+
+    res.status(200).json({ receivedByItem });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Something went wrong.' });
+  }
+}
+
 module.exports = {
   getDocuments,
   getDocumentById,
@@ -5993,5 +6044,6 @@ module.exports = {
   createEWayBill,
   fetchCurrentDoc,
   emailDocument,
-  cancelEInvoice
+  cancelEInvoice,
+  getChallanDocumentItems
 };

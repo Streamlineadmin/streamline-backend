@@ -2264,7 +2264,42 @@ async function getReports(req, res) {
                     ...createdAtFilter
                 },
                 raw: true
-            })
+            });
+
+            const grn_documents = await models.Documents.findAll({
+                where: {
+                    companyId: Number(companyId),
+                    documentType: 'Service Grn',
+                    challan_number: {
+                        [Op.in]: serviceChallans.map(challan => challan.documentNumber)
+                    }
+                }, raw: true
+            });
+
+            const grnToChallanMap = grn_documents.reduce((acc, curr) => {
+                acc[curr.documentNumber] = curr.challan_number;
+                return acc;
+            }, {});
+
+
+            const grnItems = await models.DocumentItems.findAll({
+                where: {
+                    companyId: Number(companyId),
+                    documentNumber: {
+                        [Op.in]: grn_documents.map(grn => grn.documentNumber)
+                    }
+                },
+                attributes: ['documentNumber', 'uniqueId', 'itemId', 'receivedToday'],
+                raw: true
+            });
+
+            const grnItemsMap = grnItems.reduce((acc, curr) => {
+                if (!acc[grnToChallanMap[curr.documentNumber]]) {
+                    acc[grnToChallanMap[curr.documentNumber]] = {};
+                }
+                acc[grnToChallanMap[curr.documentNumber]][curr.uniqueId || curr.itemId] = (acc[grnToChallanMap[curr.documentNumber]][curr.uniqueId || curr.itemId] || 0) + Number(curr.receivedToday || 0);
+                return acc;
+            }, {});
 
             const uoms = await models.UOM.findAll({
                 where: {
@@ -2306,15 +2341,7 @@ async function getReports(req, res) {
                 return acc;
             }, {});
 
-            const grn_documents = await models.Documents.findAll({
-                where: {
-                    companyId: Number(companyId),
-                    documentType: 'Service Grn',
-                    challan_number: {
-                        [Op.in]: serviceChallans.map(challan => challan.documentNumber)
-                    }
-                }, raw: true
-            })
+
 
 
             const grnChallanDocumentsMap = grn_documents.reduce((acc, curr) => {
@@ -2370,6 +2397,9 @@ async function getReports(req, res) {
                 microCategory: categoryMap[challan?.microCategory] || '',
                 productionId: productionsMap[challan.serviceOrderNumber]?.productionId || '',
                 productionNavigationId: productionsMap[challan.serviceOrderNumber]?.id || '',
+                serviceChallanQuantity: challan.quantity,
+                grnQuantity: grnItemsMap[challan.documentNumber]?.[challan.uniqueId || challan.itemId] || 0,
+                grnPendingQuantity: Math.max(Number(challan.quantity || 0) - (grnItemsMap[challan.documentNumber]?.[challan.uniqueId || challan.itemId] || 0), 0)
             }))
 
             return res.status(200).json({ data, total: data?.length });
