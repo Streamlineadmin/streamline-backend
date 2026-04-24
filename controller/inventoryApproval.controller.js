@@ -60,7 +60,7 @@ async function getApprovalById(req, res) {
         const isRejected = element.isRejected || false;
         element.quantity = Math.abs(element.quantity) || 0;
         element.quantityForApproval = Math.abs(element.quantityForApproval) || 0;
-        if (!storeItemMap[isRejected][element?.itemId]) {
+        if (!storeItemMap?.[isRejected]?.[element?.itemId]) {
           storeItems.push(element);
           if (approval.documentType != 'Finished Good' &&
             approval.documentType != 'Quality Report' &&
@@ -613,7 +613,7 @@ async function acceptRejectApproval(req, res) {
             });
             if (rawMaterial) {
               await rawMaterial.update(
-                { issuedQuantity: rawMaterial.issuedQuantity - itemsMap[element.itemId] },
+                { issuedQuantity: rawMaterial.issuedQuantity - ((itemsMap[element.itemId] || 1) / (rawMaterial?.conversionFactor || 1)) },
                 {
                   transaction: tAcceptReject
                 }
@@ -739,7 +739,7 @@ async function acceptRejectApproval(req, res) {
             transaction: tAcceptReject
           });
           await rawMaterial.update({
-            issuedQuantity: Number((rawMaterial.issuedQuantity || 0)) + Number(itemsMap[element.itemId] || 0),
+            issuedQuantity: Number((rawMaterial.issuedQuantity || 0)) + (Number(itemsMap[element.itemId] || 1) / (rawMaterial?.conversionFactor || 1)),
             currentAverage: (rawMaterial.currentAverage || 0) + price
           }, {
             transaction: tAcceptReject
@@ -747,7 +747,7 @@ async function acceptRejectApproval(req, res) {
           await models.ProductionHistory.create({
             productionId: approval.documentNumber,
             actionType: 'Raw Material Issued.',
-            summary: `${itemIdMap[element.itemId]?.itemName} - ${itemsMap[element.itemId]} ${uomMap[itemIdMap[element.itemId]?.metricsUnit]} issued by ${by}.`
+            summary: `${itemIdMap[element.itemId]?.itemName} - ${(itemsMap[element.itemId] / (rawMaterial?.conversionFactor || 1))} ${uomMap[rawMaterial?.uom]} issued by ${by}.`
           }, {
             transaction: tAcceptReject
           });
@@ -791,7 +791,7 @@ async function acceptRejectApproval(req, res) {
         for (const element of productionScrapMaterials) {
           if (itemsMap[itemIdMap[element.itemId].id]) {
             await element.update(
-              { producedQuantity: (element?.producedQuantity || 0) + (Number(itemsMap[itemIdMap[element.itemId].id]) || 0) },
+              { producedQuantity: (element?.producedQuantity || 0) + ((Number(itemsMap[itemIdMap[element.itemId].id]) || 1) / (element?.conversionFactor || 1)) },
               {
                 transaction: tAcceptReject
               }
@@ -799,7 +799,7 @@ async function acceptRejectApproval(req, res) {
             await models.ProductionHistory.create({
               productionId: approval.documentNumber,
               actionType: 'Scrap Material Produced.',
-              summary: `${itemIdMap[element.itemId]?.itemName} - ${uomMap[itemIdMap[element.itemId].metricsUnit]} ${uomMap[element.uom]} added by ${by}.`
+              summary: `${itemIdMap[element.itemId]?.itemName} - ${((Number(itemsMap[itemIdMap[element.itemId].id]) || 1) / (element?.conversionFactor || 1))} ${uomMap[element.uom]} added by ${by}.`
             }, {
               transaction: tAcceptReject
             });
