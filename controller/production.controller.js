@@ -2750,7 +2750,7 @@ async function returnRawMaterial(req, res) {
                     productionNavigationId: production.id,
                     isRejected: transfer?.isReject || false,
                     approvalId: approval.id,
-                    quantityForApproval: Number(element.returnQuantity)
+                    quantityForApproval: Number(element.returnQuantity) * ( element.conversionFactor || 1)
                 });
 
             }
