@@ -545,6 +545,21 @@ async function deleteBillOfMaterials(req, res) {
       return res.status(404).json({ message: "BOM not found" });
     }
 
+    const isProductionOnGoing = await models.Production.findOne({
+      where: {
+        bomId: id,
+        status: {
+          [Op.in]: [1, 2, 3]
+        }
+      }
+      ,
+      transaction: t
+    })
+    if (isProductionOnGoing) {
+      await t.rollback();
+      return res.status(423).json({ message: "Cannot delete BOM details while production is ongoing" });
+    }
+
     const bomIdString = bom.bomId;
 
     await Promise.all([

@@ -2264,7 +2264,42 @@ async function getReports(req, res) {
                     ...createdAtFilter
                 },
                 raw: true
-            })
+            });
+
+            const grn_documents = await models.Documents.findAll({
+                where: {
+                    companyId: Number(companyId),
+                    documentType: 'Service Grn',
+                    challan_number: {
+                        [Op.in]: serviceChallans.map(challan => challan.documentNumber)
+                    }
+                }, raw: true
+            });
+
+            const grnToChallanMap = grn_documents.reduce((acc, curr) => {
+                acc[curr.documentNumber] = curr.challan_number;
+                return acc;
+            }, {});
+
+
+            const grnItems = await models.DocumentItems.findAll({
+                where: {
+                    companyId: Number(companyId),
+                    documentNumber: {
+                        [Op.in]: grn_documents.map(grn => grn.documentNumber)
+                    }
+                },
+                attributes: ['documentNumber', 'uniqueId', 'itemId', 'receivedToday'],
+                raw: true
+            });
+
+            const grnItemsMap = grnItems.reduce((acc, curr) => {
+                if (!acc[grnToChallanMap[curr.documentNumber]]) {
+                    acc[grnToChallanMap[curr.documentNumber]] = {};
+                }
+                acc[grnToChallanMap[curr.documentNumber]][curr.uniqueId || curr.itemId] = (acc[grnToChallanMap[curr.documentNumber]][curr.uniqueId || curr.itemId] || 0) + Number(curr.receivedToday || 0);
+                return acc;
+            }, {});
 
             const uoms = await models.UOM.findAll({
                 where: {
@@ -2306,15 +2341,7 @@ async function getReports(req, res) {
                 return acc;
             }, {});
 
-            const grn_documents = await models.Documents.findAll({
-                where: {
-                    companyId: Number(companyId),
-                    documentType: 'Service Grn',
-                    challan_number: {
-                        [Op.in]: serviceChallans.map(challan => challan.documentNumber)
-                    }
-                }, raw: true
-            })
+
 
 
             const grnChallanDocumentsMap = grn_documents.reduce((acc, curr) => {
@@ -2327,6 +2354,7 @@ async function getReports(req, res) {
 
             const items = await models.DocumentItems.findAll({
                 where: {
+                    companyId: Number(companyId),
                     documentNumber: {
                         [Op.in]: serviceChallans.map(challan => challan.documentNumber)
                     }
@@ -2369,6 +2397,9 @@ async function getReports(req, res) {
                 microCategory: categoryMap[challan?.microCategory] || '',
                 productionId: productionsMap[challan.serviceOrderNumber]?.productionId || '',
                 productionNavigationId: productionsMap[challan.serviceOrderNumber]?.id || '',
+                serviceChallanQuantity: challan.quantity,
+                grnQuantity: grnItemsMap[challan.documentNumber]?.[challan.uniqueId || challan.itemId] || 0,
+                grnPendingQuantity: Math.max(Number(challan.quantity || 0) - (grnItemsMap[challan.documentNumber]?.[challan.uniqueId || challan.itemId] || 0), 0)
             }))
 
             return res.status(200).json({ data, total: data?.length });
@@ -2462,7 +2493,7 @@ async function getReports(req, res) {
 
         const uniqueItemsMap = new Map();
         for (const item of items) {
-            const key = `${item.documentNumber}_${item.itemId}`;
+            const key = `${item.documentNumber}_${item?.uniqueId || item.itemId}`;
             item.customFields = isValidJSON(item.customFields);
             if (!uniqueItemsMap.has(key)) {
                 uniqueItemsMap.set(key, item);
@@ -2490,7 +2521,7 @@ async function getReports(req, res) {
             });
             salesItemsMap = salesItems?.reduce((acc, curr) => {
                 if (!acc[curr.documentNumber]) acc[curr.documentNumber] = {};
-                acc[curr.documentNumber][curr.itemId] = curr.quantity;
+                acc[curr.documentNumber][curr.uniqueId || curr.itemId] = curr.quantity;
                 return acc;
             }, {});
 
@@ -2519,7 +2550,7 @@ async function getReports(req, res) {
                 });
                 salesReturnItemsMap = salesReturnItems?.reduce((acc, curr) => {
                     if (!acc[docmap[curr.documentNumber]]) acc[docmap[curr.documentNumber]] = {};
-                    acc[docmap[curr.documentNumber]][curr.itemId] = curr.quantity;
+                    acc[docmap[curr.documentNumber]][curr.uniqueId || curr.itemId] = curr.quantity;
                     return acc;
                 }, {});
             }
@@ -2549,13 +2580,13 @@ async function getReports(req, res) {
                     }
                 },
                 raw: true,
-                attributes: ['id', 'quantity', 'itemId', 'documentNumber']
+                attributes: ['id', 'quantity', 'itemId', 'documentNumber', 'uniqueId']
             });
             for (const element of invoiceItems) {
                 if (!salesItemsMap?.[invToSalesOrderMap[element.documentNumber]]) {
                     salesItemsMap[invToSalesOrderMap[element.documentNumber]] = {};
                 }
-                salesItemsMap[invToSalesOrderMap[element.documentNumber]][element.itemId] = (salesItemsMap[invToSalesOrderMap[element.documentNumber]][element.itemId] || 0) + (element.quantity || 0)
+                salesItemsMap[invToSalesOrderMap[element.documentNumber]][element.uniqueId || element.itemId] = (salesItemsMap[invToSalesOrderMap[element.documentNumber]][element.uniqueId || element.itemId] || 0) + (element.quantity || 0)
             }
             const salesInvoiceReturn = await models.Documents.findAll({
                 where: {
@@ -2580,7 +2611,7 @@ async function getReports(req, res) {
                     }
                 },
                 raw: true,
-                attributes: ['itemId', 'quantity', 'documentNumber']
+                attributes: ['itemId', 'quantity', 'documentNumber', 'uniqueId']
             });
 
             for (const element of salesInvoiceReturnItems) {
@@ -2588,8 +2619,8 @@ async function getReports(req, res) {
                 if (!salesReturnItemsMap[soNumber]) {
                     salesReturnItemsMap[soNumber] = {};
                 }
-                salesReturnItemsMap[soNumber][element.itemId] =
-                    (salesReturnItemsMap[soNumber][element.itemId] || 0) + element.quantity;
+                salesReturnItemsMap[soNumber][element.uniqueId || element.itemId] =
+                    (salesReturnItemsMap[soNumber][element.uniqueId || element.itemId] || 0) + element.quantity;
             }
             const challans = await models.Documents.findAll({
                 where: {
@@ -2614,13 +2645,13 @@ async function getReports(req, res) {
                     }
                 },
                 raw: true,
-                attributes: ['id', 'quantity', 'itemId', 'documentNumber']
+                attributes: ['id', 'quantity', 'itemId', 'documentNumber', 'uniqueId']
             });
             for (const element of challanItems) {
                 if (!deliveryChallanItemsMap?.[challanToSalesOrderMap[element.documentNumber]]) {
                     deliveryChallanItemsMap[challanToSalesOrderMap[element.documentNumber]] = {};
                 }
-                deliveryChallanItemsMap[challanToSalesOrderMap[element.documentNumber]][element.itemId] = (deliveryChallanItemsMap[challanToSalesOrderMap[element.documentNumber]][element.itemId] || 0) + (element.quantity || 0)
+                deliveryChallanItemsMap[challanToSalesOrderMap[element.documentNumber]][element.uniqueId || element.itemId] = (deliveryChallanItemsMap[challanToSalesOrderMap[element.documentNumber]][element.uniqueId || element.itemId] || 0) + (element.quantity || 0)
             }
             const salesChallanReturn = await models.Documents.findAll({
                 where: {
@@ -2645,7 +2676,7 @@ async function getReports(req, res) {
                     }
                 },
                 raw: true,
-                attributes: ['itemId', 'quantity', 'documentNumber']
+                attributes: ['itemId', 'quantity', 'documentNumber', 'uniqueId']
             });
             for (const element of salesChallanReturnItems) {
                 const challanNumber = challanToReturnMap[element.documentNumber];
@@ -2654,8 +2685,8 @@ async function getReports(req, res) {
                 if (!salesReturnItemsMap[soNumber]) {
                     salesReturnItemsMap[soNumber] = {};
                 }
-                salesReturnItemsMap[soNumber][element.itemId] =
-                    (salesReturnItemsMap[soNumber][element.itemId] || 0) + (element.quantity || 0);
+                salesReturnItemsMap[soNumber][element.uniqueId || element.itemId] =
+                    (salesReturnItemsMap[soNumber][element.uniqueId || element.itemId] || 0) + (element.quantity || 0);
             }
 
         }
@@ -2683,7 +2714,7 @@ async function getReports(req, res) {
             });
             salesItemsMap = invoiceItems?.reduce((acc, curr) => {
                 if (!acc[curr.documentNumber]) acc[curr.documentNumber] = {};
-                acc[curr.documentNumber][curr.itemId] = {
+                acc[curr.documentNumber][curr.uniqueId || curr.itemId] = {
                     quantity: curr.quantity,
                     price: curr.price
                 }
@@ -2713,7 +2744,7 @@ async function getReports(req, res) {
 
             salesItemsMap = invoiceItems?.reduce((acc, curr) => {
                 if (!acc[curr.documentNumber]) acc[curr.documentNumber] = {};
-                acc[curr.documentNumber][curr.itemId] = curr.quantity;
+                acc[curr.documentNumber][curr.uniqueId || curr.itemId] = curr.quantity;
                 return acc;
             }, {});
 
@@ -2738,7 +2769,7 @@ async function getReports(req, res) {
 
             deliveryChallanItemsMap = challanItems?.reduce((acc, curr) => {
                 if (!acc[curr.documentNumber]) acc[curr.documentNumber] = {};
-                acc[curr.documentNumber][curr.itemId] = curr.quantity;
+                acc[curr.documentNumber][curr.uniqueId || curr.itemId] = curr.quantity;
                 return acc;
             }, {});
         }
@@ -2824,25 +2855,25 @@ async function getReports(req, res) {
                 if (!salesItemsMap[purchaseOrderToGrnMap[element.documentNumber]]) {
                     salesItemsMap[purchaseOrderToGrnMap[element.documentNumber]] = {};
                 }
-                salesItemsMap[purchaseOrderToGrnMap[element.documentNumber]][element.itemId] = (salesItemsMap[purchaseOrderToGrnMap[element.documentNumber]][element.itemId] || 0) + element.receivedToday;
+                salesItemsMap[purchaseOrderToGrnMap[element.documentNumber]][element.uniqueId || element.itemId] = (salesItemsMap[purchaseOrderToGrnMap[element.documentNumber]][element.uniqueId || element.itemId] || 0) + element.receivedToday;
             }
 
             for (const element of purchaseInvoiceItems) {
                 if (!purchaseInvoiceQuantityMap[purchaseOrderToInvoiceMap[element.documentNumber]]) {
                     purchaseInvoiceQuantityMap[purchaseOrderToInvoiceMap[element.documentNumber]] = {};
                 }
-                purchaseInvoiceQuantityMap[purchaseOrderToInvoiceMap[element.documentNumber]][element.itemId] = (purchaseInvoiceQuantityMap[purchaseOrderToInvoiceMap[element.documentNumber]][element.itemId] || 0) + element.quantity;
+                purchaseInvoiceQuantityMap[purchaseOrderToInvoiceMap[element.documentNumber]][element.uniqueId || element.itemId] = (purchaseInvoiceQuantityMap[purchaseOrderToInvoiceMap[element.documentNumber]][element.uniqueId || element.itemId] || 0) + element.quantity;
             }
 
             for (const element of qualityReportItems) {
                 if (!qualityReportAcceptQuantityMap[purchaseOrderToGrnMap[qualityToGrnMap[element.documentNumber]]]) {
                     qualityReportAcceptQuantityMap[purchaseOrderToGrnMap[qualityToGrnMap[element.documentNumber]]] = {};
                 }
-                if (!qualityReportAcceptQuantityMap[purchaseOrderToGrnMap[qualityToGrnMap[element.documentNumber]]][element.itemId]) {
-                    qualityReportAcceptQuantityMap[purchaseOrderToGrnMap[qualityToGrnMap[element.documentNumber]]][element.itemId] = {};
+                if (!qualityReportAcceptQuantityMap[purchaseOrderToGrnMap[qualityToGrnMap[element.documentNumber]]][element.uniqueId || element.itemId]) {
+                    qualityReportAcceptQuantityMap[purchaseOrderToGrnMap[qualityToGrnMap[element.documentNumber]]][element.uniqueId || element.itemId] = {};
                 }
-                qualityReportAcceptQuantityMap[purchaseOrderToGrnMap[qualityToGrnMap[element.documentNumber]]][element.itemId].accepted = (qualityReportAcceptQuantityMap[purchaseOrderToGrnMap[qualityToGrnMap[element.documentNumber]]][element.itemId].accepted || 0) + element.receivedToday;
-                qualityReportAcceptQuantityMap[purchaseOrderToGrnMap[qualityToGrnMap[element.documentNumber]]][element.itemId].rejected = (qualityReportAcceptQuantityMap[purchaseOrderToGrnMap[qualityToGrnMap[element.documentNumber]]][element.itemId].rejected || 0) + element.pendingQuantity;
+                qualityReportAcceptQuantityMap[purchaseOrderToGrnMap[qualityToGrnMap[element.documentNumber]]][element.uniqueId || element.itemId].accepted = (qualityReportAcceptQuantityMap[purchaseOrderToGrnMap[qualityToGrnMap[element.documentNumber]]][element.uniqueId || element.itemId].accepted || 0) + element.receivedToday;
+                qualityReportAcceptQuantityMap[purchaseOrderToGrnMap[qualityToGrnMap[element.documentNumber]]][element.uniqueId || element.itemId].rejected = (qualityReportAcceptQuantityMap[purchaseOrderToGrnMap[qualityToGrnMap[element.documentNumber]]][element.uniqueId || element.itemId].rejected || 0) + element.pendingQuantity;
             }
         }
 
@@ -2908,7 +2939,7 @@ async function getReports(req, res) {
             });
             salesItemsMap = purchaseOrderDocuments.reduce((acc, curr) => {
                 if (!acc[curr.documentNumber]) acc[curr.documentNumber] = {};
-                acc[curr.documentNumber][curr.itemId] = 1;
+                acc[curr.documentNumber][curr.uniqueId || curr.itemId] = 1;
                 return acc;
             }, {});
 
@@ -2993,7 +3024,7 @@ async function getReports(req, res) {
             }
             salesItemsMap = purchaseOrdersItems?.reduce((acc, curr) => {
                 if (!acc[curr.documentNumber]) acc[curr.documentNumber] = {};
-                acc[curr.documentNumber][curr.itemId] = curr.quantity;
+                acc[curr.documentNumber][curr.uniqueId || curr.itemId] = curr.quantity;
                 return acc;
             }, {});
         }
@@ -3021,7 +3052,7 @@ async function getReports(req, res) {
 
             salesItemsMap = purchaseOrdersItems?.reduce((acc, curr) => {
                 if (!acc[curr.documentNumber]) acc[curr.documentNumber] = {};
-                acc[curr.documentNumber][curr.itemId] = curr.quantity;
+                acc[curr.documentNumber][curr.uniqueId || curr.itemId] = curr.quantity;
                 return acc;
             }, {});
         }
@@ -3029,37 +3060,37 @@ async function getReports(req, res) {
         const formattedResult = (documents?.rows || documents)?.map(document => {
             let itemToSend = uniqueItems.filter(item => item.documentNumber === document.documentNumber);
             if (documentType === documentTypes.invoice) itemToSend = itemToSend?.map(item => {
-                const salesItemsCount = document.orderConfirmationNumber ? document?.orderConfirmationNumber?.split(",")?.reduce((acc, curr) => acc + (salesItemsMap?.[curr]?.[item.itemId] || 0), 0) : 0;
-                const salesReturnCount = salesReturnItemsMap?.[document?.documentNumber]?.[item.itemId];
-                const existingQuantity = pendingItemsMap?.[document?.orderConfirmationNumber]?.[item.itemId] || 0 + item?.quantity;
+                const salesItemsCount = document.orderConfirmationNumber ? document?.orderConfirmationNumber?.split(",")?.reduce((acc, curr) => acc + (salesItemsMap?.[curr]?.[item.uniqueId || item.itemId] || 0), 0) : 0;
+                const salesReturnCount = salesReturnItemsMap?.[document?.documentNumber]?.[item.uniqueId || item.itemId];
+                const existingQuantity = pendingItemsMap?.[document?.orderConfirmationNumber]?.[item.uniqueId || item.itemId] || 0 + item?.quantity;
                 if (!pendingItemsMap?.[document?.orderConfirmationNumber]) {
                     pendingItemsMap[document?.orderConfirmationNumber] = {};
                 }
-                pendingItemsMap[document?.orderConfirmationNumber][item.itemId] = (pendingItemsMap[document?.orderConfirmationNumber][item.itemId] || 0) + item.quantity;
+                pendingItemsMap[document?.orderConfirmationNumber][item.uniqueId || item.itemId] = (pendingItemsMap[document?.orderConfirmationNumber][item.uniqueId || item.itemId] || 0) + item.quantity;
                 return ({ ...item, salesItemsCount, salesReturnCount, pendingQuantity: Math.max(salesItemsCount - existingQuantity, 0) });
             })
             if (documentType === documentTypes.creditNote || documentType === documentTypes.debitNote ||
                 documentType === documentTypes.purchaseCreditNote || documentType === documentTypes.purchaseDebitNote
             ) itemToSend = itemToSend?.map(item => {
-                const invoiceItemsCount = salesItemsMap?.[document?.invoiceNumber]?.[item.itemId]?.quantity;
-                const invoicePrice = salesItemsMap?.[document?.invoiceNumber]?.[item.itemId]?.price;
+                const invoiceItemsCount = salesItemsMap?.[document?.invoiceNumber]?.[item.uniqueId || item.itemId]?.quantity;
+                const invoicePrice = salesItemsMap?.[document?.invoiceNumber]?.[item.uniqueId || item.itemId]?.price;
                 return ({ ...item, invoiceItemsCount, invoicePrice });
             })
             if (documentType === documentTypes.deliveryChallan || documentType === documentTypes.proformaInvoice) itemToSend = itemToSend?.map(item => {
-                const salesItemsCount = document.orderConfirmationNumber ? document?.orderConfirmationNumber?.split(",")?.reduce((acc, curr) => acc + (salesItemsMap?.[curr]?.[item.itemId] || 0), 0) : 0;
+                const salesItemsCount = document.orderConfirmationNumber ? document?.orderConfirmationNumber?.split(",")?.reduce((acc, curr) => acc + (salesItemsMap?.[curr]?.[item.uniqueId || item.itemId] || 0), 0) : 0;
                 return ({ ...item, salesItemsCount });
             })
 
             if (documentType === documentTypes.salesReturn) itemToSend = itemToSend?.map(item => {
-                const invoiceItemsCount = salesItemsMap?.[document?.invoiceNumber]?.[item.itemId];
-                const challanItemsCount = deliveryChallanItemsMap?.[document?.challan_number]?.[item.itemId];
+                const invoiceItemsCount = salesItemsMap?.[document?.invoiceNumber]?.[item.uniqueId || item.itemId];
+                const challanItemsCount = deliveryChallanItemsMap?.[document?.challan_number]?.[item.uniqueId || item.itemId];
                 return ({ ...item, invoiceItemsCount, challanItemsCount });
             });
             if (documentType === documentTypes.purchaseRequest) itemToSend = itemToSend?.map(item => {
                 const arr = [];
                 for (const element of prToPoMap?.[document.documentNumber] || []) {
                     if (element) {
-                        if (salesItemsMap?.[element]?.[item.itemId]) {
+                        if (salesItemsMap?.[element]?.[item.uniqueId || item.itemId]) {
                             arr.push(element);
                         }
                     }
@@ -3067,30 +3098,30 @@ async function getReports(req, res) {
                 return ({ ...item, poList: arr });
             });
             if (documentType === documentTypes.purchaseOrder) itemToSend = itemToSend?.map(item => {
-                const grnItemsCount = salesItemsMap?.[document?.documentNumber]?.[item.itemId] || 0;
-                const purchaseInvoiceItemsCount = purchaseInvoiceQuantityMap?.[document?.documentNumber]?.[item.itemId] || 0;
-                const accepted = qualityReportAcceptQuantityMap?.[document?.documentNumber]?.[item.itemId]?.accepted || 0;
-                const rejected = qualityReportAcceptQuantityMap?.[document?.documentNumber]?.[item.itemId]?.rejected || 0;
+                const grnItemsCount = salesItemsMap?.[document?.documentNumber]?.[item.uniqueId || item.itemId] || 0;
+                const purchaseInvoiceItemsCount = purchaseInvoiceQuantityMap?.[document?.documentNumber]?.[item.uniqueId || item.itemId] || 0;
+                const accepted = qualityReportAcceptQuantityMap?.[document?.documentNumber]?.[item.uniqueId || item.itemId]?.accepted || 0;
+                const rejected = qualityReportAcceptQuantityMap?.[document?.documentNumber]?.[item.uniqueId || item.itemId]?.rejected || 0;
                 return ({ ...item, grnItemsCount, accepted, rejected, purchaseInvoiceItemsCount });
             });
             if (documentType === documentTypes.purchaseInvoice) itemToSend = itemToSend?.map(item => {
-                const purchaseOrderItemsCount = salesItemsMap?.[document?.purchaseOrderNumber]?.[item.itemId];
-                const existingQuantity = pendingItemsMap?.[document?.purchaseOrderNumber]?.[item.itemId] || 0 + item?.quantity;
+                const purchaseOrderItemsCount = salesItemsMap?.[document?.purchaseOrderNumber]?.[item.uniqueId || item.itemId];
+                const existingQuantity = pendingItemsMap?.[document?.purchaseOrderNumber]?.[item.uniqueId || item.itemId] || 0 + item?.quantity;
                 if (!pendingItemsMap?.[document?.purchaseOrderNumber]) {
                     pendingItemsMap[document?.purchaseOrderNumber] = {};
                 }
-                pendingItemsMap[document?.purchaseOrderNumber][item.itemId] = (pendingItemsMap[document?.purchaseOrderNumber][item.itemId] || 0) + item.quantity;
+                pendingItemsMap[document?.purchaseOrderNumber][item.uniqueId || item.itemId] = (pendingItemsMap[document?.purchaseOrderNumber][item.uniqueId || item.itemId] || 0) + item.quantity;
                 return ({ ...item, purchaseOrderItemsCount, pendingQuantity: Math.max(purchaseOrderItemsCount - existingQuantity, 0) });
             });
             if (documentType === documentTypes.purchaseReturn || documentType === documentTypes.goodsReceive || documentType === documentTypes.qualityReport) itemToSend = itemToSend?.map(item => {
-                const poQuantity = salesItemsMap?.[document?.purchaseOrderNumber]?.[item.itemId];
+                const poQuantity = salesItemsMap?.[document?.purchaseOrderNumber]?.[item.uniqueId || item.itemId];
                 return ({ ...item, poQuantity });
             });
             if (documentType === documentTypes.salesOrder) {
                 itemToSend = itemToSend.map(item => {
                     const challanQuantity = (item?.receivedQuantity || 0)?.toFixed(2);
                     const invoiceQuantity = (item?.pendingQuantity || 0)?.toFixed(2);
-                    const salesReturnQuantity = (salesReturnItemsMap?.[document.documentNumber]?.[item.itemId] || 0)?.toFixed(2);
+                    const salesReturnQuantity = (salesReturnItemsMap?.[document.documentNumber]?.[item.uniqueId || item.itemId] || 0)?.toFixed(2);
                     const pendingQuantity = Math.max(((item.quantity + Number(salesReturnQuantity)) - (Number(challanQuantity) + Number(invoiceQuantity))), 0)?.toFixed(2);
                     return { ...item, challanQuantity, invoiceQuantity, pendingQuantity, salesReturnQuantity };
                 })
