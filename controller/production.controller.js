@@ -2732,6 +2732,7 @@ async function viewProductionHistory(req, res) {
 }
 
 async function returnRawMaterial(req, res) {
+    const tReturnRM = await models.sequelize.transaction();
     try {
         const { data, navigationId, productionId, by, companyId, userId } = req.body;
         const uoms = await models.UOM.findAll({
@@ -2741,7 +2742,8 @@ async function returnRawMaterial(req, res) {
                     { companyId: null, status: 0 }
                 ]
             },
-            raw: true
+            raw: true,
+            transaction: tReturnRM
         });
         const uomMap = uoms.reduce((acc, curr) => {
             acc[curr.id] = curr.code;
@@ -2753,18 +2755,20 @@ async function returnRawMaterial(req, res) {
                     [Op.in]: data.map(row => row.itemId)
                 }
             },
-            raw: true
+            raw: true,
+            transaction: tReturnRM
         });
         const itemMap = items.reduce((acc, curr) => {
             acc[curr.itemId] = curr;
             return acc;
         }, {});
-        const production = await models.Production.findByPk(navigationId);
+        const production = await models.Production.findByPk(navigationId, { transaction: tReturnRM });
         const settings = isValidJSON(production?.isManual) || {}
         const approvalCount = await models.InventoryApproval.count({
             where: {
                 companyId
-            }
+            },
+            transaction: tReturnRM
         });
         const approval = await models.InventoryApproval.create({
             approvalId: `INA${approvalCount + 1}`,
@@ -2775,7 +2779,7 @@ async function returnRawMaterial(req, res) {
             companyId: companyId,
             status: 1,
             approvedBy: null
-        });
+        }, { transaction: tReturnRM });
 
         for (const element of data) {
             if (!element.returnQuantity || element.returnQuantity == 0 || isNaN(element.returnQuantity))
@@ -2789,7 +2793,8 @@ async function returnRawMaterial(req, res) {
                         [Op.lt]: 0
                     }
                 },
-                order: [['createdAt', 'ASC']]
+                order: [['createdAt', 'ASC']],
+                transaction: tReturnRM
             });
 
             for (const transfer of stockTransfer) {
@@ -2806,7 +2811,7 @@ async function returnRawMaterial(req, res) {
                     isRejected: transfer?.isReject || false,
                     approvalId: approval.id,
                     quantityForApproval: Number(element.returnQuantity)
-                });
+                }, { transaction: tReturnRM });
 
                 await models.StockTransfer.create({
                     transferNumber: generateTransferNumber(),
@@ -2822,25 +2827,27 @@ async function returnRawMaterial(req, res) {
                     productionNavigationId: production.id,
                     isRejected: transfer?.isReject || false,
                     approvalId: approval.id,
-                    quantityForApproval: Number(element.returnQuantity) * ( element.conversionFactor || 1)
-                });
+                    quantityForApproval: Number(element.returnQuantity) * (element.conversionFactor || 1)
+                }, { transaction: tReturnRM });
 
             }
             await models.ProductionHistory.create({
                 productionId: production?.id,
                 actionType: settings?.['productionRawMaterial'] == 'manual' ? 'Raw material return request.' : 'Raw material returned.',
                 summary: `${element?.itemName} - ${element?.returnQuantity} ${uomMap[element.uom]}, ${settings?.['productionRawMaterial'] == 'manual' ? 'requested' : 'returned'} by ${by}`
-            });
+            }, { transaction: tReturnRM });
             if (settings?.['productionRawMaterial'] != 'manual') {
-                const rawmaterial = await models.ProductionRawMaterials.findByPk(element.id);
-                await rawmaterial.update({ issuedQuantity: rawmaterial.issuedQuantity - element?.returnQuantity });
+                const rawmaterial = await models.ProductionRawMaterials.findByPk(element.id, { transaction: tReturnRM });
+                await rawmaterial.update({ issuedQuantity: rawmaterial.issuedQuantity - element?.returnQuantity }, { transaction: tReturnRM });
             }
 
         }
 
+        await tReturnRM.commit();
         res.status(200).json({ message: settings?.['productionRawMaterial'] != 'manual' ? 'Raw Material Returned.' : 'Raw material return request generated.' });
 
     } catch (error) {
+        await tReturnRM.rollback();
         console.error("Update Table Error:", error);
         res.status(500).json({
             message: "Failed to return.",
@@ -2850,26 +2857,29 @@ async function returnRawMaterial(req, res) {
 }
 
 async function startBulkProduction(req, res) {
+    const tBulkProd = await models.sequelize.transaction();
     try {
         const { companyId, productions, mto, prefix, nextNumber } = req.body;
         const settings = await models.Settings.findOne({
             where: {
                 companyId: Number(companyId)
             },
-            raw: true
+            raw: true,
+            transaction: tBulkProd
         });
 
         const bulkProductionCount = await models.BulkProduction.count({
             where: {
                 companyId
-            }
+            },
+            transaction: tBulkProd
         });
 
         const parentProduction = await models.BulkProduction.create({
             companyId,
             productionId: `BulkProduction-${bulkProductionCount + 1}`,
             status: 1
-        })
+        }, { transaction: tBulkProd });
 
         const bulkProduction = productions.map(production => ({
             companyId: Number(companyId),
@@ -2889,7 +2899,7 @@ async function startBulkProduction(req, res) {
             bulkProductionId: parentProduction.id
         }));
 
-        const bulkProductions = await models.Production.bulkCreate(bulkProduction);
+        const bulkProductions = await models.Production.bulkCreate(bulkProduction, { transaction: tBulkProd });
         const bulkProductionItems = bulkProductions.map((production, index) => ({
             productionId: production.id,
             documentNumber: productions[index].documentNumber,
@@ -2899,16 +2909,16 @@ async function startBulkProduction(req, res) {
             quantity: productions[index].quantity,
             status: 1
         }));
-        await models.ProductionItems.bulkCreate(bulkProductionItems);
+        await models.ProductionItems.bulkCreate(bulkProductionItems, { transaction: tBulkProd });
 
         let index = 0;
         for (const production of bulkProductions) {
             const [scrapLogs, rawMaterials, finishedGoods, productionProcess, additionalCharges] = await Promise.all([
-                models.BOMScrapMaterial.findAll({ where: { bomId: production.bomId } }),
-                models.BOMRawMaterial.findAll({ where: { bomId: production.bomId } }),
-                models.BOMFinishedGoods.findAll({ where: { bomId: production.bomId } }),
-                models.BOMProductionProcess.findAll({ where: { bomId: production.bomId } }),
-                models.BOMAdditionalCharges.findAll({ where: { bomId: production.bomId } }),
+                models.BOMScrapMaterial.findAll({ where: { bomId: production.bomId }, transaction: tBulkProd }),
+                models.BOMRawMaterial.findAll({ where: { bomId: production.bomId }, transaction: tBulkProd }),
+                models.BOMFinishedGoods.findAll({ where: { bomId: production.bomId }, transaction: tBulkProd }),
+                models.BOMProductionProcess.findAll({ where: { bomId: production.bomId }, transaction: tBulkProd }),
+                models.BOMAdditionalCharges.findAll({ where: { bomId: production.bomId }, transaction: tBulkProd }),
             ]);
 
             const productionProcessId = productionProcess.map(data => data.processId);
@@ -2918,7 +2928,8 @@ async function startBulkProduction(req, res) {
                     id: {
                         [Op.in]: productionProcessId
                     }
-                }
+                },
+                transaction: tBulkProd
             });
 
             const itemsId = [];
@@ -2933,7 +2944,8 @@ async function startBulkProduction(req, res) {
                     },
                     companyId: Number(companyId)
                 },
-                raw: true
+                raw: true,
+                transaction: tBulkProd
             });
             const itemsMap = items?.reduce((acc, curr) => {
                 acc[curr.itemId] = curr;
@@ -2945,7 +2957,9 @@ async function startBulkProduction(req, res) {
                     itemId: {
                         [Op.in]: ids
                     }
-                }, raw: true
+                },
+                raw: true,
+                transaction: tBulkProd
             });
 
             const bulkRawMaterial = rawMaterials?.filter(data => !data.parentId).map((data) => {
@@ -3056,11 +3070,11 @@ async function startBulkProduction(req, res) {
             });
 
             await Promise.all([
-                models.ProductionSalesProcess.bulkCreate(bulkProcess),
-                models.ProductionRawMaterials.bulkCreate(bulkRawMaterial),
-                models.ProductionScrapMaterials.bulkCreate(bulkScrapMaterial),
-                models.ProductionFinishedGoods.bulkCreate(bulkFinishedGoods),
-                models.ProductionAdditionalCharges.bulkCreate(bulkAdditionalCharges),
+                models.ProductionSalesProcess.bulkCreate(bulkProcess, { transaction: tBulkProd }),
+                models.ProductionRawMaterials.bulkCreate(bulkRawMaterial, { transaction: tBulkProd }),
+                models.ProductionScrapMaterials.bulkCreate(bulkScrapMaterial, { transaction: tBulkProd }),
+                models.ProductionFinishedGoods.bulkCreate(bulkFinishedGoods, { transaction: tBulkProd }),
+                models.ProductionAdditionalCharges.bulkCreate(bulkAdditionalCharges, { transaction: tBulkProd }),
             ]);
             index++;
         }
@@ -3072,13 +3086,16 @@ async function startBulkProduction(req, res) {
                         companyId: Number(companyId),
                         DocType: 'Production',
                         prefix
-                    }
+                    },
+                    transaction: tBulkProd
                 }
             );
         }
 
+        await tBulkProd.commit();
         res.status(201).json({ message: 'Production Created Successfully.', data: parentProduction });
     } catch (error) {
+        await tBulkProd.rollback();
         res.status(500).json({ message: 'Something went wrong' });
         console.log(error);
     }
@@ -4036,7 +4053,8 @@ async function saveReworkQuantity(req, res) {
                     { companyId: null, status: 0 }
                 ]
             },
-            raw: true
+            raw: true,
+            transaction
         });
         const uomMap = uoms.reduce((acc, curr) => {
             acc[curr.id] = curr.code;
@@ -4046,14 +4064,16 @@ async function saveReworkQuantity(req, res) {
         const production = await models.Production.findOne({
             where: {
                 id: finishedGoods[0]?.productionId
-            }
+            },
+            transaction
         });
 
         const settings = isValidJSON(production?.isManual) || {}
         const approvalCount = await models.InventoryApproval.count({
             where: {
                 companyId
-            }
+            },
+            transaction
         });
         const approval = await models.InventoryApproval.create({
             approvalId: `INA${approvalCount + 1}`,
@@ -4064,7 +4084,7 @@ async function saveReworkQuantity(req, res) {
             companyId: companyId,
             status: 1,
             approvedBy: null
-        });
+        }, { transaction });
 
         const costPerUnit = (finishedGoods[0]?.reworkQuantityCost || 0) / (passedQty == 0 ? 1 : passedQty);
 
@@ -4088,7 +4108,8 @@ async function saveReworkQuantity(req, res) {
             where: {
                 companyId,
                 itemId: finishedGoods[0]?.itemId
-            }
+            },
+            transaction
         });
 
         await models.StoreItems.create({
@@ -4123,7 +4144,7 @@ async function saveReworkQuantity(req, res) {
             productionId: production?.id,
             actionType: 'Rework Quantity Tested.',
             summary: `${finishedGoods[0]?.itemName} - ${passedQty} ${uomMap[finishedGoods[0]?.uom]} passed by ${by}.`
-        });
+        }, { transaction });
 
 
         if (rejectQty) {
@@ -4131,7 +4152,7 @@ async function saveReworkQuantity(req, res) {
                 productionId: production?.id,
                 actionType: 'Rework Quantity Tested.',
                 summary: `${finishedGoods[0]?.itemName} - ${rejectQty} ${uomMap[finishedGoods[0]?.uom]} rejected by ${by}.`
-            });
+            }, { transaction });
             await models.StoreItems.create({
                 storeId: rejectStores.id,
                 itemId: item.id,
@@ -4181,14 +4202,15 @@ async function saveReworkQuantity(req, res) {
         const finishedGood = await models.ProductionFinishedGoods.findOne({
             where: {
                 id: finishedGoods[0].id
-            }
+            },
+            transaction
         });
         if (finishedGood?.passedQuantity >= finishedGood?.quantity) {
             await production.update({
                 status: 4, ...(production.productionCompletionDate
                     ? {}
                     : { productionCompletionDate: new Date().toISOString() })
-            });
+            }, { transaction });
         }
 
 
