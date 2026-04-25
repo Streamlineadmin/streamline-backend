@@ -5,13 +5,15 @@ const models = require('../models');
 const { buildMultiLevelProductionTree, isValidJSON, secondsToTime, timeToSeconds } = require('../helpers/add-level');
 
 async function startProduction(req, res) {
+    const tStart = await models.sequelize.transaction();
     try {
         const { companyId, productions, mto, prefix, nextNumber } = req.body;
         const settings = await models.Settings.findOne({
             where: {
                 companyId: Number(companyId)
             },
-            raw: true
+            raw: true,
+            transaction: tStart
         });
         const bulkProduction = productions.map(production => ({
             companyId: Number(companyId),
@@ -29,7 +31,7 @@ async function startProduction(req, res) {
                 productionRawMaterial: settings?.['productionRawMaterial']
             }
         }));
-        const bulkProductions = await models.Production.bulkCreate(bulkProduction);
+        const bulkProductions = await models.Production.bulkCreate(bulkProduction, { transaction: tStart });
         const bulkProductionItems = bulkProductions.map((production, index) => ({
             productionId: production.id,
             documentNumber: productions[index].documentNumber,
@@ -39,15 +41,15 @@ async function startProduction(req, res) {
             quantity: productions[index].quantity,
             status: 1
         }));
-        await models.ProductionItems.bulkCreate(bulkProductionItems);
+        await models.ProductionItems.bulkCreate(bulkProductionItems, { transaction: tStart });
         let index = 0;
         for (const production of bulkProductions) {
             const [scrapLogs, rawMaterials, finishedGoods, productionProcess, additionalCharges] = await Promise.all([
-                models.BOMScrapMaterial.findAll({ where: { bomId: production.bomId } }),
-                models.BOMRawMaterial.findAll({ where: { bomId: production.bomId }, order: [["createdAt", "ASC"]] }),
-                models.BOMFinishedGoods.findAll({ where: { bomId: production.bomId } }),
-                models.BOMProductionProcess.findAll({ where: { bomId: production.bomId } }),
-                models.BOMAdditionalCharges.findAll({ where: { bomId: production.bomId } }),
+                models.BOMScrapMaterial.findAll({ where: { bomId: production.bomId }, transaction: tStart }),
+                models.BOMRawMaterial.findAll({ where: { bomId: production.bomId }, order: [["createdAt", "ASC"]], transaction: tStart }),
+                models.BOMFinishedGoods.findAll({ where: { bomId: production.bomId }, transaction: tStart }),
+                models.BOMProductionProcess.findAll({ where: { bomId: production.bomId }, transaction: tStart }),
+                models.BOMAdditionalCharges.findAll({ where: { bomId: production.bomId }, transaction: tStart }),
             ]);
 
             const productionProcessId = productionProcess.map(data => data.processId);
@@ -57,7 +59,8 @@ async function startProduction(req, res) {
                     id: {
                         [Op.in]: productionProcessId
                     }
-                }
+                },
+                transaction: tStart
             });
 
             const itemsId = [];
@@ -72,7 +75,8 @@ async function startProduction(req, res) {
                     },
                     companyId: Number(companyId)
                 },
-                raw: true
+                raw: true,
+                transaction: tStart
             });
             const itemsMap = items?.reduce((acc, curr) => {
                 acc[curr.itemId] = curr;
@@ -84,7 +88,9 @@ async function startProduction(req, res) {
                     itemId: {
                         [Op.in]: ids
                     }
-                }, raw: true
+                },
+                raw: true,
+                transaction: tStart
             });
 
             const idToElementMap = {};
@@ -97,12 +103,6 @@ async function startProduction(req, res) {
                 }
                 return acc;
             }, {});
-            // const parentToChildMap = rawMaterials.reduce((acc, curr) => {
-            //     if (curr.parentId) {
-            //         acc[curr.id] = idToElementMap[curr.parentId];
-            //     }
-            //     return acc;
-            // }, {});
 
             const quantMap = {};
 
@@ -111,7 +111,6 @@ async function startProduction(req, res) {
                 if (!element.parentId) {
                     quantMap[element.id] = (element.quantity / finishedGoods[0].quantity) * productions[index].quantity
                 }
-                console.log(quantMap, "quantmap")
                 if (childs[element.id]) {
                     currentChildCount[element.parentId] = (currentChildCount[element.parentId] || 0) + 1;
                     const prod = await models.Production.create({
@@ -130,13 +129,13 @@ async function startProduction(req, res) {
                             productionScrapMaterial: settings?.['productionScrapMaterial'],
                             productionRawMaterial: settings?.['productionRawMaterial']
                         }
-                    });
+                    }, { transaction: tStart });
 
                     const [scrapLogs, childFinishedGoods, productionProcess, additionalCharges] = await Promise.all([
-                        models.BOMScrapMaterial.findAll({ where: { bomId: element.finishedGoodBomId } }),
-                        models.BOMFinishedGoods.findAll({ where: { bomId: element.finishedGoodBomId } }),
-                        models.BOMProductionProcess.findAll({ where: { bomId: element.finishedGoodBomId } }),
-                        models.BOMAdditionalCharges.findAll({ where: { bomId: element.finishedGoodBomId } }),
+                        models.BOMScrapMaterial.findAll({ where: { bomId: element.finishedGoodBomId }, transaction: tStart }),
+                        models.BOMFinishedGoods.findAll({ where: { bomId: element.finishedGoodBomId }, transaction: tStart }),
+                        models.BOMProductionProcess.findAll({ where: { bomId: element.finishedGoodBomId }, transaction: tStart }),
+                        models.BOMAdditionalCharges.findAll({ where: { bomId: element.finishedGoodBomId }, transaction: tStart }),
                     ]);
 
                     const finishedGoodsQuantity = quantMap[element.id];
@@ -146,21 +145,13 @@ async function startProduction(req, res) {
                             id: {
                                 [Op.in]: productionProcessId
                             }
-                        }
+                        },
+                        transaction: tStart
                     });
                     const rawMaterial = childs[element.id];
                     const bulkRawMaterial = rawMaterial?.map((data) => {
                         const quantity = (data.quantity) / childFinishedGoods[0]?.quantity;
                         let conversionFactor = 1;
-                        // if (data.uom != itemsMap[data.itemId]?.metricsUnit) {
-                        //     for (const element of alternateUnits) {
-                        //         console.log(element.itemId, itemsMap[data.itemId]?.id, element.id, data.uom)
-                        //         if (element.itemId == itemsMap[data.itemId]?.id && element.alternateUnits == data.uom) {
-                        //             conversionFactor = element.conversionfactor;
-                        //             break;
-                        //         }
-                        //     }
-                        // }
                         quantMap[data.id] = quantMap[data.parentId] * quantity;
                         return {
                             productionId: prod.id,
@@ -188,14 +179,6 @@ async function startProduction(req, res) {
                     const bulkScrapMaterial = scrapLogs?.filter(data => data?.itemName).map((data) => {
                         const quantity = (data.quantity) / childFinishedGoods[0]?.quantity;
                         let conversionFactor = 1;
-                        // if (data.uom != itemsMap[data.itemId]?.metricsUnit) {
-                        //     for (const element of alternateUnits) {
-                        //         if (element.itemId == itemsMap[data.itemId]?.id && element.alternateUnits == data.uom) {
-                        //             conversionFactor = element.conversionfactor;
-                        //             break;
-                        //         }
-                        //     }
-                        // }
                         return {
                             productionId: prod.id,
                             itemId: data.itemId,
@@ -212,14 +195,6 @@ async function startProduction(req, res) {
 
                     const bulkFinishedGoods = childFinishedGoods.map((data) => {
                         let conversionFactor = 1;
-                        // if (data.uom != itemsMap[data.itemId]?.metricsUnit) {
-                        //     for (const element of alternateUnits) {
-                        //         if (element.itemId == itemsMap[data.itemId]?.id && element.alternateUnits == data.uom) {
-                        //             conversionFactor = element.conversionfactor;
-                        //             break;
-                        //         }
-                        //     }
-                        // }
                         return {
                             productionId: prod.id,
                             itemId: data.itemId,
@@ -261,11 +236,11 @@ async function startProduction(req, res) {
                     });
 
                     await Promise.all([
-                        models.ProductionSalesProcess.bulkCreate(bulkProcess),
-                        models.ProductionRawMaterials.bulkCreate(bulkRawMaterial),
-                        models.ProductionScrapMaterials.bulkCreate(bulkScrapMaterial),
-                        models.ProductionFinishedGoods.bulkCreate(bulkFinishedGoods),
-                        models.ProductionAdditionalCharges.bulkCreate(bulkAdditionalCharges),
+                        models.ProductionSalesProcess.bulkCreate(bulkProcess, { transaction: tStart }),
+                        models.ProductionRawMaterials.bulkCreate(bulkRawMaterial, { transaction: tStart }),
+                        models.ProductionScrapMaterials.bulkCreate(bulkScrapMaterial, { transaction: tStart }),
+                        models.ProductionFinishedGoods.bulkCreate(bulkFinishedGoods, { transaction: tStart }),
+                        models.ProductionAdditionalCharges.bulkCreate(bulkAdditionalCharges, { transaction: tStart }),
                     ]);
 
                     parentProductionId[element.id] = prod.id;
@@ -383,11 +358,11 @@ async function startProduction(req, res) {
             });
 
             await Promise.all([
-                models.ProductionSalesProcess.bulkCreate(bulkProcess),
-                models.ProductionRawMaterials.bulkCreate(bulkRawMaterial),
-                models.ProductionScrapMaterials.bulkCreate(bulkScrapMaterial),
-                models.ProductionFinishedGoods.bulkCreate(bulkFinishedGoods),
-                models.ProductionAdditionalCharges.bulkCreate(bulkAdditionalCharges),
+                models.ProductionSalesProcess.bulkCreate(bulkProcess, { transaction: tStart }),
+                models.ProductionRawMaterials.bulkCreate(bulkRawMaterial, { transaction: tStart }),
+                models.ProductionScrapMaterials.bulkCreate(bulkScrapMaterial, { transaction: tStart }),
+                models.ProductionFinishedGoods.bulkCreate(bulkFinishedGoods, { transaction: tStart }),
+                models.ProductionAdditionalCharges.bulkCreate(bulkAdditionalCharges, { transaction: tStart }),
             ]);
             index++;
         }
@@ -399,13 +374,16 @@ async function startProduction(req, res) {
                         companyId: Number(companyId),
                         DocType: 'Production',
                         prefix
-                    }
+                    },
+                    transaction: tStart
                 }
             );
         }
 
+        await tStart.commit();
         res.status(201).json({ message: 'Production Created Successfully.', productions: bulkProductions?.map(item => item.get({ plain: true })) });
     } catch (error) {
+        await tStart.rollback();
         res.status(500).json({ message: 'Something went wrong' });
         console.log(error);
     }
