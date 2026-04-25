@@ -1195,22 +1195,29 @@ async function issueRawMaterial(req, res) {
 }
 
 async function updateProcess(req, res) {
+    const tUpdateProcess = await models.sequelize.transaction();
     try {
         const { processData, by, userId } = req.body;
         const production = await models.Production.findOne({
-            where: { id: processData?.[0]?.productionId }
+            where: { id: processData?.[0]?.productionId },
+            transaction: tUpdateProcess
         });
         if (!production) {
+            await tUpdateProcess.rollback();
             return res.status(404).json({ message: 'Production not found.' });
         }
         await production.update({
             status: 2, ...(production.productionStartDate
                 ? {}
                 : { productionStartDate: new Date().toISOString() })
-        });
+        }, { transaction: tUpdateProcess });
+
         for (const element of processData) {
             if ((element.currentTime && element.amount)) {
-                const process = await models.ProductionSalesProcess.findOne({ where: { id: element.id } });
+                const process = await models.ProductionSalesProcess.findOne({
+                    where: { id: element.id },
+                    transaction: tUpdateProcess
+                });
                 const [days, hours, miniutes, seconds] = element.currentTime.split(":").map(Number);
                 const totalMinutes = ((((days || 0) * 24) + hours) * 60) + miniutes + ((seconds || 0) / 60);
                 let totalCost = ((totalMinutes / 60) * element.amount);
@@ -1241,7 +1248,8 @@ async function updateProcess(req, res) {
                 await models.ProductionSalesProcess.update({ currentaverageCost: (process.currentaverageCost || 0) + totalCost, currentPlannedTime: currentAverageTime }, {
                     where: {
                         id: element.id,
-                    }
+                    },
+                    transaction: tUpdateProcess
                 });
 
             }
@@ -1249,12 +1257,15 @@ async function updateProcess(req, res) {
                 await models.ProductionSalesProcess.update({ processCompleteOn: (element.processCompleteOn || 0) + Number(element.todayProcessQuantity) }, {
                     where: {
                         id: element.id,
-                    }
+                    },
+                    transaction: tUpdateProcess
                 });
                 await models.ProductionHistory.create({
                     productionId: element?.productionId,
                     actionType: 'Process Logged',
                     summary: `${element.todayProcessQuantity} Process Logged under ${element.processName} by ${by}. Total time recorded ${element?.currentTime || element?.currentPlannedTime} at ₹${element.amount || element?.currentAverage} /hour cost.`
+                }, {
+                    transaction: tUpdateProcess
                 });
                 await models.ProcessLogs.create({
                     companyId: production.companyId,
@@ -1262,16 +1273,22 @@ async function updateProcess(req, res) {
                     processId: element.id,
                     quantity: element.todayProcessQuantity,
                     userId
+                }, {
+                    transaction: tUpdateProcess
                 });
             }
             element?.remark && await models.ProductionHistory.create({
                 productionId: element?.productionId,
                 actionType: 'comments',
                 summary: `${element.remark}. Remarked by ${by}.`
+            }, {
+                transaction: tUpdateProcess
             });
         }
+        await tUpdateProcess.commit();
         return res.status(200).json({ message: 'Process Updated' });
     } catch (error) {
+        await tUpdateProcess.rollback();
         console.error("Issue Error:", error);
         return res.status(500).json({
             message: "Failed to issue raw material.",
@@ -1281,40 +1298,47 @@ async function updateProcess(req, res) {
 }
 
 async function updateCost(req, res) {
+    const tUpdateCost = await models.sequelize.transaction();
     try {
         const { additionalChargesData, by } = req.body;
         const production = await models.Production.findOne({
-            where: { id: additionalChargesData[0]?.productionId }
+            where: { id: additionalChargesData[0]?.productionId },
+            transaction: tUpdateCost
         });
         if (!production) {
+            await tUpdateCost.rollback();
             return res.status(404).json({ message: 'Production not found.' });
         }
         await production.update({
             status: 2, ...(production.productionStartDate
                 ? {}
                 : { productionStartDate: new Date().toISOString() })
-        });
+        }, { transaction: tUpdateCost });
         for (const element of additionalChargesData) {
             if (!element.todayCost) continue;
             const charges = await models.ProductionAdditionalCharges.findOne({
                 where: {
                     id: element.id
-                }
+                },
+                transaction: tUpdateCost
             });
             await models.ProductionAdditionalCharges.update({ currentCost: (charges.currentCost || 0) + element.todayCost }, {
                 where: {
                     id: element.id
-                }
+                },
+                transaction: tUpdateCost
             });
 
             await models.ProductionHistory.create({
                 productionId: element.productionId,
                 actionType: 'Additional Charges Added',
                 summary: `${element?.chargesName} charge : ₹${element?.todayCost} added by ${by}`
-            });
+            }, { transaction: tUpdateCost });
         }
+        await tUpdateCost.commit();
         return res.status(200).json({ message: 'Process Updated' });
     } catch (error) {
+        await tUpdateCost.rollback();
         console.error("Issue Error:", error);
         return res.status(500).json({
             message: "Failed to issue raw material.",
@@ -1324,6 +1348,7 @@ async function updateCost(req, res) {
 }
 
 async function updateScrapLogs(req, res) {
+    const tUpdateScrap = await models.sequelize.transaction();
     try {
         const { scrapLogs, companyId, userId, by } = req.body;
         const uoms = await models.UOM.findAll({
@@ -1333,7 +1358,8 @@ async function updateScrapLogs(req, res) {
                     { companyId: null, status: 0 }
                 ]
             },
-            raw: true
+            raw: true,
+            transaction: tUpdateScrap
         });
         const uomMap = uoms.reduce((acc, curr) => {
             acc[curr.id] = curr.code;
@@ -1342,18 +1368,20 @@ async function updateScrapLogs(req, res) {
         const production = await models.Production.findOne({
             where: {
                 id: scrapLogs[0]?.productionId
-            }
+            },
+            transaction: tUpdateScrap
         });
         await production.update({
             status: 2, ...(production.productionStartDate
                 ? {}
                 : { productionStartDate: new Date().toISOString() })
-        });
+        }, { transaction: tUpdateScrap });
         const settings = isValidJSON(production?.isManual) || {}
         const approvalCount = await models.InventoryApproval.count({
             where: {
                 companyId
-            }
+            },
+            transaction: tUpdateScrap
         });
         const approval = await models.InventoryApproval.create({
             approvalId: `INA${approvalCount + 1}`,
@@ -1364,39 +1392,43 @@ async function updateScrapLogs(req, res) {
             companyId: companyId,
             status: 1,
             approvedBy: null
-        });
+        }, { transaction: tUpdateScrap });
         for (const element of scrapLogs) {
             if (!element.value || !element.store) continue;
             const rawMaterial = await models.ProductionRawMaterials.findOne({
                 where: {
                     itemId: element.itemId,
                     productionId: element.productionId
-                }
+                },
+                transaction: tUpdateScrap
             });
-            settings?.['productionScrapMaterial'] != 'manual' &&
+            if (settings?.['productionScrapMaterial'] != 'manual') {
                 await models.ProductionScrapMaterials.update({ producedQuantity: (element?.producedQuantity || 0) + element.value }, {
                     where: {
                         id: element.id
-                    }
+                    },
+                    transaction: tUpdateScrap
                 });
-            settings?.['productionScrapMaterial'] != 'manual' &&
                 await models.ProductionHistory.create({
                     productionId: element.productionId,
                     actionType: 'Scrap Material Produced.',
                     summary: `${element.itemName} - ${element.value} ${uomMap[element.uom]} added in ${element.store?.replaceAll("-fromrejectstore", "")} store by ${by}.`
-                });
+                }, { transaction: tUpdateScrap });
+            }
             const store = await models.Store.findOne({
                 where: {
                     companyId: Number(companyId),
                     name: element.store?.replaceAll("-fromrejectstore", "")
-                }
+                },
+                transaction: tUpdateScrap
             });
 
             const item = await models.Items.findOne({
                 where: {
                     companyId: Number(companyId),
                     itemId: element.itemId
-                }
+                },
+                transaction: tUpdateScrap
             });
 
             await models.StoreItems.create({
@@ -1409,7 +1441,7 @@ async function updateScrapLogs(req, res) {
                 isRejected: element?.isReject || false,
                 approvalId: approval.id,
                 quantityForApproval: element.value * (element?.conversionFactor || 1)
-            });
+            }, { transaction: tUpdateScrap });
 
             await models.StockTransfer.create({
                 transferNumber: generateTransferNumber(),
@@ -1426,11 +1458,13 @@ async function updateScrapLogs(req, res) {
                 isRejected: element?.isReject || false,
                 approvalId: approval.id,
                 quantityForApproval: element.value * (element?.conversionFactor || 1)
-            });
+            }, { transaction: tUpdateScrap });
 
         }
+        await tUpdateScrap.commit();
         return res.status(200).json({ message: settings?.['productionScrapMaterial'] == 'manual' ? 'Approval request send.' : 'Scrap Log Updated.' });
     } catch (error) {
+        await tUpdateScrap.rollback();
         console.error("Issue Error:", error);
         return res.status(500).json({
             message: "Failed to update scrap log.",
@@ -1715,20 +1749,24 @@ async function saveFinishedGoods(req, res) {
 
 async function updateProductionStatus(req, res) {
     const { productionId, status, userId, from, to, by, isBulkProduction } = req.body;
+    const tUpdateStatus = await models.sequelize.transaction();
     try {
         if (isBulkProduction) {
             await models.BulkProduction.update({ status }, {
                 where: {
                     id: productionId
-                }
+                },
+                transaction: tUpdateStatus
             });
             await models.Production.update({
                 status
             }, {
                 where: {
                     bulkProductionId: productionId
-                }
+                },
+                transaction: tUpdateStatus
             });
+            await tUpdateStatus.commit();
             return res.status(200).json({ message: 'Production status Updated.' });
         }
         await models.Production.update({
@@ -1737,16 +1775,22 @@ async function updateProductionStatus(req, res) {
         }, {
             where: {
                 id: productionId
-            }
+            },
+            transaction: tUpdateStatus
         });
         await models.ProductionHistory.create({
             productionId,
             actionType: 'Production Stage changed',
             summary: `Stage change from ${from} to ${to} by ${by}`
+        }, {
+            transaction: tUpdateStatus
         });
+
+        await tUpdateStatus.commit();
         return res.status(200).json({ message: 'Production status Updated.' });
 
     } catch (error) {
+        await tUpdateStatus.rollback();
         console.error("Transaction Error:", error);
         return res.status(500).json({
             message: "Failed to Update Production.",
@@ -2454,6 +2498,7 @@ async function productionBasedMaterialPlanning(req, res) {
 }
 
 async function updateTable(req, res) {
+    const tUpdateTable = await models.sequelize.transaction();
     try {
         const { data, updateTableType, by, companyId } = req.body;
 
@@ -2464,15 +2509,17 @@ async function updateTable(req, res) {
                     { companyId: req.body.companyId, status: 1 },
                     { companyId: null, status: 0 }
                 ]
-            }
+            },
+            transaction: tUpdateTable
         });
 
         const uomMap = uoms.reduce((acc, curr) => {
             acc[curr.id] = curr.name;
             return acc;
-        })
+        }, {});
 
         if (!Array.isArray(data) || data.length === 0) {
+            await tUpdateTable.rollback();
             return res.status(400).json({ message: 'Invalid or empty data array.' });
         }
 
@@ -2495,8 +2542,8 @@ async function updateTable(req, res) {
                         summary: `${element.itemName} - ${element.plannedQty} ${uomMap?.[element.uom]}. Added by ${by}`
                     });
                 });
-                await models.ProductionRawMaterials.bulkCreate(insertData);
-                await models.ProductionHistory.bulkCreate(logs);
+                await models.ProductionRawMaterials.bulkCreate(insertData, { transaction: tUpdateTable });
+                await models.ProductionHistory.bulkCreate(logs, { transaction: tUpdateTable });
                 break;
 
             case 'Left Over Item':
@@ -2516,8 +2563,8 @@ async function updateTable(req, res) {
                         summary: `${element.itemName} - ${element.plannedQty} ${uomMap?.[element.uom]}. Added by ${by}`
                     });
                 });
-                await models.ProductionScrapMaterials.bulkCreate(insertData);
-                await models.ProductionHistory.bulkCreate(logs);
+                await models.ProductionScrapMaterials.bulkCreate(insertData, { transaction: tUpdateTable });
+                await models.ProductionHistory.bulkCreate(logs, { transaction: tUpdateTable });
                 break;
 
             case 'Additional Charges':
@@ -2534,8 +2581,8 @@ async function updateTable(req, res) {
                         summary: `${element.chargesName} - ${element.amount}. Added by ${by}`
                     });
                 });
-                await models.ProductionAdditionalCharges.bulkCreate(insertData);
-                await models.ProductionHistory.bulkCreate(logs);
+                await models.ProductionAdditionalCharges.bulkCreate(insertData, { transaction: tUpdateTable });
+                await models.ProductionHistory.bulkCreate(logs, { transaction: tUpdateTable });
                 break;
 
             case 'Process':
@@ -2557,17 +2604,20 @@ async function updateTable(req, res) {
                         summary: `${element.processName} - ${element.plannedTime}. Added by ${by}.`
                     });
                 });
-                await models.ProductionSalesProcess.bulkCreate(insertData);
-                await models.ProductionHistory.bulkCreate(logs);
+                await models.ProductionSalesProcess.bulkCreate(insertData, { transaction: tUpdateTable });
+                await models.ProductionHistory.bulkCreate(logs, { transaction: tUpdateTable });
                 break;
 
             default:
+                await tUpdateTable.rollback();
                 return res.status(400).json({ message: 'Invalid updateTableType' });
         }
 
+        await tUpdateTable.commit();
         res.status(200).json({ message: 'Table Updated' });
 
     } catch (error) {
+        await tUpdateTable.rollback();
         console.error("Update Table Error:", error);
         res.status(500).json({
             message: "Failed to update production data.",
@@ -2577,58 +2627,74 @@ async function updateTable(req, res) {
 }
 
 async function removeRows(req, res) {
+    const tRemoveRows = await models.sequelize.transaction();
     try {
         const { id, type, by, name, productionId } = req.body;
         if (type == 'rawMaterial') {
             await models.ProductionRawMaterials.destroy({
                 where: {
                     id
-                }
+                },
+                transaction: tRemoveRows
             });
             await models.ProductionHistory.create({
                 productionId,
                 actionType: `Raw Material removed.`,
                 summary: `Item Name: ${name}, removed By ${by}.`
+            }, {
+                transaction: tRemoveRows
             });
         } else if (type == 'process') {
             await models.ProductionSalesProcess.destroy({
                 where: {
                     id
-                }
+                },
+                transaction: tRemoveRows
             });
             await models.ProductionHistory.create({
                 productionId,
                 actionType: `Process removed.`,
                 summary: `Process Name: ${name}, removed By ${by}.`
+            }, {
+                transaction: tRemoveRows
             });
         } else if (type == 'leftOver') {
             await models.ProductionScrapMaterials.destroy({
                 where: {
                     id
-                }
+                },
+                transaction: tRemoveRows
             });
             await models.ProductionHistory.create({
                 productionId,
                 actionType: `Scrap Material removed.`,
                 summary: `Item Name: ${name}, removed By ${by}.`
+            }, {
+                transaction: tRemoveRows
             });
         }
         else if (type == 'additionalCharges') {
             await models.ProductionAdditionalCharges.destroy({
                 where: {
                     id
-                }
+                },
+                transaction: tRemoveRows
             });
             await models.ProductionHistory.create({
                 productionId,
                 actionType: `Additional Charges removed.`,
                 summary: `Charges Name: ${name}, removed By ${by}.`
+            }, {
+                transaction: tRemoveRows
             });
         }
+
+        await tRemoveRows.commit();
         res.status(200).json({
             message: 'Row removed Successfully'
         });
     } catch (error) {
+        await tRemoveRows.rollback();
         console.error("Update Table Error:", error);
         res.status(500).json({
             message: "Failed to update production data.",
