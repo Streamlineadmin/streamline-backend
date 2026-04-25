@@ -1799,8 +1799,9 @@ async function updateProductionStatus(req, res) {
 }
 
 async function saveProduction(req, res) {
-    const { finishedGoods, by, companyId } = req.body;
+    const tSaveProduction = await models.sequelize.transaction();
     try {
+        const { finishedGoods, by, companyId } = req.body;
         const uoms = await models.UOM.findAll({
             where: {
                 [Op.or]: [
@@ -1808,7 +1809,8 @@ async function saveProduction(req, res) {
                     { companyId: null, status: 0 }
                 ]
             },
-            raw: true
+            raw: true,
+            transaction: tSaveProduction
         });
         const uomMap = uoms.reduce((acc, curr) => {
             acc[curr.id] = curr.code;
@@ -1819,7 +1821,8 @@ async function saveProduction(req, res) {
             const finishedGood = await models.ProductionFinishedGoods.findOne({
                 where: {
                     id: element.id
-                }
+                },
+                transaction: tSaveProduction
             });
 
             await models.ProductionFinishedGoods.update({
@@ -1829,19 +1832,22 @@ async function saveProduction(req, res) {
             }, {
                 where: {
                     id: element.id
-                }
+                },
+                transaction: tSaveProduction
             });
 
             await models.ProductionHistory.create({
                 productionId: element?.productionId,
                 actionType: 'Finished Goods Produced.',
                 summary: `${element?.itemName} - ${element?.todaysProduction} ${uomMap[element.uom]} produced by ${by}.`
-            });
+            }, { transaction: tSaveProduction });
 
         }
+        await tSaveProduction.commit();
         res.status(200).json({ message: 'Production Updated.' });
 
     } catch (error) {
+        await tSaveProduction.rollback();
         console.error("Transaction Error:", error);
         return res.status(500).json({
             message: "Failed to Update Production.",
