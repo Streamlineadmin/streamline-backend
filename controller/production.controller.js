@@ -1047,6 +1047,7 @@ async function bulkGetProductionsByIds(req, res) {
 }
 
 async function issueRawMaterial(req, res) {
+    const tIssue = await models.sequelize.transaction();
     try {
         const { rawMaterialData, companyId, userId, by } = req.body;
         const uoms = await models.UOM.findAll({
@@ -1056,31 +1057,36 @@ async function issueRawMaterial(req, res) {
                     { companyId: null, status: 0 }
                 ]
             },
-            raw: true
+            raw: true,
+            transaction: tIssue
         });
         const uomMap = uoms.reduce((acc, curr) => {
             acc[curr.id] = curr.code;
             return acc;
         }, {});
         if (!rawMaterialData || rawMaterialData.length === 0) {
+            await tIssue.rollback();
             return res.status(400).json({ message: 'No raw material data provided.' });
         }
         const production = await models.Production.findOne({
-            where: { id: rawMaterialData[0]?.productionId }
+            where: { id: rawMaterialData[0]?.productionId },
+            transaction: tIssue
         });
         if (!production) {
+            await tIssue.rollback();
             return res.status(404).json({ message: 'Production not found.' });
         }
         await production.update({
             status: 2, ...(production.productionStartDate
                 ? {}
                 : { productionStartDate: new Date().toISOString() })
-        });
+        }, { transaction: tIssue });
         const settings = isValidJSON(production?.isManual) || {}
         const approvalCount = await models.InventoryApproval.count({
             where: {
                 companyId
-            }
+            },
+            transaction: tIssue
         });
         const approval = await models.InventoryApproval.create({
             approvalId: `INA${approvalCount + 1}`,
@@ -1091,10 +1097,10 @@ async function issueRawMaterial(req, res) {
             companyId: companyId,
             status: 1,
             approvedBy: null
-        });
+        }, { transaction: tIssue });
         const [stores, items] = await Promise.all([
-            models.Store.findAll({ where: { companyId: Number(companyId) } }),
-            models.Items.findAll({ where: { companyId } })
+            models.Store.findAll({ where: { companyId: Number(companyId) }, transaction: tIssue }),
+            models.Items.findAll({ where: { companyId }, transaction: tIssue })
         ]);
         const storeMap = new Map(stores.map(store => [store.name, store]));
         const itemMap = new Map(items.map(item => [item.itemId, item]));
@@ -1113,7 +1119,8 @@ async function issueRawMaterial(req, res) {
                         itemId: item.id,
                         isRejected
                     },
-                    order: [['createdAt', 'ASC']]
+                    order: [['createdAt', 'ASC']],
+                    transaction: tIssue
                 });
                 let price = 0;
                 let remainingQuantity = element.issuedToday * (element?.conversionFactor || 1);
@@ -1122,7 +1129,7 @@ async function issueRawMaterial(req, res) {
                     if (stock.quantity <= 0) continue;
                     const deductQty = Math.min(stock.quantity, remainingQuantity);
                     remainingQuantity -= deductQty;
-                    await stock.update({ quantity: stock.quantity - deductQty });
+                    await stock.update({ quantity: stock.quantity - deductQty }, { transaction: tIssue });
                     stockTransferPayloads.push({
                         transferNumber: generateTransferNumber(),
                         fromStoreId: store.id,
@@ -1148,14 +1155,15 @@ async function issueRawMaterial(req, res) {
                         currentAverage: (element.currentAverage || 0) + price
                     },
                     {
-                        where: { id: element.id }
+                        where: { id: element.id },
+                        transaction: tIssue
                     }
                 );
                 await models.ProductionHistory.create({
                     productionId: element?.productionId,
                     actionType: 'Raw Material Issued',
                     summary: `${element?.itemName} - ${element?.issuedToday} ${uomMap[element.uom]} issued by ${by} from ${element.store?.replaceAll("-fromrejectstore", "")} store.`
-                });
+                }, { transaction: tIssue });
             }
             else {
                 stockTransferPayloads.push({
@@ -1178,18 +1186,20 @@ async function issueRawMaterial(req, res) {
                     productionId: element?.productionId,
                     actionType: 'Raw Material Issue Request.',
                     summary: `${element?.itemName} - ${element?.issuedToday} ${uomMap[element.uom]} requested by ${by}.`
-                });
+                }, { transaction: tIssue });
             }
         }
         if (stockTransferPayloads.length > 0) {
-            await models.StockTransfer.bulkCreate(stockTransferPayloads);
+            await models.StockTransfer.bulkCreate(stockTransferPayloads, { transaction: tIssue });
         }
+        await tIssue.commit();
         return res.status(200).json({ message: settings?.['productionRawMaterial'] != 'manual' ? 'Material Issued.' : 'Raw materials are sent for store approval' });
     } catch (error) {
+        await tIssue.rollback();
         console.error("Issue Error:", error);
         return res.status(500).json({
-            message: "Failed to issue raw material.",
-            error: error.message,
+            message: "Failed to issue.",
+            error: error.message
         });
     }
 }
@@ -1501,7 +1511,8 @@ async function saveFinishedGoods(req, res) {
                     { companyId: null, status: 0 }
                 ]
             },
-            raw: true
+            raw: true,
+            transaction
         });
         const uomMap = uoms.reduce((acc, curr) => {
             acc[curr.id] = curr.code;
@@ -1511,14 +1522,16 @@ async function saveFinishedGoods(req, res) {
         const production = await models.Production.findOne({
             where: {
                 id: finishedGoods[0]?.productionId
-            }
+            },
+            transaction
         });
 
         const settings = isValidJSON(production?.isManual) || {}
         const approvalCount = await models.InventoryApproval.count({
             where: {
                 companyId
-            }
+            },
+            transaction
         });
         const approval = await models.InventoryApproval.create({
             approvalId: `INA${approvalCount + 1}`,
@@ -1529,7 +1542,7 @@ async function saveFinishedGoods(req, res) {
             companyId: companyId,
             status: 1,
             approvedBy: null
-        });
+        }, { transaction });
 
         let total = 0;
 
@@ -1603,7 +1616,7 @@ async function saveFinishedGoods(req, res) {
             productionId: production?.id,
             actionType: 'Finished Good Tested.',
             summary: `${finishedGoods[0]?.itemName} - ${passedQty} ${uomMap[finishedGoods[0]?.uom]} passed by ${by}.`
-        });
+        }, { transaction });
 
 
         if (rejectQty) {
@@ -1611,7 +1624,7 @@ async function saveFinishedGoods(req, res) {
                 productionId: production?.id,
                 actionType: 'Finished Good Tested.',
                 summary: `${finishedGoods[0]?.itemName} - ${rejectQty} ${uomMap[finishedGoods[0]?.uom]} rejected by ${by}.`
-            });
+            }, { transaction });
             await models.StoreItems.create({
                 storeId: rejectStores.id,
                 itemId: item.id,
@@ -1647,7 +1660,7 @@ async function saveFinishedGoods(req, res) {
                 productionId: production?.id,
                 actionType: 'Quantity Send for rework.',
                 summary: `${finishedGoods[0]?.itemName} - ${reworkQty} ${uomMap[finishedGoods[0]?.uom]} send for rework by ${by}.`
-            });
+            }, { transaction });
         }
 
         await models.ProductionFinishedGoods.update({
@@ -1667,14 +1680,15 @@ async function saveFinishedGoods(req, res) {
         const finishedGood = await models.ProductionFinishedGoods.findOne({
             where: {
                 id: finishedGoods[0].id
-            }
+            },
+            transaction
         });
         if (finishedGood?.passedQuantity >= finishedGood?.quantity) {
             await production.update({
                 status: 4, ...(production.productionCompletionDate
                     ? {}
                     : { productionCompletionDate: new Date().toISOString() })
-            });
+            }, { transaction });
         }
 
         for (const element of additionalCharges) {
@@ -1727,13 +1741,13 @@ async function saveFinishedGoods(req, res) {
             });
         }
 
-        await transaction.commit();
 
-        const goods = await models.ProductionFinishedGoods.findByPk(finishedGoods[0].id);
+        const goods = await models.ProductionFinishedGoods.findByPk(finishedGoods[0].id, { transaction });
         if (goods && goods.quantity <= goods.passedQuantity) {
-            await production.update({ status: 4 });
+            await production.update({ status: 4 }, { transaction });
         }
 
+        await transaction.commit();
 
         return res.status(200).json({ message: settings?.['productionFinishedGood'] == 'manual' ? 'Finished Goods Saved and Inventory approval Requested.' : 'Finished Goods Saved.' });
 
