@@ -4695,7 +4695,8 @@ async function editDocument(req, res) {
       showUnits = null,
       batches = null,
       supplyState = '',
-      requestForApproval
+      requestForApproval,
+      customFields
     } = req.body;
 
     const document = await models.Documents.findOne({
@@ -4969,7 +4970,8 @@ async function editDocument(req, res) {
       requestedBy,
       department,
       showUnits,
-      supplyState
+      supplyState,
+      customFields
     });
 
     await models.CompanyTermsCondition.destroy({

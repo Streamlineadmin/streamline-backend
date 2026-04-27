@@ -74,8 +74,7 @@ async function addItem(req, res) {
 
                 if (itemSeries) {
                     const prefix = itemSeries.prefix || '';
-                    const paddedNumber = String(itemSeries.nextNumber).padStart(itemSeries.number || 0, '0');
-                    actualItemId = `${prefix}${paddedNumber}`;
+                    actualItemId = prefix + String(itemSeries.nextNumber);
                     await itemSeries.update({ nextNumber: itemSeries.nextNumber + 1 }, { transaction: tSeries });
                 }
                 await tSeries.commit();
@@ -1635,7 +1634,7 @@ async function bulkStockUpdate(req, res) {
         const fromItemName = Object.keys(rows[0])?.includes('Item');
         for (const row of rows) {
             let error = '';
-            if (!row.Quantity && row.Quantity !== 0) error += 'Quantity is required. ';
+            if ((!row.Quantity) || row.Quantity === '' || isNaN(row.Quantity)) continue;
             if (!row.Price && row.Price !== 0) error += 'Price is required. ';
             if (!row.Store) error += 'Store is required. ';
             const rawName = fromItemName
