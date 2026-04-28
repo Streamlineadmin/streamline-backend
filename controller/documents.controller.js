@@ -3323,16 +3323,21 @@ async function fetchCurrentDoc(req, res) {
 async function discardDocument(req, res) {
   const { documentId, companyId, userId } = req.body;
   let linkedDocument = null;
+  const t = await models.sequelize.transaction();
   try {
     const document = await models.Documents.findOne({
       where: { id: documentId, companyId },
+      transaction: t,
+      lock: t.LOCK.UPDATE
     });
 
     if (!document) {
+      await t.rollback();
       return res.status(404).json({ message: "Document not found!" });
     }
 
     if (document.status == 2) {
+      await t.rollback();
       return res.status(400).json({ message: "Document is already discarded!" });
     }
 
@@ -3344,9 +3349,11 @@ async function discardDocument(req, res) {
           status: {
             [Op.ne]: 2,
           },
-        }
+        },
+        transaction: t
       });
       if (linkedDocument) {
+        await t.rollback();
         return res.status(409).json({ message: 'You can not discard this document, It is linked with other documents.' })
       }
     }
@@ -3359,16 +3366,19 @@ async function discardDocument(req, res) {
             [Op.ne]: 2,
           },
           documentType: documentTypes.orderConfirmation
-        }
+        },
+        transaction: t
       });
       if (linkedDocument) {
+        await t.rollback();
         return res.status(409).json({ message: 'You can not discard this document, It is linked with other documents.' })
       }
       await models.Documents.update({ quotationNumber: null }, {
         where: {
           quotationNumber: document.documentNumber,
           DocumentType: documentTypes.salesEnquiry
-        }
+        },
+        transaction: t
       })
     }
     if (document.documentType === documentTypes.orderConfirmation) {
@@ -3380,7 +3390,8 @@ async function discardDocument(req, res) {
           status: {
             [Op.ne]: 2,
           },
-        }
+        },
+        transaction: t
       });
       linkedDocument = await models.Documents.findOne({
         where: {
@@ -3389,15 +3400,18 @@ async function discardDocument(req, res) {
           status: {
             [Op.ne]: 2,
           },
-        }
+        },
+        transaction: t
       });
       if (linkedDocument || purchaseRequest) {
+        await t.rollback();
         return res.status(409).json({ message: 'You can not discard this document, It is linked with other documents.' })
       }
       await models.Documents.update({ status: 1 }, {
         where: {
           documentNumber: document.quotationNumber,
-        }
+        },
+        transaction: t
       });
     }
     if (document.documentType === documentTypes.deliveryChallan) {
@@ -3408,16 +3422,19 @@ async function discardDocument(req, res) {
           status: {
             [Op.ne]: 2,
           },
-        }
+        },
+        transaction: t
       });
       if (linkedDocument) {
+        await t.rollback();
         return res.status(409).json({ message: 'You can not discard this document, It is linked with other documents.' })
       }
       const stockTransfers = await models.StockTransfer.findAll({
         where: {
           documentNumber: document.documentNumber,
           companyId
-        }
+        },
+        transaction: t
       });
       const storeItems = [], stockHistory = [];
       const transferNumber = generateTransferNumber();
@@ -3446,15 +3463,16 @@ async function discardDocument(req, res) {
         })
       }
       await Promise.all([
-        models.StoreItems.bulkCreate(storeItems),
-        models.StockTransfer.bulkCreate(stockHistory)
+        models.StoreItems.bulkCreate(storeItems, { transaction: t }),
+        models.StockTransfer.bulkCreate(stockHistory, { transaction: t })
       ]);
       if (document.orderConfirmationNumber) {
         await models.Documents.update({ status: 1 }, {
           where: {
             companyId,
             documentNumber: document.orderConfirmationNumber
-          }
+          },
+          transaction: t
         })
       }
     }
@@ -3466,16 +3484,19 @@ async function discardDocument(req, res) {
           status: {
             [Op.ne]: 2,
           },
-        }
+        },
+        transaction: t
       });
       if (linkedDocument) {
+        await t.rollback();
         return res.status(409).json({ message: 'You can not discard this document, It is linked with other documents.' })
       }
       const stockTransfers = await models.StockTransfer.findAll({
         where: {
           documentNumber: document.documentNumber,
           companyId
-        }
+        },
+        transaction: t
       });
       const storeItems = [], stockHistory = [];
       const transferNumber = generateTransferNumber();
@@ -3504,15 +3525,16 @@ async function discardDocument(req, res) {
         })
       }
       await Promise.all([
-        models.StoreItems.bulkCreate(storeItems),
-        models.StockTransfer.bulkCreate(stockHistory)
+        models.StoreItems.bulkCreate(storeItems, { transaction: t }),
+        models.StockTransfer.bulkCreate(stockHistory, { transaction: t })
       ]);
       if (document.orderConfirmationNumber) {
         await models.Documents.update({ status: 1 }, {
           where: {
             companyId,
             documentNumber: document.orderConfirmationNumber
-          }
+          },
+          transaction: t
         })
       }
     }
@@ -3524,9 +3546,11 @@ async function discardDocument(req, res) {
           status: {
             [Op.ne]: 2,
           },
-        }
+        },
+        transaction: t
       });
       if (linkedDocument) {
+        await t.rollback();
         return res.status(409).json({ message: 'You can not discard this document, It is linked with other documents.' })
       }
     }
@@ -3539,7 +3563,8 @@ async function discardDocument(req, res) {
           status: {
             [Op.ne]: 2,
           },
-        }
+        },
+        transaction: t
       })
       linkedDocument = await models.Documents.findOne({
         where: {
@@ -3548,9 +3573,11 @@ async function discardDocument(req, res) {
           status: {
             [Op.ne]: 2,
           },
-        }
+        },
+        transaction: t
       });
       if (linkedDocument || purchaseOrder) {
+        await t.rollback();
         return res.status(409).json({ message: 'You can not discard this document, It is linked with other documents.' })
       }
     }
@@ -3562,9 +3589,11 @@ async function discardDocument(req, res) {
           status: {
             [Op.ne]: 2,
           },
-        }
+        },
+        transaction: t
       });
       if (linkedDocument) {
+        await t.rollback();
         return res.status(409).json({ message: 'You can not discard this document, It is linked with other documents.' })
       }
       if (document.indent_number) {
@@ -3577,13 +3606,14 @@ async function discardDocument(req, res) {
             },
             documentType: 'Purchase Request'
           },
-          attributes: ['id', 'linkedDocuments']
+          attributes: ['id', 'linkedDocuments'],
+          transaction: t
         });
         for (const purchaseRequest of purchaseRequests) {
           const linkedDocuments = isValidJSON(purchaseRequest.linkedDocuments) || [];
           if (linkedDocuments.includes(document.documentNumber)) {
             linkedDocuments.splice(linkedDocuments.indexOf(document.documentNumber), 1);
-            await purchaseRequest.update({ linkedDocuments });
+            await purchaseRequest.update({ linkedDocuments }, { transaction: t });
           }
         }
       }
@@ -3605,9 +3635,11 @@ async function discardDocument(req, res) {
               }
             }
           ]
-        }
+        },
+        transaction: t
       });
       if (batch) {
+        await t.rollback();
         return res.status(409).json({
           message: 'You can not discard this document after Batches Consumption.'
         });
@@ -3619,32 +3651,38 @@ async function discardDocument(req, res) {
           status: {
             [Op.ne]: 2,
           },
-        }
+        },
+        transaction: t
       });
       if (linkedDocument) {
+        await t.rollback();
         return res.status(409).json({ message: 'You can not discard this document, It is linked with other documents.' })
       }
       const stockTransfers = await models.StockTransfer.findAll({
         where: {
           companyId,
           documentNumber: document.documentNumber,
-        }
+        },
+        transaction: t
       });
       const stockHistory = [];
       if (document.store) {
         const store = await models.Store.findOne({
-          where: { name: document.store, companyId }
+          where: { name: document.store, companyId },
+          transaction: t
         });
         if (store) {
           await models.StoreItems.update({ quantity: 0 }, {
-            where: { documentNumber: document.documentNumber, storeId: store.id }
+            where: { documentNumber: document.documentNumber, storeId: store.id },
+            transaction: t
           });
         }
       } else {
         const storeIds = [...new Set(stockTransfers.map(st => st.toStoreId).filter(Boolean))];
         for (const sId of storeIds) {
           await models.StoreItems.update({ quantity: 0 }, {
-            where: { documentNumber: document.documentNumber, storeId: sId }
+            where: { documentNumber: document.documentNumber, storeId: sId },
+            transaction: t
           });
         }
       }
@@ -3666,24 +3704,27 @@ async function discardDocument(req, res) {
           actualPrice: stockTransfer.price
         });
       }
-      await models.StockTransfer.bulkCreate(stockHistory);
+      await models.StockTransfer.bulkCreate(stockHistory, { transaction: t });
       await models.Documents.update({ status: 1 }, {
         where: {
           companyId,
           documentNumber: document.purchaseOrderNumber
-        }
+        },
+        transaction: t
       });
       await models.BatchItems.update({ status: 0 }, {
         where: {
           documentNumber: document.documentNumber,
           companyId
-        }
+        },
+        transaction: t
       });
       await models.Batches.update({ status: 0 }, {
         where: {
           documentNumber: document.documentNumber,
           companyId
-        }
+        },
+        transaction: t
       });
     }
     if (document.documentType === documentTypes.purchaseInvoice) {
@@ -3694,32 +3735,38 @@ async function discardDocument(req, res) {
           status: {
             [Op.ne]: 2,
           },
-        }
+        },
+        transaction: t
       });
       if (linkedDocument) {
+        await t.rollback();
         return res.status(409).json({ message: 'You can not discard this document, It is linked with other documents.' })
       }
       const stockTransfers = await models.StockTransfer.findAll({
         where: {
           companyId,
           documentNumber: document.documentNumber,
-        }
+        },
+        transaction: t
       });
       const stockHistory = [];
       if (document.store) {
         const store = await models.Store.findOne({
-          where: { name: document.store, companyId }
+          where: { name: document.store, companyId },
+          transaction: t
         });
         if (store) {
           await models.StoreItems.update({ quantity: 0 }, {
-            where: { documentNumber: document.documentNumber, storeId: store.id }
+            where: { documentNumber: document.documentNumber, storeId: store.id },
+            transaction: t
           });
         }
       } else {
         const storeIds = [...new Set(stockTransfers.map(st => st.toStoreId).filter(Boolean))];
         for (const sId of storeIds) {
           await models.StoreItems.update({ quantity: 0 }, {
-            where: { documentNumber: document.documentNumber, storeId: sId }
+            where: { documentNumber: document.documentNumber, storeId: sId },
+            transaction: t
           });
         }
       }
@@ -3741,7 +3788,7 @@ async function discardDocument(req, res) {
           actualPrice: stockTransfer.price
         });
       }
-      await models.StockTransfer.bulkCreate(stockHistory);
+      await models.StockTransfer.bulkCreate(stockHistory, { transaction: t });
     }
     if (document.documentType === documentTypes.qualityReport) {
       const batch = await models.BatchItems.findOne({
@@ -3760,9 +3807,11 @@ async function discardDocument(req, res) {
               }
             }
           ]
-        }
+        },
+        transaction: t
       });
       if (batch) {
+        await t.rollback();
         return res.status(409).json({
           message: 'You can not discard this document after Batches Consumption.'
         });
@@ -3771,26 +3820,31 @@ async function discardDocument(req, res) {
         where: {
           companyId,
           documentNumber: document.documentNumber,
-        }
+        },
+        transaction: t
       });
       const stockHistory = [];
       if (document.store) {
         const store = await models.Store.findOne({
-          where: { name: document.store, companyId }
+          where: { name: document.store, companyId },
+          transaction: t
         });
         if (store) {
           await models.StoreItems.update({ quantity: 0 }, {
-            where: { documentNumber: document.documentNumber, storeId: store.id }
+            where: { documentNumber: document.documentNumber, storeId: store.id },
+            transaction: t
           });
         }
       }
       if (document.rejectedStore) {
         const rejectStore = await models.Store.findOne({
-          where: { name: document.rejectedStore, companyId }
+          where: { name: document.rejectedStore, companyId },
+          transaction: t
         });
         if (rejectStore) {
           await models.StoreItems.update({ quantity: 0 }, {
-            where: { documentNumber: document.documentNumber, storeId: rejectStore.id }
+            where: { documentNumber: document.documentNumber, storeId: rejectStore.id },
+            transaction: t
           });
         }
       }
@@ -3798,7 +3852,8 @@ async function discardDocument(req, res) {
         const storeIds = [...new Set(stockTransfers.map(st => st.toStoreId).filter(Boolean))];
         for (const sId of storeIds) {
           await models.StoreItems.update({ quantity: 0 }, {
-            where: { documentNumber: document.documentNumber, storeId: sId }
+            where: { documentNumber: document.documentNumber, storeId: sId },
+            transaction: t
           });
         }
       }
@@ -3821,11 +3876,12 @@ async function discardDocument(req, res) {
           isRejected: stockTransfer?.isRejected
         });
       }
-      await models.StockTransfer.bulkCreate(stockHistory);
+      await models.StockTransfer.bulkCreate(stockHistory, { transaction: t });
       await models.Documents.update({ status: 1 }, {
         where: {
           documentNumber: document.grn_number
-        }
+        },
+        transaction: t
       });
     }
     if (document.documentType === "Service Order") {
@@ -3833,7 +3889,8 @@ async function discardDocument(req, res) {
         where: {
           serviceOrderNumber: document.documentNumber,
           companyId
-        }
+        },
+        transaction: t
       });
     }
 
@@ -3842,7 +3899,8 @@ async function discardDocument(req, res) {
         where: {
           companyId,
           documentNumber: document.documentNumber,
-        }
+        },
+        transaction: t
       });
       const storeItems = [], stockHistory = [];
       const transferNumber = generateTransferNumber();
@@ -3871,22 +3929,24 @@ async function discardDocument(req, res) {
         })
       }
       await Promise.all([
-        models.StoreItems.bulkCreate(storeItems),
-        models.StockTransfer.bulkCreate(stockHistory)
+        models.StoreItems.bulkCreate(storeItems, { transaction: t }),
+        models.StockTransfer.bulkCreate(stockHistory, { transaction: t })
       ]);
       if (document.serviceOrderNumber) {
         const production = await models.Production.findOne({
           where: {
             companyId,
             serviceOrderNumber: document.serviceOrderNumber,
-          }
+          },
+          transaction: t
         });
         if (production) {
           const documentItems = await models.DocumentItems.findAll({
             where: {
               companyId,
               documentNumber: document.documentNumber,
-            }
+            },
+            transaction: t
           });
           const documentItemsMap = documentItems.reduce((acc, curr) => {
             acc[curr.itemId] = curr.quantity;
@@ -3895,11 +3955,12 @@ async function discardDocument(req, res) {
           const rawMaterial = await models.ProductionRawMaterials.findAll({
             where: {
               productionId: production.id
-            }
+            },
+            transaction: t
           });
           for (const element of rawMaterial) {
             if (documentItemsMap[element.itemId]) {
-              await element.update({ consumedQuantity: element.consumedQuantity - documentItemsMap[element.itemId] });
+              await element.update({ consumedQuantity: element.consumedQuantity - documentItemsMap[element.itemId] }, { transaction: t });
             }
           }
         }
@@ -3912,30 +3973,35 @@ async function discardDocument(req, res) {
           companyId,
           documentNumber: document.challan_number,
           documentType: 'Service Challan'
-        }
+        },
+        transaction: t
       });
       if (serviceChallan?.addStockOn === "GRN") {
         const stockTransfers = await models.StockTransfer.findAll({
           where: {
             companyId,
             documentNumber: document.documentNumber,
-          }
+          },
+          transaction: t
         });
         const stockHistory = [];
         if (document.store) {
           const store = await models.Store.findOne({
-            where: { companyId, name: document.store }
+            where: { companyId, name: document.store },
+            transaction: t
           });
           if (store) {
             await models.StoreItems.update({ quantity: 0 }, {
-              where: { documentNumber: document.documentNumber, storeId: store.id }
+              where: { documentNumber: document.documentNumber, storeId: store.id },
+              transaction: t
             });
           }
         } else {
           const storeIds = [...new Set(stockTransfers.map(st => st.toStoreId).filter(Boolean))];
           for (const sId of storeIds) {
             await models.StoreItems.update({ quantity: 0 }, {
-              where: { documentNumber: document.documentNumber, storeId: sId }
+              where: { documentNumber: document.documentNumber, storeId: sId },
+              transaction: t
             });
           }
         }
@@ -3957,26 +4023,29 @@ async function discardDocument(req, res) {
             actualPrice: stockTransfer.price
           });
         }
-        await models.StockTransfer.bulkCreate(stockHistory);
+        await models.StockTransfer.bulkCreate(stockHistory, { transaction: t });
       }
       if (serviceChallan?.serviceOrderNumber) {
         const production = await models.Production.findOne({
           where: {
             companyId,
             serviceOrderNumber: serviceChallan?.serviceOrderNumber
-          }
+          },
+          transaction: t
         });
         if (production) {
           const finishedGoods = await models.ProductionFinishedGoods.findAll({
             where: {
               productionId: production.id
-            }
+            },
+            transaction: t
           });
           const documentItems = await models.DocumentItems.findAll({
             where: {
               companyId,
               documentNumber: document.documentNumber
-            }
+            },
+            transaction: t
           });
           const documentItemsMap = documentItems.reduce((acc, curr) => {
             acc[curr.itemId] = curr.quantity;
@@ -3987,11 +4056,11 @@ async function discardDocument(req, res) {
               await element.update({
                 producedQuantity: element.producedQuantity - documentItemsMap?.[element.itemId],
                 passedQuantity: element.passedQuantity - documentItemsMap?.[element.itemId]
-              })
+              }, { transaction: t })
             } else {
               await element.update({
                 producedQuantity: element.producedQuantity - documentItemsMap?.[element.itemId],
-              });
+              }, { transaction: t });
             }
           }
         }
@@ -4003,23 +4072,27 @@ async function discardDocument(req, res) {
         where: {
           companyId,
           documentNumber: document.documentNumber,
-        }
+        },
+        transaction: t
       });
       const stockHistory = [];
       if (document.store) {
         const store = await models.Store.findOne({
-          where: { companyId, name: document.store }
+          where: { companyId, name: document.store },
+          transaction: t
         });
         if (store) {
           await models.StoreItems.update({ quantity: 0 }, {
-            where: { documentNumber: document.documentNumber, storeId: store.id }
+            where: { documentNumber: document.documentNumber, storeId: store.id },
+            transaction: t
           });
         }
       } else {
         const storeIds = [...new Set(stockTransfers.map(st => st.toStoreId).filter(Boolean))];
         for (const sId of storeIds) {
           await models.StoreItems.update({ quantity: 0 }, {
-            where: { documentNumber: document.documentNumber, storeId: sId }
+            where: { documentNumber: document.documentNumber, storeId: sId },
+            transaction: t
           });
         }
       }
@@ -4041,26 +4114,29 @@ async function discardDocument(req, res) {
           actualPrice: stockTransfer.price
         });
       }
-      await models.StockTransfer.bulkCreate(stockHistory);
+      await models.StockTransfer.bulkCreate(stockHistory, { transaction: t });
 
       if (document?.serviceOrderNumber) {
         const production = await models.Production.findOne({
           where: {
             companyId,
             serviceOrderNumber: document?.serviceOrderNumber
-          }
+          },
+          transaction: t
         });
         if (production) {
           const finishedGoods = await models.ProductionFinishedGoods.findAll({
             where: {
               productionId: production.id
-            }
+            },
+            transaction: t
           });
           const documentItems = await models.DocumentItems.findAll({
             where: {
               companyId,
               documentNumber: document.documentNumber
-            }
+            },
+            transaction: t
           });
           const rejectMap = {};
           const documentItemsMap = documentItems.reduce((acc, curr) => {
@@ -4072,7 +4148,7 @@ async function discardDocument(req, res) {
             await element.update({
               rejectQuantity: element.rejectQuantity - rejectMap?.[element.itemId],
               passedQuantity: element.passedQuantity - documentItemsMap?.[element.itemId]
-            });
+            }, { transaction: t });
           }
         }
       }
@@ -4088,7 +4164,8 @@ async function discardDocument(req, res) {
           companyId,
           documentNumber: document.enquiryNumber,
           documentType: 'Sales Lead'
-        }
+        },
+        transaction: t
       });
 
       if (salesLead && Array.isArray(isValidJSON(salesLead.linkedDocuments))) {
@@ -4097,7 +4174,7 @@ async function discardDocument(req, res) {
 
         // Update only if something changed
         if (updatedLinkedDocuments.length !== isValidJSON(salesLead.linkedDocuments).length) {
-          await salesLead.update({ linkedDocuments: updatedLinkedDocuments });
+          await salesLead.update({ linkedDocuments: updatedLinkedDocuments }, { transaction: t });
         }
       }
     }
@@ -4112,7 +4189,8 @@ async function discardDocument(req, res) {
           companyId,
           documentNumber: document.quotationNumber,
           documentType: 'Sales Quotation'
-        }
+        },
+        transaction: t
       });
 
       if (salesQuotation && Array.isArray(isValidJSON(salesQuotation.linkedDocuments))) {
@@ -4121,7 +4199,7 @@ async function discardDocument(req, res) {
 
         // Update only if something changed
         if (updatedLinkedDocuments.length !== isValidJSON(salesQuotation.linkedDocuments).length) {
-          await salesQuotation.update({ linkedDocuments: updatedLinkedDocuments });
+          await salesQuotation.update({ linkedDocuments: updatedLinkedDocuments }, { transaction: t });
         }
       }
     }
@@ -4135,7 +4213,8 @@ async function discardDocument(req, res) {
           companyId,
           documentNumber: document.orderConfirmationNumber,
           documentType: 'Sales Order'
-        }
+        },
+        transaction: t
       });
 
       if (salesOrder && Array.isArray(isValidJSON(salesOrder.linkedDocuments))) {
@@ -4144,7 +4223,7 @@ async function discardDocument(req, res) {
 
         // Update only if something changed
         if (updatedLinkedDocuments.length !== isValidJSON(salesOrder.linkedDocuments).length) {
-          await salesOrder.update({ linkedDocuments: updatedLinkedDocuments });
+          await salesOrder.update({ linkedDocuments: updatedLinkedDocuments }, { transaction: t });
         }
       }
     }
@@ -4155,14 +4234,15 @@ async function discardDocument(req, res) {
           companyId,
           documentNumber: document.invoiceNumber,
           documentType: 'Invoice'
-        }
+        },
+        transaction: t
       });
       if (salesInvoice && Array.isArray(isValidJSON(salesInvoice.linkedDocuments))) {
         const updatedLinkedDocuments = isValidJSON(salesInvoice.linkedDocuments)
           .filter(docNo => docNo !== document.documentNumber);
 
         if (updatedLinkedDocuments.length !== isValidJSON(salesInvoice.linkedDocuments).length) {
-          await salesInvoice.update({ linkedDocuments: updatedLinkedDocuments });
+          await salesInvoice.update({ linkedDocuments: updatedLinkedDocuments }, { transaction: t });
         }
       }
     }
@@ -4177,7 +4257,8 @@ async function discardDocument(req, res) {
           companyId,
           documentNumber: document.purchaseOrderNumber,
           documentType: 'Purchase Order'
-        }
+        },
+        transaction: t
       });
 
       if (purchaseOrder && Array.isArray(isValidJSON(purchaseOrder.linkedDocuments))) {
@@ -4185,11 +4266,9 @@ async function discardDocument(req, res) {
           .filter(docNo => docNo !== document.documentNumber);
 
         if (updatedLinkedDocuments.length !== isValidJSON(purchaseOrder.linkedDocuments).length) {
-          await purchaseOrder.update({ linkedDocuments: updatedLinkedDocuments });
+          await purchaseOrder.update({ linkedDocuments: updatedLinkedDocuments }, { transaction: t });
         }
       }
-
-
     }
 
     if (document.documentType === 'Purchase Credit Note' || document.documentType === 'Purchase Debit Note' && !document.purchaseOrderNumber) {
@@ -4198,14 +4277,15 @@ async function discardDocument(req, res) {
           companyId,
           documentNumber: document.invoiceNumber,
           documentType: 'Purchase Invoice'
-        }
+        },
+        transaction: t
       });
       if (purchaseInvoice && Array.isArray(isValidJSON(purchaseInvoice.linkedDocuments))) {
         const updatedLinkedDocuments = isValidJSON(purchaseInvoice.linkedDocuments)
           .filter(docNo => docNo !== document.documentNumber);
 
         if (updatedLinkedDocuments.length !== isValidJSON(purchaseInvoice.linkedDocuments).length) {
-          await purchaseInvoice.update({ linkedDocuments: updatedLinkedDocuments });
+          await purchaseInvoice.update({ linkedDocuments: updatedLinkedDocuments }, { transaction: t });
         }
       }
     }
@@ -4220,7 +4300,8 @@ async function discardDocument(req, res) {
           companyId,
           documentNumber: document.serviceOrderNumber,
           documentType: 'Service Order'
-        }
+        },
+        transaction: t
       });
 
       if (serviceOrder && Array.isArray(isValidJSON(serviceOrder.linkedDocuments))) {
@@ -4228,11 +4309,9 @@ async function discardDocument(req, res) {
           .filter(docNo => docNo !== document.documentNumber);
 
         if (updatedLinkedDocuments.length !== isValidJSON(serviceOrder.linkedDocuments).length) {
-          await serviceOrder.update({ linkedDocuments: updatedLinkedDocuments });
+          await serviceOrder.update({ linkedDocuments: updatedLinkedDocuments }, { transaction: t });
         }
       }
-
-
     }
 
     if (
@@ -4245,7 +4324,8 @@ async function discardDocument(req, res) {
           companyId,
           documentNumber: document.ServiceConfirmationNumber,
           documentType: 'Service Confirmation'
-        }
+        },
+        transaction: t
       });
 
       if (serviceConfirmation && Array.isArray(isValidJSON(serviceConfirmation.linkedDocuments))) {
@@ -4253,16 +4333,16 @@ async function discardDocument(req, res) {
           .filter(docNo => docNo !== document.documentNumber);
 
         if (updatedLinkedDocuments.length !== isValidJSON(serviceConfirmation.linkedDocuments).length) {
-          await serviceConfirmation.update({ linkedDocuments: updatedLinkedDocuments });
+          await serviceConfirmation.update({ linkedDocuments: updatedLinkedDocuments }, { transaction: t });
         }
       }
-
-
     }
 
-    await document.update({ status: 2 });
+    await document.update({ status: 2 }, { transaction: t });
+    await t.commit();
     res.status(200).json({ message: 'Document Discarded Successfully.' });
   } catch (error) {
+    if (t) await t.rollback();
     console.log(error, 'error in discard docs');
     res.status(500).json({ message: 'Internal Server Error' })
   }
@@ -4615,7 +4695,8 @@ async function editDocument(req, res) {
       showUnits = null,
       batches = null,
       supplyState = '',
-      requestForApproval
+      requestForApproval,
+      customFields
     } = req.body;
 
     const document = await models.Documents.findOne({
@@ -4889,7 +4970,8 @@ async function editDocument(req, res) {
       requestedBy,
       department,
       showUnits,
-      supplyState
+      supplyState,
+      customFields
     });
 
     await models.CompanyTermsCondition.destroy({
