@@ -264,17 +264,17 @@ async function updateProfile(req, res) {
             division,
             commissionrate
         } = req.body;
- 
+
         if (!userId) {
             return res.status(400).json({ message: "User ID is required" });
         }
- 
+
         const user = await models.Users.findOne({
             where: {
                 id: userId
             }
         });
- 
+
         // Update User Table
         const [affectedRows] = await models.Users.update(
             {
@@ -295,11 +295,11 @@ async function updateProfile(req, res) {
             },
             { where: { id: userId } }
         );
- 
+
         // if (affectedRows === 0) {
         //     return res.status(404).json({ message: "User not found or no changes made." });
         // }
- 
+
         if ((role == 1 || role == 2) && user && companyName) {
             await models.Users.update(
                 {
@@ -308,25 +308,25 @@ async function updateProfile(req, res) {
                 { where: { companyId: user.companyId } }
             );
         }
- 
- 
+
+
         // Fetch the updated user details
         const updatedUser = await models.Users.findOne({
             where: { id: userId },
-            attributes: ['id', 'name', 'email', 'companyName', 'companyId', 'contactNo', 'role', 'website', 'businessType', 'pan', 'gstNumber', 'cin', 'profileURL', 'signature', 'msmeNumber', 'range', 'division', 'commissionrate']
+            attributes: ['id', 'username', 'name', 'email', 'companyName', 'companyId', 'contactNo', 'role', 'website', 'businessType', 'pan', 'gstNumber', 'cin', 'profileURL', 'signature', 'msmeNumber', 'range', 'division', 'commissionrate', 'registeredFromMobile']
         });
- 
+
         const rolePermissionsData = await models.RolePermissions.findAll({
             where: { companyId: user.companyId, role: user.role },
             raw: true
         });
- 
+
         let rolesAccess = [];
         if (rolePermissionsData.length) {
             // Collect unique IDs
             const permissionIds = [...new Set(rolePermissionsData.map(rp => rp.permission))];
             const subpermissionIds = [...new Set(rolePermissionsData.map(rp => rp.subpermission))];
- 
+
             // 4️⃣ Fetch all features & subfeatures in one go
             const [features, subfeatures] = await Promise.all([
                 models.PermissionsFeatures.findAll({
@@ -340,10 +340,10 @@ async function updateProfile(req, res) {
                     raw: true
                 })
             ]);
- 
+
             const featureMap = Object.fromEntries(features.map(f => [f.id, f.feature]));
             const subfeatureMap = Object.fromEntries(subfeatures.map(s => [s.id, s.subfeature]));
- 
+
             // 5️⃣ Build access array
             rolesAccess = rolePermissionsData.map(rp => ({
                 feature: featureMap[rp.permission] || null,
@@ -354,24 +354,41 @@ async function updateProfile(req, res) {
                 delete: rp.delete
             }));
         }
- 
-        // 6️⃣ Attach admin logo if needed
-        let logoUrl = user.profileURL || "";
-        if (user.role !== 1 && !logoUrl) {
+
+        // 6️⃣ Attach admin details if needed
+        let logoUrl = updatedUser.profileURL || "";
+        let gst = updatedUser.gstNumber || "";
+        let msme = updatedUser.msmeNumber || "";
+        let panNumber = updatedUser.pan || "";
+        let companyEmail = updatedUser.email || "";
+        let companyContact = updatedUser.contactNo || "";
+        let rangeLocal = updatedUser.range || "";
+        let divisionLocal = updatedUser.division || "";
+        let commissionrateLocal = updatedUser.commissionrate || "";
+
+        if (updatedUser.role !== 1) {
             const admin = await models.Users.findOne({
-                where: { role: 1, companyId: user.companyId },
-                attributes: ["profileURL"],
+                where: { role: 1, companyId: updatedUser.companyId },
+                attributes: ["profileURL", "gstNumber", "msmeNumber", "pan", "email", "contactNo", "range", "division", "commissionrate"],
                 raw: true
             });
-            logoUrl = admin?.profileURL || "";
+            logoUrl = logoUrl || admin?.profileURL || "";
+            gst = admin?.gstNumber || "";
+            msme = admin?.msmeNumber || "";
+            panNumber = admin?.pan || "";
+            companyEmail = admin?.email || "";
+            companyContact = admin?.contactNo || "";
+            rangeLocal = admin?.range || "";
+            divisionLocal = admin?.division || "";
+            commissionrateLocal = admin?.commissionrate || "";
         }
- 
+
         // 7️⃣ JWT payload
         const payload = {
-            userId: user.id,
+            userId: updatedUser.id,
             username: updatedUser.username,
             email: updatedUser.email,
-            companyId: user.companyId,
+            companyId: updatedUser.companyId,
             companyName: updatedUser.companyName,
             businessType: updatedUser.businessType,
             profileURL: updatedUser.profileURL,
@@ -379,20 +396,23 @@ async function updateProfile(req, res) {
             name: updatedUser.name,
             contactPersonNumber: updatedUser.contactNo,
             role: updatedUser.role,
-            pan: updatedUser.pan,
-            gstNumber: updatedUser.gstNumber,
             cin: updatedUser.cin,
             permissions: rolesAccess,
             logoUrl,
             signature: updatedUser.signature,
-            msmeNumber: updatedUser.msmeNumber,
-            range: updatedUser.range,
-            division: updatedUser.division,
-            commissionrate: updatedUser.commissionrate
+            registeredFromMobile: updatedUser.registeredFromMobile,
+            pan: panNumber,
+            gstNumber: gst,
+            msmeNumber: msme,
+            range: rangeLocal,
+            division: divisionLocal,
+            commissionrate: commissionrateLocal,
+            companyEmail,
+            companyContact
         };
- 
+
         const token = jwt.sign(payload, process.env.JWT_SECRET || "secret", { expiresIn: "1h" });
- 
+
         // Format response
         res.status(200).json({
             message: "Profile updated successfully.",
@@ -414,7 +434,7 @@ async function updateProfile(req, res) {
             commissionrate: updatedUser.commissionrate,
             token
         });
- 
+
     } catch (error) {
         console.error("Error updating profile:", error);
         res.status(500).json({ message: "Something went wrong, please try again later!", error });
@@ -424,35 +444,35 @@ async function updateProfile(req, res) {
 async function updateProfileURL(req, res) {
     try {
         const { userId, profileURL } = req.body;
- 
+
         if (!userId || !profileURL) {
             return res.status(400).json({ message: "User ID and Profile URL are required" });
         }
- 
+
         // First, check if the user exists
         const user = await models.Users.findOne({ where: { id: userId } });
- 
+
         if (!user) {
             return res.status(404).json({ message: "User not found" });
         }
- 
+
         // Update the profile URL
         await models.Users.update(
             { profileURL: profileURL },
             { where: { id: userId } }
         );
- 
+
         const rolePermissionsData = await models.RolePermissions.findAll({
             where: { companyId: user.companyId, role: user.role },
             raw: true
         });
- 
+
         let rolesAccess = [];
         if (rolePermissionsData.length) {
             // Collect unique IDs
             const permissionIds = [...new Set(rolePermissionsData.map(rp => rp.permission))];
             const subpermissionIds = [...new Set(rolePermissionsData.map(rp => rp.subpermission))];
- 
+
             // 4️⃣ Fetch all features & subfeatures in one go
             const [features, subfeatures] = await Promise.all([
                 models.PermissionsFeatures.findAll({
@@ -466,10 +486,10 @@ async function updateProfileURL(req, res) {
                     raw: true
                 })
             ]);
- 
+
             const featureMap = Object.fromEntries(features.map(f => [f.id, f.feature]));
             const subfeatureMap = Object.fromEntries(subfeatures.map(s => [s.id, s.subfeature]));
- 
+
             // 5️⃣ Build access array
             rolesAccess = rolePermissionsData.map(rp => ({
                 feature: featureMap[rp.permission] || null,
@@ -480,18 +500,35 @@ async function updateProfileURL(req, res) {
                 delete: rp.delete
             }));
         }
- 
-        // 6️⃣ Attach admin logo if needed
+
+        // 6️⃣ Attach admin details if needed
         let logoUrl = profileURL || "";
-        if (user.role !== 1 && !logoUrl) {
+        let gst = user.gstNumber || "";
+        let msme = user.msmeNumber || "";
+        let panNumber = user.pan || "";
+        let companyEmail = user.email || "";
+        let companyContact = user.contactNo || "";
+        let rangeLocal = user.range || "";
+        let divisionLocal = user.division || "";
+        let commissionrateLocal = user.commissionrate || "";
+
+        if (user.role !== 1) {
             const admin = await models.Users.findOne({
                 where: { role: 1, companyId: user.companyId },
-                attributes: ["profileURL"],
+                attributes: ["profileURL", "gstNumber", "msmeNumber", "pan", "email", "contactNo", "range", "division", "commissionrate"],
                 raw: true
             });
-            logoUrl = admin?.profileURL || "";
+            logoUrl = logoUrl || admin?.profileURL || "";
+            gst = admin?.gstNumber || "";
+            msme = admin?.msmeNumber || "";
+            panNumber = admin?.pan || "";
+            companyEmail = admin?.email || "";
+            companyContact = admin?.contactNo || "";
+            rangeLocal = admin?.range || "";
+            divisionLocal = admin?.division || "";
+            commissionrateLocal = admin?.commissionrate || "";
         }
- 
+
         // 7️⃣ JWT payload
         const payload = {
             userId: user.id,
@@ -505,27 +542,30 @@ async function updateProfileURL(req, res) {
             name: user.name,
             contactPersonNumber: user.contactNo,
             role: user.role,
-            pan: user.pan,
-            gstNumber: user.gstNumber,
             cin: user.cin,
             permissions: rolesAccess,
-            signature: user.signature,
             logoUrl,
-            msmeNumber: user.msmeNumber,
-            range: user.range,
-            division: user.division,
-            commissionrate: user.commissionrate
+            signature: user.signature,
+            registeredFromMobile: user?.registeredFromMobile,
+            pan: panNumber,
+            gstNumber: gst,
+            msmeNumber: msme,
+            range: rangeLocal,
+            division: divisionLocal,
+            commissionrate: commissionrateLocal,
+            companyEmail,
+            companyContact
         };
- 
+
         const token = jwt.sign(payload, process.env.JWT_SECRET || "secret", { expiresIn: "1h" });
- 
+
         // Return the updated user data
         res.status(200).json({
             message: "Profile URL updated successfully",
             token,
             email: user.email
         });
- 
+
     } catch (error) {
         console.error("Error updating profile URL:", error);
         res.status(500).json({
@@ -538,35 +578,35 @@ async function updateProfileURL(req, res) {
 async function updateSignature(req, res) {
     try {
         const { userId, signature } = req.body;
- 
+
         if (!userId || !signature) {
             return res.status(400).json({ message: "User ID and Signature are required" });
         }
- 
+
         // First, check if the user exists
         const user = await models.Users.findOne({ where: { id: userId } });
- 
+
         if (!user) {
             return res.status(404).json({ message: "User not found" });
         }
- 
+
         // Update the signature
         await models.Users.update(
             { signature: signature },
             { where: { id: userId } }
         );
- 
+
         const rolePermissionsData = await models.RolePermissions.findAll({
             where: { companyId: user.companyId, role: user.role },
             raw: true
         });
- 
+
         let rolesAccess = [];
         if (rolePermissionsData.length) {
             // Collect unique IDs
             const permissionIds = [...new Set(rolePermissionsData.map(rp => rp.permission))];
             const subpermissionIds = [...new Set(rolePermissionsData.map(rp => rp.subpermission))];
- 
+
             // Fetch all features & subfeatures in one go
             const [features, subfeatures] = await Promise.all([
                 models.PermissionsFeatures.findAll({
@@ -580,10 +620,10 @@ async function updateSignature(req, res) {
                     raw: true
                 })
             ]);
- 
+
             const featureMap = Object.fromEntries(features.map(f => [f.id, f.feature]));
             const subfeatureMap = Object.fromEntries(subfeatures.map(s => [s.id, s.subfeature]));
- 
+
             // Build access array
             rolesAccess = rolePermissionsData.map(rp => ({
                 feature: featureMap[rp.permission] || null,
@@ -594,18 +634,35 @@ async function updateSignature(req, res) {
                 delete: rp.delete
             }));
         }
- 
-        // Attach admin logo if needed
+
+        // Attach admin details if needed
         let logoUrl = user.profileURL || "";
-        if (user.role !== 1 && !logoUrl) {
+        let gst = user.gstNumber || "";
+        let msme = user.msmeNumber || "";
+        let panNumber = user.pan || "";
+        let companyEmail = user.email || "";
+        let companyContact = user.contactNo || "";
+        let rangeLocal = user.range || "";
+        let divisionLocal = user.division || "";
+        let commissionrateLocal = user.commissionrate || "";
+
+        if (user.role !== 1) {
             const admin = await models.Users.findOne({
                 where: { role: 1, companyId: user.companyId },
-                attributes: ["profileURL"],
+                attributes: ["profileURL", "gstNumber", "msmeNumber", "pan", "email", "contactNo", "range", "division", "commissionrate"],
                 raw: true
             });
-            logoUrl = admin?.profileURL || "";
+            logoUrl = logoUrl || admin?.profileURL || "";
+            gst = admin?.gstNumber || "";
+            msme = admin?.msmeNumber || "";
+            panNumber = admin?.pan || "";
+            companyEmail = admin?.email || "";
+            companyContact = admin?.contactNo || "";
+            rangeLocal = admin?.range || "";
+            divisionLocal = admin?.division || "";
+            commissionrateLocal = admin?.commissionrate || "";
         }
- 
+
         // JWT payload
         const payload = {
             userId: user.id,
@@ -619,28 +676,30 @@ async function updateSignature(req, res) {
             name: user.name,
             contactPersonNumber: user.contactNo,
             role: user.role,
-            pan: user.pan,
-            gstNumber: user.gstNumber,
             cin: user.cin,
-            signature: signature,
             permissions: rolesAccess,
             logoUrl,
-            msmeNumber: user.msmeNumber,
-            range: user.range,
-            division: user.division,
-            commissionrate: user.commissionrate
- 
+            signature: signature,
+            registeredFromMobile: user?.registeredFromMobile,
+            pan: panNumber,
+            gstNumber: gst,
+            msmeNumber: msme,
+            range: rangeLocal,
+            division: divisionLocal,
+            commissionrate: commissionrateLocal,
+            companyEmail,
+            companyContact
         };
- 
+
         const token = jwt.sign(payload, process.env.JWT_SECRET || "secret", { expiresIn: "1h" });
- 
+
         // Return the updated user data
         res.status(200).json({
             message: "Signature updated successfully",
             token,
             email: user.email
         });
- 
+
     } catch (error) {
         console.error("Error updating signature:", error);
         res.status(500).json({
