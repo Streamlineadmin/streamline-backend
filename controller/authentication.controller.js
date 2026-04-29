@@ -334,15 +334,32 @@ async function login(req, res) {
             }));
         }
 
-        // 6️⃣ Attach admin logo if needed
+        // 6️⃣ Attach admin details if needed
         let logoUrl = user.profileURL || "";
-        if (user.role !== 1 && !logoUrl) {
+        let gst = user.gstNumber || "";
+        let msme = user.msmeNumber || "";
+        let panNumber = user.pan || "";
+        let companyEmail = user.email || "";
+        let companyContact = user.contactNo || "";
+        let rangeLocal = user.range || "";
+        let divisionLocal = user.division || "";
+        let commissionrateLocal = user.commissionrate || "";
+
+        if (user.role !== 1) {
             const admin = await models.Users.findOne({
                 where: { role: 1, companyId: user.companyId },
-                attributes: ["profileURL"],
+                attributes: ["profileURL", "gstNumber", "msmeNumber", "pan", "email", "contactNo", "range", "division", "commissionrate"],
                 raw: true
             });
-            logoUrl = admin?.profileURL || "";
+            logoUrl = logoUrl || admin?.profileURL || "";
+            gst = admin?.gstNumber || "";
+            msme = admin?.msmeNumber || "";
+            panNumber = admin?.pan || "";
+            companyEmail = admin?.email || "";
+            companyContact = admin?.contactNo || "";
+            rangeLocal = admin?.range || "";
+            divisionLocal = admin?.division || "";
+            commissionrateLocal = admin?.commissionrate || "";
         }
 
         // 7️⃣ JWT payload
@@ -358,17 +375,19 @@ async function login(req, res) {
             name: user.name,
             contactPersonNumber: user.contactNo,
             role: user.role,
-            pan: user.pan,
-            gstNumber: user.gstNumber,
             cin: user.cin,
             permissions: rolesAccess,
             logoUrl,
             signature: user.signature,
-            registeredFromMobile : user?.registeredFromMobile,
-            msmeNumber: user.msmeNumber,
-            range: user.range,
-            division: user.division,
-            commissionrate: user.commissionrate
+            registeredFromMobile: user?.registeredFromMobile,
+            pan: panNumber,
+            gstNumber: gst,
+            msmeNumber: msme,
+            range: rangeLocal,
+            division: divisionLocal,
+            commissionrate: commissionrateLocal,
+            companyEmail,
+            companyContact
         };
 
         const token = jwt.sign(payload, process.env.JWT_SECRET || "secret", { expiresIn: "1h" });

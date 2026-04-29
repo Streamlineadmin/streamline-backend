@@ -1426,7 +1426,7 @@ async function stockReconcilation(req, res) {
             });
             const existingStoreItemsMap = {};
             for (const element of allStocks) {
-                if (existingStoreItemsMap[element?.storeId]) {
+                if (existingStoreItemsMap[element?.itemId]) {
                     existingStoreItemsMap[element.itemId].push(element);
                 }
                 else {
@@ -1592,8 +1592,8 @@ async function bulkStockUpdate(req, res) {
         ]);
         const itemIdMap = {}, itemNameMap = {};
         for (const item of items) {
-            itemIdMap[item.itemId?.toLowerCase()] = item;
-            itemNameMap[item.itemName?.toLowerCase()?.trim()] = item;
+            itemIdMap[item.itemId?.toLowerCase()?.trim?.()] = item;
+            itemNameMap[item.itemName?.toLowerCase()?.trim?.()] = item;
         }
 
         const storeMap = stores.reduce((acc, store) => {
@@ -1639,7 +1639,7 @@ async function bulkStockUpdate(req, res) {
             if (!row.Store) error += 'Store is required. ';
             const rawName = fromItemName
                 ? row?.Item?.substring?.(0, row.Item.lastIndexOf("("))?.trim()
-                : row['Item Name/Id'];
+                : row['Item Name/Id']?.trim();
             if (!rawName) error += 'Item is required. ';
 
             const selectedItem = itemIdMap[rawName?.toLowerCase()] || itemNameMap[rawName?.toLowerCase()];

@@ -2635,6 +2635,27 @@ async function removeRows(req, res) {
     try {
         const { id, type, by, name, productionId } = req.body;
         if (type == 'rawMaterial') {
+            const rawMaterial = await models.ProductionRawMaterials.findByPk(id);
+            if (rawMaterial) {
+                const production = await models.Production.findByPk(productionId);
+                if (production && production.bomId) {
+                    const bomRawMaterial = await models.BOMRawMaterial.findOne({
+                        where: { bomId: production.bomId, itemId: rawMaterial.itemId }
+                    });
+
+                    if (bomRawMaterial) {
+                        const isParent = await models.BOMRawMaterial.findOne({
+                            where: { parentId: bomRawMaterial.id }
+                        });
+
+                        if (isParent) {
+                            await tRemoveRows.rollback();
+                            return res.status(200).json({ message: "Available as Parent BOM" });
+                        }
+                    }
+                }
+            }
+
             await models.ProductionRawMaterials.destroy({
                 where: {
                     id
