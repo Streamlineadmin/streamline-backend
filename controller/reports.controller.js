@@ -2359,13 +2359,15 @@ async function getReports(req, res) {
                         [Op.in]: serviceChallans.map(challan => challan.documentNumber)
                     }
                 },
-                raw: true,
-                nest: true,
-                include: {
+                include: [{
                     model: models.Items,
                     as: "itemDetails",
+                    where: { companyId: Number(companyId) },
+                    required: false,
                     attributes: ['itemId', 'itemName', 'category', 'subCategory', 'microCategory', 'metricsUnit'],
-                }
+                }],
+                raw: true,
+                nest: true
             })
 
             const itemsMap = items.reduce((acc, curr) => {
@@ -2480,6 +2482,8 @@ async function getReports(req, res) {
                     {
                         model: models.Items,
                         as: 'itemDetails',
+                        where: { companyId },
+                        required: false,
                         attributes: ['itemId', 'category', 'subCategory', 'microCategory']
                     }
                 ]
