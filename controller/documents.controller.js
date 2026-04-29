@@ -3053,6 +3053,8 @@ async function getDocuments(req, res) {
           {
             model: models.Items,
             as: 'itemDetails',
+            where: { companyId: Number(companyId) },
+            required: false,
             attributes: ['itemId', 'category', 'subCategory', 'microCategory']
           }
         ]
