@@ -274,6 +274,8 @@ async function getBOMById(req, res) {
           include: [
             {
               model: models.ProductionProcess,
+              where: { companyId },
+              required: false,
               attributes: [
                 "processCode",
                 "processName",
