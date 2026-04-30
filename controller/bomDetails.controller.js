@@ -109,6 +109,8 @@ async function getBOMDetails(req, res) {
         {
           model: models.BOMAttachments,
           as: "attachments",
+          where: { companyId },
+          required: false,
           attributes: ["id", "attachmentName"],
         },
       ],
@@ -267,6 +269,8 @@ async function getBOMById(req, res) {
         {
           model: models.BOMProductionProcess,
           as: "BOMProductionProcesses",
+          where: { companyId },
+          required: false,
           include: [
             {
               model: models.ProductionProcess,
@@ -280,13 +284,15 @@ async function getBOMById(req, res) {
             },
           ],
         },
-        { model: models.BOMFinishedGoods, as: "finishedGoods" },
-        { model: models.BOMRawMaterial, as: "rawMaterials" },
-        { model: models.BOMScrapMaterial, as: "scrapMaterials" },
-        { model: models.BOMAdditionalCharges, as: "additionalCharges" },
+        { model: models.BOMFinishedGoods, as: "finishedGoods", where: { companyId }, required: false },
+        { model: models.BOMRawMaterial, as: "rawMaterials", where: { companyId }, required: false },
+        { model: models.BOMScrapMaterial, as: "scrapMaterials", where: { companyId }, required: false },
+        { model: models.BOMAdditionalCharges, as: "additionalCharges", where: { companyId }, required: false },
         {
           model: models.BOMAttachments,
           as: "attachments",
+          where: { companyId },
+          required: false,
           attributes: ["id", "attachmentName"],
         },
       ],
