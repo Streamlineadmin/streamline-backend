@@ -2892,12 +2892,16 @@ async function getDocuments(req, res) {
         include: [
           {
             model: models.LogisticDetails,
-            as: 'logisticDetails'
+            as: 'logisticDetails',
+            where: { companyId: Number(companyId) },
+            required: false,
           },
           {
             model: models.Users,
             as: 'creator',
-            attributes: ['id', 'name', 'gstNumber']
+            attributes: ['id', 'name', 'gstNumber'],
+            where: { companyId: Number(companyId) },
+            required: false,
           },
         ],
         distinct: true
@@ -3013,11 +3017,15 @@ async function getDocuments(req, res) {
           {
             model: models.LogisticDetails,
             as: 'logisticDetails',
+            where: { companyId: Number(companyId) },
+            required: false,
           },
           {
             model: models.Users,
             as: 'creator',
             attributes: ['id', 'name'],
+            where: { companyId: Number(companyId) },
+            required: false,
           },
         ],
         order: [['createdAt', 'DESC']],
@@ -3203,7 +3211,12 @@ async function getDocumentById(req, res) {
 
     const document = await models.Documents.findOne({
       where: { documentNumber, companyId },
-      include: [{ model: models.LogisticDetails, as: 'logisticDetails' }],
+      include: [{
+        model: models.LogisticDetails,
+        as: 'logisticDetails',
+        where: { companyId: Number(companyId) },
+        required: false,
+      }],
       raw: true,
       nest: true
     });
@@ -3283,7 +3296,13 @@ async function fetchCurrentDoc(req, res) {
 
     const document = await models.Documents.findOne({
       where: { documentNumber, companyId },
-      include: [{ model: models.LogisticDetails, as: 'logisticDetails' }],
+      include: [
+        {
+          model: models.LogisticDetails,
+          as: 'logisticDetails',
+          where: { companyId: Number(companyId) },
+          required: false,
+        }],
       raw: true,
       nest: true
     });

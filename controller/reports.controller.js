@@ -1581,6 +1581,8 @@ async function getReports(req, res) {
                 where: { id: { [Op.in]: Array.from(bomIdsSet) } },
                 include: [
                     {
+                        where: { companyId: Number(companyId) },
+                        required: false,
                         model: models.BOMFinishedGoods,
                         as: "finishedGoods",
                     },
@@ -2447,9 +2449,13 @@ async function getReports(req, res) {
                 {
                     model: models.LogisticDetails,
                     as: 'logisticDetails',
+                    where: { companyId: Number(companyId) },
+                    required: false,
                 },
                 {
                     model: models.Users,
+                    where: { companyId: Number(companyId) },
+                    required: false,
                     as: 'creator',
                     attributes: ['id', 'name'],
                 },
@@ -2482,7 +2488,7 @@ async function getReports(req, res) {
                     {
                         model: models.Items,
                         as: 'itemDetails',
-                        where: { companyId },
+                        where: { companyId: Number(companyId) },
                         required: false,
                         attributes: ['itemId', 'category', 'subCategory', 'microCategory']
                     }

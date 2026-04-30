@@ -5,9 +5,9 @@ async function createBOMProductionProcess(req, res) {
     const { bomId, processes, companyId, userId, status } = req.body;
     if (!processes.length) {
       return res.status(201).json({
-      message: "Production processes added to BOM successfully",
-      data: [],
-    });
+        message: "Production processes added to BOM successfully",
+        data: [],
+      });
     }
 
     if (!bomId) {
@@ -57,6 +57,8 @@ async function getBOMProductionProcesses(req, res) {
       include: [
         {
           model: models.ProductionProcess,
+          where: { companyId: Number(companyId) },
+          required: false,
           attributes: ["id", "processCode", "processName", "description"],
         },
       ],
