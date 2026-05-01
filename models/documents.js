@@ -188,6 +188,8 @@ module.exports = (sequelize, DataTypes) => {
     linkedDocuments: DataTypes.JSON,
     hideColumns: DataTypes.JSON,
     irnDate: DataTypes.DATE,
+    ackNumber: DataTypes.STRING,
+    ackDate: DataTypes.STRING,
   }, {
     sequelize,
     modelName: 'Documents',

@@ -5696,7 +5696,7 @@ async function createEInvoice(req, res) {
         Loc: supplierAddress?.state || ' ',
         Pin: String(pin || ''),
         Stcd: gst?.slice(0, 2),
-        Ph: document?.supplierContactNo,
+        // Ph: document?.supplierContactNo,
         ...(document?.supplierEmail ? { Em: document.supplierEmail } : {})
       },
 
@@ -5708,9 +5708,9 @@ async function createEInvoice(req, res) {
         Addr1: buyerAddress?.addressLineOne || 'Test',
         Addr2: buyerAddress?.city || ' ',
         Loc: buyerAddress?.state || ' ',
-        Pin: String(buyerAddress?.pincode || ''),
+        Pin: String(buyerAddress?.pincode?.trim?.() || ''),
         Stcd: document?.buyerGSTNumber?.slice(0, 2),
-        Ph: document?.buyerContactNumber,
+        // Ph: document?.buyerContactNumber,
         ...(document?.buyerEmail ? { Em: document.buyerEmail } : {})
       },
 
@@ -5754,8 +5754,11 @@ async function createEInvoice(req, res) {
     );
 
     // STEP 5: Extract IRN + QR
+    console.log(response?.data?.data);
     const irnNumber = response?.data?.data?.Irn || null;
     const qrCode = response?.data?.data?.SignedQRCode || null;
+    const ackNumber = response?.data?.data?.AckNo || null;
+    const ackDate = response?.data?.data?.AckDt || null;
 
     if (!irnNumber) {
       return res.status(400).send({
@@ -5773,7 +5776,7 @@ async function createEInvoice(req, res) {
     });
 
     if (existingDocument) {
-      await existingDocument.update({ irnNumber, qrCode, irnDate: new Date() });
+      await existingDocument.update({ irnNumber, qrCode, irnDate: new Date(), ackNumber, ackDate });
     }
 
     return res.status(200).json({
@@ -6068,7 +6071,7 @@ async function cancelEInvoice(req, res) {
     });
 
     if (existingDocument) {
-      await existingDocument.update({ irnNumber: null, qrCode: null });
+      await existingDocument.update({ irnNumber: null, qrCode: null, ackNumber: null, ackDate: null });
     }
 
     res.status(200).json({

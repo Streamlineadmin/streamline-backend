@@ -42,6 +42,7 @@ module.exports = (sequelize, DataTypes) => {
         uniqueBomName: DataTypes.BOOLEAN,
         subHeading: DataTypes.STRING,
         subHeading2: DataTypes.STRING,
+        inventorySlipTemplate: DataTypes.STRING,
     }, {
         sequelize,
         modelName: 'Settings',
