@@ -720,7 +720,7 @@ async function partialUser(req, res) {
             },
             raw: true
         });
-        res.status(200).json({ ...user, logoUrl: user?.profileURL || "" });
+        res.status(200).json({ ...user, logoUrl: user?.profileURL || "", companyContact: user?.contactNo || "", companyEmail: user?.email || "" });
     } catch (error) {
         res.status(500).json({
             message: "Something went wrong, please try again later!",
