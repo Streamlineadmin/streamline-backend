@@ -5071,8 +5071,8 @@ async function editDocument(req, res) {
             totalBeforeTax: item.totalBeforeTax,
             totalAfterTax: item.totalAfterTax,
             receivedToday: item.receivedToday || 0,
-            pendingQuantity: item.pendingQuantity || 0,
-            receivedQuantity: item.receivedQuantity || 0,
+            pendingQuantity: documentType === "Sales Order" ? 0 : (item.pendingQuantity || 0),
+            receivedQuantity: (item.receivedQuantity || 0),
             auQuantity: item?.auQuantity,
             alternateUnit: item?.alternateUnit,
             conversionFactor: item?.conversionFactor,
@@ -5704,7 +5704,6 @@ async function createEInvoice(req, res) {
         Loc: supplierAddress?.state || ' ',
         Pin: String(pin || ''),
         Stcd: gst?.slice(0, 2),
-        ...(document?.supplierEmail ? { Em: document.supplierEmail } : {})
       },
 
       BuyerDtls: {
@@ -5717,7 +5716,6 @@ async function createEInvoice(req, res) {
         Loc: buyerAddress?.state || ' ',
         Pin: String(buyerAddress?.pincode?.trim?.() || ''),
         Stcd: document?.buyerGSTNumber?.slice(0, 2),
-        ...(document?.buyerEmail ? { Em: document.buyerEmail } : {})
       },
 
       ItemList: items.map(item => ({
