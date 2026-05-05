@@ -5637,13 +5637,21 @@ async function createEInvoice(req, res) {
 
     const items = document.items?.map((item, index) => {
       const qty = Number(item?.quantity || 1);
-      const price = Number(item?.price || 100);
+      const originalPrice = Number(item?.price || 10);
+      const discountPercent = Number(item?.discountOne);
+      const safeDiscount = isNaN(discountPercent) ? 0 : discountPercent;
+
+      const price = originalPrice * (1 - safeDiscount / 100);
+
       const taxRate = Number(item?.tax || 0);
+
       const totalBeforeTax = qty * price;
       const totalTax = (totalBeforeTax * taxRate) / 100;
+
       const cgst = isIgst ? 0 : totalTax / 2;
       const sgst = isIgst ? 0 : totalTax / 2;
       const igst = isIgst ? totalTax : 0;
+
       const totalAfterTax = totalBeforeTax + totalTax;
 
       AssVal += totalBeforeTax;
@@ -5696,7 +5704,6 @@ async function createEInvoice(req, res) {
         Loc: supplierAddress?.state || ' ',
         Pin: String(pin || ''),
         Stcd: gst?.slice(0, 2),
-        // Ph: document?.supplierContactNo,
         ...(document?.supplierEmail ? { Em: document.supplierEmail } : {})
       },
 
@@ -5710,7 +5717,6 @@ async function createEInvoice(req, res) {
         Loc: buyerAddress?.state || ' ',
         Pin: String(buyerAddress?.pincode?.trim?.() || ''),
         Stcd: document?.buyerGSTNumber?.slice(0, 2),
-        // Ph: document?.buyerContactNumber,
         ...(document?.buyerEmail ? { Em: document.buyerEmail } : {})
       },
 
