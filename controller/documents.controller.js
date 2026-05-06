@@ -5637,7 +5637,7 @@ async function createEInvoice(req, res) {
 
     const items = document.items?.map((item, index) => {
       const qty = Number(item?.quantity || 1);
-      const originalPrice = Number(item?.price || 10);
+      const originalPrice = Number(item?.price || 1);
       const discountPercent = Number(item?.discountOne);
       const safeDiscount = isNaN(discountPercent) ? 0 : discountPercent;
 
