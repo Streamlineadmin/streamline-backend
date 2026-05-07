@@ -5628,6 +5628,45 @@ async function createEInvoice(req, res) {
 
     const isIgst = document?.supplyState?.toLowerCase?.() !== supplierAddress?.state?.toLowerCase?.();
 
+    const additionalCharges = Array.isArray(document?.additionalCharges)
+      ? document.additionalCharges
+      : [];
+
+    const toNumber = (val) => {
+      const num = Number(val);
+      return isNaN(num) ? 0 : num;
+    };
+    const additionalChargeTotals = additionalCharges.reduce(
+      (acc, charge) => {
+        const price = toNumber(charge?.price);
+        const taxRate = toNumber(charge?.tax);
+
+        const taxAmount = (price * taxRate) / 100;
+
+        const cgst = isIgst ? 0 : taxAmount / 2;
+        const sgst = isIgst ? 0 : taxAmount / 2;
+        const igst = isIgst ? taxAmount : 0;
+
+        acc.assVal += price;
+        acc.cgstVal += cgst;
+        acc.sgstVal += sgst;
+        acc.igstVal += igst;
+        acc.totalInvVal += price + taxAmount;
+        acc.othChrg += price;
+
+        return acc;
+      },
+      {
+        assVal: 0,
+        cgstVal: 0,
+        sgstVal: 0,
+        igstVal: 0,
+        totalInvVal: 0,
+        othChrg: 0,
+      }
+    );
+
+
     // Compute totals from items
     let AssVal = 0,
       CgstVal = 0,
@@ -5677,6 +5716,12 @@ async function createEInvoice(req, res) {
         TotItemVal: totalAfterTax,
       };
     });
+
+    AssVal += additionalChargeTotals.assVal;
+    CgstVal += additionalChargeTotals.cgstVal;
+    SgstVal += additionalChargeTotals.sgstVal;
+    IgstVal += additionalChargeTotals.igstVal;
+    TotInvVal += additionalChargeTotals.totalInvVal;
 
     // STEP 3: Build E-Invoice Payload
     const round2 = (num) => {
@@ -5734,6 +5779,7 @@ async function createEInvoice(req, res) {
         CgstVal: round2(CgstVal),
         SgstVal: round2(SgstVal),
         IgstVal: round2(IgstVal),
+        OthChrg: round2(additionalChargeTotals.othChrg),
         TotInvVal: round2(TotInvVal)
       }
     };
