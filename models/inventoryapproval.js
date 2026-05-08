@@ -20,6 +20,7 @@ module.exports = (sequelize, DataTypes) => {
             approvedBy: DataTypes.INTEGER,
             approvalDate: DataTypes.DATE,
             batchesAssigned: DataTypes.BOOLEAN,
+            comment: DataTypes.STRING,
         },
         {
             sequelize,
