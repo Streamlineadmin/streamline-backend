@@ -205,7 +205,7 @@ async function getApprovalById(req, res) {
 async function acceptRejectApproval(req, res) {
   const tAcceptReject = await models.sequelize.transaction();
   try {
-    const { approvalId, approvedBy, isApproved, items, by } = req.body;
+    const { approvalId, approvedBy, isApproved, items, by, comment } = req.body;
 
     let itemsMap = items.reduce((acc, curr) => {
       acc[Number(curr.itemId)] = Number(curr.quantity || 0);
@@ -237,6 +237,7 @@ async function acceptRejectApproval(req, res) {
         approvalStatus: isApproved ? 'Accepted' : 'Rejected',
         approvedBy,
         approvalDate: new Date(),
+        comment: comment || ''
       },
       {
         where: { id: approvalId },

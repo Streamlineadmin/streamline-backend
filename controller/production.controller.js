@@ -139,6 +139,29 @@ async function startProduction(req, res) {
                         models.BOMRawMaterial.findAll({ where: { bomId: element.finishedGoodBomId }, transaction: tStart })
                     ]);
 
+                    const childItemsId = [];
+                    scrapLogs.forEach((data) => { if (data.itemId && !itemsMap[data.itemId]) childItemsId.push(data.itemId); });
+                    childFinishedGoods.forEach((data) => { if (data.itemId && !itemsMap[data.itemId]) childItemsId.push(data.itemId); });
+                    childRaws.forEach((data) => { if (data.itemId && !itemsMap[data.itemId]) childItemsId.push(data.itemId); });
+
+                    if (childItemsId.length > 0) {
+                        const childItems = await models.Items.findAll({
+                            where: { itemId: { [Op.in]: childItemsId }, companyId: Number(companyId) },
+                            raw: true,
+                            transaction: tStart
+                        });
+                        childItems.forEach(item => {
+                            itemsMap[item.itemId] = item;
+                        });
+                        const cIds = childItems.map(item => item.id);
+                        const childAlternateUnits = await models.AlternateUnits.findAll({
+                            where: { itemId: { [Op.in]: cIds } },
+                            raw: true,
+                            transaction: tStart
+                        });
+                        alternateUnits.push(...childAlternateUnits);
+                    }
+
                     const childRawsMap = childRaws?.reduce((acc, curr) => {
                         acc[curr.itemId] = curr.quantity || 1;
                         return acc;
@@ -158,6 +181,14 @@ async function startProduction(req, res) {
                     const bulkRawMaterial = rawMaterial?.map((data) => {
                         const quantity = (childRawsMap?.[data.itemId] || 1) / childFinishedGoods[0]?.quantity;
                         let conversionFactor = 1;
+                        if (data.uom != itemsMap[data.itemId]?.metricsUnit) {
+                            for (const element of alternateUnits) {
+                                if (element.itemId == itemsMap[data.itemId]?.id && element.alternateUnits == data.uom) {
+                                    conversionFactor = element.conversionfactor;
+                                    break;
+                                }
+                            }
+                        }
                         quantMap[data.id] = quantMap[data.parentId] * quantity;
                         return {
                             productionId: prod.id,
@@ -185,6 +216,14 @@ async function startProduction(req, res) {
                     const bulkScrapMaterial = scrapLogs?.filter(data => data?.itemName).map((data) => {
                         const quantity = (data.quantity) / childFinishedGoods[0]?.quantity;
                         let conversionFactor = 1;
+                        if (data.uom != itemsMap[data.itemId]?.metricsUnit) {
+                            for (const element of alternateUnits) {
+                                if (element.itemId == itemsMap[data.itemId]?.id && element.alternateUnits == data.uom) {
+                                    conversionFactor = element.conversionfactor;
+                                    break;
+                                }
+                            }
+                        }
                         return {
                             productionId: prod.id,
                             itemId: data.itemId,
@@ -201,6 +240,14 @@ async function startProduction(req, res) {
 
                     const bulkFinishedGoods = childFinishedGoods.map((data) => {
                         let conversionFactor = 1;
+                        if (data.uom != itemsMap[data.itemId]?.metricsUnit) {
+                            for (const element of alternateUnits) {
+                                if (element.itemId == itemsMap[data.itemId]?.id && element.alternateUnits == data.uom) {
+                                    conversionFactor = element.conversionfactor;
+                                    break;
+                                }
+                            }
+                        }
                         return {
                             productionId: prod.id,
                             itemId: data.itemId,

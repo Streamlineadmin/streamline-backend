@@ -5588,47 +5588,77 @@ async function approveDocument(req, res) {
 async function createEInvoice(req, res) {
   try {
     const { document, userName, password, gst, pin } = req.body;
+
+    const docTypeMap = {
+      Invoice: "INV",
+      "Credit Note": "CRN",
+      "Debit Note": "DBN",
+    };
+
+    const documentType =
+      docTypeMap?.[document?.documentType] || "INV";
+
+    const isCreditNote = documentType === "CRN";
+
     const uoms = await models.UOM.findAll({
       where: {
         [Op.or]: [
           { companyId: document.companyId, status: 1 },
-          { companyId: null, status: 0 }
-        ]
-      }
+          { companyId: null, status: 0 },
+        ],
+      },
     });
+
     const uomMap = uoms.reduce((acc, curr) => {
       acc[curr.name] = curr.code;
       return acc;
     }, {});
+
     const authResponse = await axios.get(
       "https://api.perione.in/einvoice/authenticate",
       {
-        params: { email: process.env.EMAIL },
+        params: {
+          email: process.env.EMAIL,
+        },
         headers: {
-          "client_id": process.env.CLIENT_ID,
-          "client_secret": process.env.CLIENT_SECRET,
-          "gstin": gst,
-          "username": userName,
-          "password": password,
-          "ip_address": "192.68.45.37",
+          client_id: process.env.CLIENT_ID,
+          client_secret: process.env.CLIENT_SECRET,
+          gstin: gst,
+          username: userName,
+          password: password,
+          ip_address: "192.68.45.37",
         },
       }
     );
 
     const authToken = authResponse?.data?.data?.AuthToken;
+
     if (!authToken) {
       return res.status(400).json({
         message: "Failed to generate Auth Token",
-        errors: authResponse?.data?.data || authResponse?.data
+        errors: authResponse?.data?.data || authResponse?.data,
       });
     }
 
-    const supplierAddress = isValidJSON(document?.supplierBillingAddress);
-    const buyerAddress = isValidJSON(document?.buyerDeliveryAddress);
+    const round2 = (num) => {
+      return Number(parseFloat(num || 0).toFixed(2));
+    };
 
-    const isIgst = document?.supplyState?.toLowerCase?.() !== supplierAddress?.state?.toLowerCase?.();
+    const supplierAddress = isValidJSON(
+      document?.supplierBillingAddress
+    );
 
-    const additionalCharges = Array.isArray(document?.additionalCharges)
+    const buyerAddress = isValidJSON(
+      document?.buyerDeliveryAddress
+    );
+
+    const isIgst =
+      document?.supplyState?.toLowerCase?.() !==
+      supplierAddress?.state?.toLowerCase?.();
+
+    const additionalCharges = Array.isArray(
+      document?.additionalCharges
+    )
       ? document.additionalCharges
       : [];
 
@@ -5636,118 +5666,164 @@ async function createEInvoice(req, res) {
       const num = Number(val);
       return isNaN(num) ? 0 : num;
     };
+
     const additionalChargeTotals = additionalCharges.reduce(
       (acc, charge) => {
-        const price = toNumber(charge?.price);
-        const taxRate = toNumber(charge?.tax);
+        const price = toNumber(charge?.total);
 
-        const taxAmount = (price * taxRate) / 100;
-
-        const cgst = isIgst ? 0 : taxAmount / 2;
-        const sgst = isIgst ? 0 : taxAmount / 2;
-        const igst = isIgst ? taxAmount : 0;
-
-        acc.assVal += price;
-        acc.cgstVal += cgst;
-        acc.sgstVal += sgst;
-        acc.igstVal += igst;
-        acc.totalInvVal += price + taxAmount;
         acc.othChrg += price;
 
         return acc;
       },
       {
-        assVal: 0,
-        cgstVal: 0,
-        sgstVal: 0,
-        igstVal: 0,
-        totalInvVal: 0,
         othChrg: 0,
       }
     );
 
+    let AssVal = 0;
+    let CgstVal = 0;
+    let SgstVal = 0;
+    let IgstVal = 0;
+    let TotInvVal = 0;
 
-    // Compute totals from items
-    let AssVal = 0,
-      CgstVal = 0,
-      SgstVal = 0,
-      IgstVal = 0,
-      TotInvVal = 0;
+    const items = (document?.items || []).map(
+      (item, index) => {
+        const qty = Number(item?.quantity || 1);
+        const originalPrice = Number(
+          item?.price || 0
+        );
+        const discountPercent = Number(
+          item?.discountOne || 0
+        );
+        const safeDiscount = isNaN(
+          discountPercent
+        )
+          ? 0
+          : discountPercent;
 
-    const items = document.items?.map((item, index) => {
-      const qty = Number(item?.quantity || 1);
-      const originalPrice = Number(item?.price || 1);
-      const discountPercent = Number(item?.discountOne);
-      const safeDiscount = isNaN(discountPercent) ? 0 : discountPercent;
+        const discountedPrice =
+          originalPrice *
+          (1 - safeDiscount / 100);
 
-      const price = originalPrice * (1 - safeDiscount / 100);
+        const taxRate = Number(
+          item?.tax || 0
+        );
 
-      const taxRate = Number(item?.tax || 0);
+        const isInclusive =
+          item?.taxType === "Inclusive";
 
-      const totalBeforeTax = qty * price;
-      const totalTax = (totalBeforeTax * taxRate) / 100;
+        let totalBeforeTax = 0;
+        let totalTax = 0;
+        let totalAfterTax = 0;
 
-      const cgst = isIgst ? 0 : totalTax / 2;
-      const sgst = isIgst ? 0 : totalTax / 2;
-      const igst = isIgst ? totalTax : 0;
+        if (isInclusive) {
+          // final amount already includes tax
 
-      const totalAfterTax = totalBeforeTax + totalTax;
+          totalAfterTax =
+            qty * discountedPrice;
 
-      AssVal += totalBeforeTax;
-      CgstVal += cgst;
-      SgstVal += sgst;
-      IgstVal += igst;
-      TotInvVal += totalAfterTax;
+          totalBeforeTax =
+            totalAfterTax /
+            (1 + taxRate / 100);
 
-      return {
-        SlNo: (index + 1).toString(),
-        IsServc: "N",
-        PrdDesc: item?.itemName || " ",
-        HsnCd: item?.HSN,
-        Qty: qty,
-        Unit: uomMap[item.UOM],
-        UnitPrice: price,
-        TotAmt: totalBeforeTax,
-        AssAmt: totalBeforeTax,
-        GstRt: taxRate,
-        SgstAmt: sgst,
-        CgstAmt: cgst,
-        IgstAmt: igst,
-        TotItemVal: totalAfterTax,
-      };
-    });
+          totalTax =
+            totalAfterTax -
+            totalBeforeTax;
+        }
 
-    AssVal += additionalChargeTotals.assVal;
-    CgstVal += additionalChargeTotals.cgstVal;
-    SgstVal += additionalChargeTotals.sgstVal;
-    IgstVal += additionalChargeTotals.igstVal;
-    TotInvVal += additionalChargeTotals.totalInvVal;
+        else {
+          totalBeforeTax =
+            qty * discountedPrice;
 
-    // STEP 3: Build E-Invoice Payload
-    const round2 = (num) => {
-      return Number(parseFloat(num || 0).toFixed(2));
-    };
+          totalTax =
+            (totalBeforeTax * taxRate) /
+            100;
+
+          totalAfterTax =
+            totalBeforeTax + totalTax;
+        }
+
+        totalBeforeTax = round2(
+          totalBeforeTax
+        );
+
+        totalTax = round2(totalTax);
+
+        totalAfterTax = round2(
+          totalAfterTax
+        );
+
+        const cgst = isIgst
+          ? 0
+          : round2(totalTax / 2);
+
+        const sgst = isIgst
+          ? 0
+          : round2(totalTax / 2);
+
+        const igst = isIgst
+          ? totalTax
+          : 0;
+
+        AssVal += totalBeforeTax;
+        CgstVal += cgst;
+        SgstVal += sgst;
+        IgstVal += igst;
+        TotInvVal += totalAfterTax;
+
+        return {
+          SlNo: String(index + 1),
+          IsServc: "N",
+          PrdDesc:
+            item?.itemName || " ",
+          HsnCd: item?.HSN,
+          Qty: qty,
+          Unit:
+            uomMap[item?.UOM] || "NOS",
+          UnitPrice: round2(
+            discountedPrice
+          ),
+
+          TotAmt: totalBeforeTax,
+          AssAmt: totalBeforeTax,
+          GstRt: taxRate,
+          SgstAmt: sgst,
+          CgstAmt: cgst,
+          IgstAmt: igst,
+          TotItemVal: totalAfterTax,
+        };
+      }
+    );
+
+    TotInvVal += additionalChargeTotals.othChrg;
+
 
     const eInvoice = {
       Version: "1.1",
+
       TranDtls: {
         TaxSch: "GST",
         SupTyp: "B2B",
       },
+
       DocDtls: {
-        Typ: "INV",
+        Typ: documentType,
         No: document?.documentNumber,
-        Dt: getTodayDateInIST()
+        Dt: getTodayDateInIST(),
       },
 
       SellerDtls: {
         Gstin: gst,
         LglNm: document?.supplierName,
         TrdNm: document?.supplierName,
-        Addr1: supplierAddress?.addressLineOne?.slice?.(0, 100) || 'Test',
-        Addr2: supplierAddress?.city || ' ',
-        Loc: supplierAddress?.state || ' ',
-        Pin: String(pin || ''),
+        Addr1:
+          supplierAddress?.addressLineOne?.slice?.(
+            0,
+            100
+          ) || "Test",
+        Addr2: supplierAddress?.city || " ",
+        Loc: supplierAddress?.state || " ",
+        Pin: String(pin || ""),
         Stcd: gst?.slice(0, 2),
       },
 
@@ -5755,15 +5831,33 @@ async function createEInvoice(req, res) {
         Gstin: document?.buyerGSTNumber,
         LglNm: document?.buyerName,
         TrdNm: document?.buyerName,
-        Pos: gstStateCodes?.[document?.supplyState?.toLowerCase?.()] || '23',
-        Addr1: buyerAddress?.addressLineOne?.slice(0, 100) || 'Test',
-        Addr2: buyerAddress?.city || ' ',
-        Loc: buyerAddress?.state || ' ',
-        Pin: String(buyerAddress?.pincode?.trim?.() || ''),
-        Stcd: document?.buyerGSTNumber?.slice(0, 2),
+        Pos:
+          gstStateCodes?.[
+          document?.supplyState?.toLowerCase?.()
+          ] || "23",
+        Addr1:
+          buyerAddress?.addressLineOne?.slice?.(
+            0,
+            100
+          ) || "Test",
+        Addr2: buyerAddress?.city || " ",
+        Loc: buyerAddress?.state || " ",
+        Pin: String(
+          buyerAddress?.pincode?.trim?.() || ""
+        ),
+        Stcd:
+          document?.buyerGSTNumber?.slice(0, 2),
       },
 
-      ItemList: items.map(item => ({
+      ...(isCreditNote && {
+        PrecDocDtls: [
+          {
+            InvNo: document?.invoiceNumber,
+          },
+        ],
+      }),
+
+      ItemList: items.map((item) => ({
         ...item,
         UnitPrice: round2(item.UnitPrice),
         TotAmt: round2(item.TotAmt),
@@ -5780,63 +5874,93 @@ async function createEInvoice(req, res) {
         SgstVal: round2(SgstVal),
         IgstVal: round2(IgstVal),
         OthChrg: round2(additionalChargeTotals.othChrg),
-        TotInvVal: round2(TotInvVal)
-      }
+        TotInvVal: round2(TotInvVal),
+      },
     };
 
-    // STEP 4: Generate E-Invoice
     const response = await axios.post(
       "https://api.perione.in/einvoice/type/GENERATE/version/V1_03",
       eInvoice,
       {
-        params: { email: process.env.EMAIL },
+        params: {
+          email: process.env.EMAIL,
+        },
         headers: {
           "Content-Type": "application/json",
-          "client_id": process.env.CLIENT_ID,
-          "client_secret": process.env.CLIENT_SECRET,
-          "gstin": gst,
-          "username": userName,
-          "password": password,
+          client_id: process.env.CLIENT_ID,
+          client_secret: process.env.CLIENT_SECRET,
+          gstin: gst,
+          username: userName,
+          password: password,
           "auth-token": authToken,
-          "ip_address": "192.68.45.37",
+          ip_address: "192.68.45.37",
         },
       }
     );
 
-    // STEP 5: Extract IRN + QR
-    console.log(response?.data?.data);
-    const irnNumber = response?.data?.data?.Irn || null;
-    const qrCode = response?.data?.data?.SignedQRCode || null;
-    const ackNumber = response?.data?.data?.AckNo || null;
-    const ackDate = response?.data?.data?.AckDt || null;
+
+    const irnNumber =
+      response?.data?.data?.Irn || null;
+
+    const qrCode =
+      response?.data?.data?.SignedQRCode ||
+      null;
+
+    const ackNumber =
+      response?.data?.data?.AckNo || null;
+
+    const ackDate =
+      response?.data?.data?.AckDt || null;
 
     if (!irnNumber) {
       return res.status(400).send({
-        message: "E-Invoice generation failed.",
-        errors: response?.data?.data || response?.data,
+        message:
+          "E-Invoice generation failed.",
+
+        errors:
+          response?.data?.data ||
+          response?.data,
       });
     }
 
-    // STEP 6: Save in DB
-    const existingDocument = await models.Documents.findOne({
-      where: {
-        companyId: document.companyId,
-        documentNumber: document.documentNumber,
-      },
-    });
+    const existingDocument =
+      await models.Documents.findOne({
+        where: {
+          companyId: document.companyId,
+
+          documentNumber:
+            document.documentNumber,
+        },
+      });
 
     if (existingDocument) {
-      await existingDocument.update({ irnNumber, qrCode, irnDate: new Date(), ackNumber, ackDate });
+      await existingDocument.update({
+        irnNumber,
+        qrCode,
+        irnDate: new Date(),
+        ackNumber,
+        ackDate,
+      });
     }
 
     return res.status(200).json({
-      message: "E-Invoice Created Successfully.",
+      message:
+        isCreditNote
+          ? "Credit Note E-Invoice Created Successfully."
+          : "E-Invoice Created Successfully.",
     });
   } catch (error) {
-    console.error("E-Invoice Error:", error.response?.data || error.message);
+    console.error(
+      "E-Invoice Error:",
+      error.response?.data || error.message
+    );
+
     return res.status(500).json({
       message: "Internal Server Error",
-      error: error.response?.data || error.message,
+
+      error:
+        error.response?.data ||
+        error.message,
     });
   }
 }
