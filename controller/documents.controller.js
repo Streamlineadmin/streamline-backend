@@ -10,6 +10,7 @@ const path = require("path");
 const fs = require("fs");
 
 async function createDocument(req, res) {
+  const t = await models.sequelize.transaction();
   try {
     let { documentNumber = null } = req.body;
     const {
@@ -126,33 +127,26 @@ async function createDocument(req, res) {
 
     if (!isDraft) {
       if (documentType != documentTypes.purchaseInvoice) {
-        const t = await models.sequelize.transaction();
-        try {
-          if (seriesId) {
-            const documentSeriesTarget = await models.DocumentSeries.findOne({
-              where: { id: seriesId },
-              transaction: t,
-              lock: t.LOCK.UPDATE
-            });
-            if (documentSeriesTarget) {
-              documentNumber = documentSeriesTarget.prefix + documentSeriesTarget.nextNumber;
-              await documentSeriesTarget.update({ nextNumber: documentSeriesTarget.nextNumber + 1 }, { transaction: t });
-            }
-          } else {
-            const defaultSeriesTarget = await models.DocumentSeries.findOne({
-              where: { companyId: Number(companyId), DocType: documentType, default: 1 },
-              transaction: t,
-              lock: t.LOCK.UPDATE
-            });
-            if (defaultSeriesTarget) {
-              documentNumber = defaultSeriesTarget.prefix + defaultSeriesTarget.nextNumber;
-              await defaultSeriesTarget.update({ nextNumber: defaultSeriesTarget.nextNumber + 1 }, { transaction: t });
-            }
+        if (seriesId) {
+          const documentSeriesTarget = await models.DocumentSeries.findOne({
+            where: { id: seriesId },
+            transaction: t,
+            lock: t.LOCK.UPDATE
+          });
+          if (documentSeriesTarget) {
+            documentNumber = documentSeriesTarget.prefix + documentSeriesTarget.nextNumber;
+            await documentSeriesTarget.update({ nextNumber: documentSeriesTarget.nextNumber + 1 }, { transaction: t });
           }
-          await t.commit();
-        } catch (error) {
-          await t.rollback();
-          throw error;
+        } else {
+          const defaultSeriesTarget = await models.DocumentSeries.findOne({
+            where: { companyId: Number(companyId), DocType: documentType, default: 1 },
+            transaction: t,
+            lock: t.LOCK.UPDATE
+          });
+          if (defaultSeriesTarget) {
+            documentNumber = defaultSeriesTarget.prefix + defaultSeriesTarget.nextNumber;
+            await defaultSeriesTarget.update({ nextNumber: defaultSeriesTarget.nextNumber + 1 }, { transaction: t });
+          }
         }
       }
 
@@ -160,9 +154,11 @@ async function createDocument(req, res) {
         where: {
           documentNumber,
           companyId,
-        }
+        },
+        transaction: t
       });
       if (doc) {
+        await t.rollback();
         return res.status(409).json({
           message: 'Document Already Exist with this Document Number.'
         })
@@ -262,14 +258,15 @@ async function createDocument(req, res) {
       serviceOrderDate,
       serviceOrderNumber,
       hideColumns
-    });
+    }, { transaction: t });
 
     else {
       document = await models.Documents.findOne({
         where: {
           companyId,
           documentNumber
-        }
+        },
+        transaction: t
       });
     }
 
@@ -369,7 +366,8 @@ async function createDocument(req, res) {
       where: {
         companyId,
         documentNumber
-      }
+      },
+      transaction: t
     });
 
 
@@ -388,14 +386,16 @@ async function createDocument(req, res) {
           where: {
             companyId,
             documentNumber: ind_number
-          }
+          },
+          transaction: t
         });
         if (purchaseRequest) {
           const purchaseRequestItems = await models.DocumentItems.findAll({
             where: {
               companyId,
               documentNumber: ind_number
-            }
+            },
+            transaction: t
           });
           const purchaseRequestItemsMap = {};
           const consumeItemsMap = {};
@@ -417,7 +417,7 @@ async function createDocument(req, res) {
               }
             }
 
-            itemsMap[key] && await current.update({ receivedToday: quantity });
+            itemsMap[key] && await current.update({ receivedToday: quantity }, { transaction: t });
             itemsMap[key] = remaining;
             if (purchaseRequestItemsMap[key]) {
               purchaseRequestItemsMap[key] += current.quantity;
@@ -442,7 +442,7 @@ async function createDocument(req, res) {
             }
             else if (status == 15) status = 17;
           }
-          await purchaseRequest.update({ status });
+          await purchaseRequest.update({ status }, { transaction: t });
         }
       }
     }
@@ -450,6 +450,7 @@ async function createDocument(req, res) {
     if (status && (documentType === documentTypes.salesQuotation && enquiryNumber)) {
       const existingDocument = await models.Documents.findOne({
         where: { documentNumber: enquiryNumber, companyId },
+        transaction: t
       });
 
       if (existingDocument) {
@@ -457,13 +458,14 @@ async function createDocument(req, res) {
           quotationNumber: documentNumber,
           is_refered: true,
           status: 8
-        });
+        }, { transaction: t });
       }
     }
 
     if (status && documentType === documentTypes.orderConfirmation && quotationNumber) {
       const existingDocument = await models.Documents.findOne({
         where: { documentNumber: quotationNumber, companyId },
+        transaction: t
       });
 
       if (existingDocument) {
@@ -471,7 +473,7 @@ async function createDocument(req, res) {
           orderConfirmationNumber: documentNumber,
           is_refered: true,
           status: 9
-        });
+        }, { transaction: t });
       }
     }
 
@@ -490,11 +492,13 @@ async function createDocument(req, res) {
           documentType: 'Sales Order'
         },
         attributes: ['documentNumber'],
-        order: [['createdAt', 'ASC']]
+        order: [['createdAt', 'ASC']],
+        transaction: t
       });
       for (const oc_number of orderConfirmationNumbers) {
         const existingDocument = await models.Documents.findOne({
           where: { documentNumber: oc_number.documentNumber, companyId },
+          transaction: t
         });
         if (existingDocument) {
           // Find all Document Items against orderConfirmationNumber 
@@ -502,7 +506,8 @@ async function createDocument(req, res) {
             where: {
               companyId,
               documentNumber: oc_number.documentNumber
-            }
+            },
+            transaction: t
           });
 
           // Create a map of documentsItems with uniqueId/itemId as key and quantity as value
@@ -536,7 +541,8 @@ async function createDocument(req, res) {
                   documentNumber: oc_number.documentNumber,
                   itemId: item.itemId,
                   companyId
-                }
+                },
+                transaction: t
               }
             );
           }
@@ -711,7 +717,7 @@ async function createDocument(req, res) {
           // update the status accordingly
           await existingDocument.update({
             status: handleStatus
-          });
+          }, { transaction: t });
         }
       }
     }
@@ -719,6 +725,7 @@ async function createDocument(req, res) {
     if (status && ((documentType === documentTypes.goodsReceive) || documentType === documentTypes.purchaseInvoice) && purchaseOrderNumber) {
       const existingDocument = await models.Documents.findOne({
         where: { documentNumber: purchaseOrderNumber, companyId },
+        transaction: t
       });
       const documentItems = await models.DocumentItems.findAll({
         where: {
@@ -740,7 +747,8 @@ async function createDocument(req, res) {
           status: {
             [Op.notIn]: [0, 2]
           }
-        }
+        },
+        transaction: t
       });
 
       const documentNumbers = purchaseDoc.map(doc => doc.documentNumber);
@@ -862,7 +870,7 @@ async function createDocument(req, res) {
       }
       await existingDocument.update({
         status: handleStatus
-      });
+      }, { transaction: t });
 
     }
 
@@ -871,7 +879,8 @@ async function createDocument(req, res) {
         where: {
           companyId,
           documentNumber
-        }
+        },
+        transaction: t
       });
     }
     const companyTermsCondition = await models.CompanyTermsCondition.create({
@@ -881,7 +890,7 @@ async function createDocument(req, res) {
       documentNumber: document.documentNumber,
       createdAt: new Date(),
       updatedAt: new Date()
-    });
+    }, { transaction: t });
 
     companyTermsCondition?.id && await models.Documents.update({
       companyTermsConditionId: companyTermsCondition.id
@@ -889,7 +898,8 @@ async function createDocument(req, res) {
       where: {
         companyId,
         documentNumber
-      }
+      },
+      transaction: t
     });
 
     if (isDraft) {
@@ -898,29 +908,34 @@ async function createDocument(req, res) {
           where: {
             companyId,
             documentNumber
-          }
+          },
+          transaction: t
         }),
         models.DocumentAdditionalCharges.destroy({
           where: {
             companyId,
             documentNumber
-          }
+          },
+          transaction: t
         }),
         models.DocumentBankDetails.destroy({
           where: {
             companyId,
             documentNumber
-          }
+          },
+          transaction: t
         }),
         models.DocumentAttachments.destroy({
           where: {
             companyId,
             documentNumber
-          }
+          },
+          transaction: t
         }),
         models.DocumentComments.destroy(
           {
             where: { documentId: document.id },
+            transaction: t
           })
       ]);
     }
@@ -961,7 +976,7 @@ async function createDocument(req, res) {
             poNumbers: documentType === 'Invoice' ? item?.poNumbers ? item.poNumbers : null : null,
             uniqueId: item?.uniqueId || crypto.randomUUID(),
           })
-        })
+        }), { transaction: t }
       ),
       models.DocumentAdditionalCharges.bulkCreate(
         additionalCharges.map(charge => ({
@@ -973,7 +988,7 @@ async function createDocument(req, res) {
           total: charge.total,
           status: charge.status,
           ip_address: charge.ip_address
-        }))
+        })), { transaction: t }
       ),
       models.DocumentBankDetails.create({
         documentNumber: document.documentNumber,
@@ -988,13 +1003,13 @@ async function createDocument(req, res) {
         SWIFTCode: bankDetails.SWIFTCode || null,
         status: bankDetails.status || 1,
         ip_address: bankDetails.ip_address || null,
-      }),
+      }, { transaction: t }),
       models.DocumentAttachments.bulkCreate(
         attachments.map(attachment => ({
           documentNumber: document.documentNumber,
           companyId: companyId,
           attachmentName: attachment
-        }))
+        })), { transaction: t }
       ),
       models.DocumentComments.create(
         {
@@ -1003,7 +1018,7 @@ async function createDocument(req, res) {
           createdBy: createdBy,
           createdAt: new Date(),
           updatedAt: new Date()
-        }),
+        }, { transaction: t }),
     ]);
 
     if (status && (documentType == documentTypes.goodsReceive || documentType == documentTypes.qualityReport)) {
@@ -1013,7 +1028,8 @@ async function createDocument(req, res) {
           where: {
             documentNumber: purchaseOrderNumber,
             companyId
-          }
+          },
+          transaction: t
         });
         if (purchase_order) {
           if (purchase_order?.addStockOn === 'GRN') {
@@ -1022,7 +1038,8 @@ async function createDocument(req, res) {
                 where: {
                   documentNumber,
                   companyId
-                }
+                },
+                transaction: t
               }
             );
           }
@@ -1033,13 +1050,15 @@ async function createDocument(req, res) {
           where: {
             documentNumber: grn_number,
             companyId
-          }
+          },
+          transaction: t
         });
         purchase_order = await models.Documents.findOne({
           where: {
             documentNumber: grn.purchaseOrderNumber,
             companyId
-          }
+          },
+          transaction: t
         });
         await models.Documents.update(
           { status: 7 },
@@ -1047,7 +1066,8 @@ async function createDocument(req, res) {
             where: {
               documentNumber: grn_number,
               companyId
-            }
+            },
+            transaction: t
           }
         );
       }
@@ -1055,13 +1075,15 @@ async function createDocument(req, res) {
         where: {
           companyId: Number(companyId)
         },
-        raw: true
+        raw: true,
+        transaction: t
       });
       const stores = await models.Store.findAll({
         where: {
           companyId: Number(companyId)
         },
-        raw: true
+        raw: true,
+        transaction: t
       });
       const itemsMap = new Map(existingItems.map(existingItem => [existingItem.itemId, existingItem.id]));
       const storesMap = new Map(stores.map(store => [store.name, store.id]));
@@ -1070,12 +1092,14 @@ async function createDocument(req, res) {
           where: {
             companyId: Number(companyId)
           },
-          raw: true
+          raw: true,
+          transaction: t
         });
         const approvalCount = await models.InventoryApproval.count({
           where: {
             companyId
-          }
+          },
+          transaction: t
         });
         const approval = await models.InventoryApproval.create({
           approvalId: `INA${approvalCount + 1}`,
@@ -1086,13 +1110,14 @@ async function createDocument(req, res) {
           companyId: companyId,
           status: 1,
           approvedBy: null
-        });
+        }, { transaction: t });
         message = settings?.['purchaseDocument'] == 'manual' ? 'inventory' : '';
         const purchaseItems = await models.DocumentItems.findAll({
           where: {
             companyId: Number(companyId),
             documentNumber: purchaseOrderNumber
-          }
+          },
+          transaction: t
         });
         const total = purchaseItems?.reduce((acc, curr) => {
           acc += Number(curr.totalBeforeTax);
@@ -1102,7 +1127,8 @@ async function createDocument(req, res) {
           where: {
             documentNumber: purchaseOrderNumber,
             companyId: Number(companyId)
-          }
+          },
+          transaction: t
         });
 
         const additionalCost = purchaseAdditionalCharges?.reduce((acc, curr) => {
@@ -1121,14 +1147,16 @@ async function createDocument(req, res) {
             purchaseOrderNumber,
             documentType: "Purchase Invoice",
             companyId: Number(companyId)
-          }
+          },
+          transaction: t
         });
         if (purchaseInvoice) {
           const purchaseItems = await models.DocumentItems.findAll({
             where: {
               companyId: Number(companyId),
               documentNumber: purchaseInvoice.documentNumber
-            }
+            },
+            transaction: t
           });
           if (Array.isArray(purchaseItems) && purchaseItems.length) {
             purchaseItems.forEach((item) => {
@@ -1172,7 +1200,7 @@ async function createDocument(req, res) {
             approvalId: approval.id,
             quantityForApproval: (item?.receivedToday * (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1))) || 0
           }
-        })),
+        }), { transaction: t }),
         ]
         );
 
@@ -1214,7 +1242,7 @@ async function createDocument(req, res) {
               approvalId: approval.id,
               quantityForApproval: (item.pendingQuantity * (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1))) || 0
             }
-          })),
+          }), { transaction: t }),
           ]);
         }
       }
@@ -1226,12 +1254,14 @@ async function createDocument(req, res) {
         where: {
           companyId: Number(companyId)
         },
-        raw: true
+        raw: true,
+        transaction: t
       });
       const approvalCount = await models.InventoryApproval.count({
         where: {
           companyId
-        }
+        },
+        transaction: t
       });
       const approval = await models.InventoryApproval.create({
         approvalId: `INA${approvalCount + 1}`,
@@ -1242,7 +1272,7 @@ async function createDocument(req, res) {
         companyId: companyId,
         status: 1,
         approvedBy: null
-      });
+      }, { transaction: t });
       message = settings?.['salesDocument'] == 'manual' ? 'inventory' : '';
       const existingItems = await models.Items.findAll({
         where: {
@@ -1251,13 +1281,15 @@ async function createDocument(req, res) {
             [Op.in]: items.map(item => item.itemId)
           }
         },
-        raw: true
+        raw: true,
+        transaction: t
       });
       const stores = await models.Store.findAll({
         where: {
           companyId: Number(companyId)
         },
-        raw: true
+        raw: true,
+        transaction: t
       });
       const itemsMap = new Map(existingItems.map(existingItem => [existingItem.itemId, existingItem.id]));
       const storesMap = new Map(stores.map(store => [store.name, store.id]));
@@ -1275,7 +1307,7 @@ async function createDocument(req, res) {
           approvalId: approval.id,
           quantityForApproval: (item?.quantity * (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1))) || 0
         }
-      })
+      }), { transaction: t }
       ),
       models.StockTransfer.bulkCreate(items?.filter(item => item?.quantity).map(item => {
         const itemId = itemsMap.get(item.itemId) || null;
@@ -1296,7 +1328,7 @@ async function createDocument(req, res) {
           approvalId: approval.id,
           quantityForApproval: (item?.quantity * (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1))) || 0
         }
-      })),
+      }), { transaction: t }),
       ]
       );
     }
@@ -1306,13 +1338,15 @@ async function createDocument(req, res) {
         where: {
           companyId: Number(companyId)
         },
-        raw: true
+        raw: true,
+        transaction: t
       });
       if (settings?.addStockOnPurchaseInvoice == 'true') {
         const approvalCount = await models.InventoryApproval.count({
           where: {
             companyId
-          }
+          },
+          transaction: t
         });
         const approval = await models.InventoryApproval.create({
           approvalId: `INA${approvalCount + 1}`,
@@ -1323,7 +1357,7 @@ async function createDocument(req, res) {
           companyId: companyId,
           status: 1,
           approvedBy: null
-        });
+        }, { transaction: t });
         message = settings?.['purchaseDocument'] == 'manual' ? 'inventory' : '';
         const existingItems = await models.Items.findAll({
           where: {
@@ -1332,13 +1366,15 @@ async function createDocument(req, res) {
               [Op.in]: items.map(item => item.itemId)
             }
           },
-          raw: true
+          raw: true,
+          transaction: t
         });
         const stores = await models.Store.findAll({
           where: {
             companyId: Number(companyId)
           },
-          raw: true
+          raw: true,
+          transaction: t
         });
         const itemsMap = new Map(existingItems.map(existingItem => [existingItem.itemId, existingItem.id]));
         const storesMap = new Map(stores.map(store => [store.name, store.id]));
@@ -1356,7 +1392,7 @@ async function createDocument(req, res) {
             approvalId: approval.id,
             quantityForApproval: (item?.quantity * (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1))) || 0
           }
-        })
+        }), { transaction: t }
         ),
         models.StockTransfer.bulkCreate(items?.filter(item => item?.quantity).map(item => {
           const itemId = itemsMap.get(item.itemId) || null;
@@ -1412,7 +1448,8 @@ async function createDocument(req, res) {
           where: {
             name: !storeInItemLevel ? store : element.store,
             companyId
-          }
+          },
+          transaction: t
         });
         if (settings?.['salesDocument'] != 'manual') {
           let price = 0;
@@ -1421,11 +1458,13 @@ async function createDocument(req, res) {
             where: {
               itemId: element.itemId,
               companyId
-            }
+            },
+            transaction: t
           });
           const existingStock = await models.StoreItems.findAll({
             where: { storeId: storeId.id, itemId: item.id },
             order: [['createdAt', 'ASC']],
+            transaction: t
           });
           for (const stock of existingStock) {
             if (remainingQuantity <= 0) break;
@@ -1435,7 +1474,7 @@ async function createDocument(req, res) {
 
             await models.StoreItems.update(
               { quantity: (stock.quantity - deductQty) },
-              { where: { id: stock.id } }
+              { where: { id: stock.id }, transaction: t }
             );
             await models.StockTransfer.create({
               transferNumber: element.transferNumber,
@@ -1453,7 +1492,7 @@ async function createDocument(req, res) {
               actualPrice: stock.price,
               approvalId: approval.id,
               quantityForApproval: element.quantity
-            });
+            }, { transaction: t });
             price += (stock.price * deductQty);
           }
         }
@@ -1462,7 +1501,8 @@ async function createDocument(req, res) {
             where: {
               itemId: element.itemId,
               companyId
-            }
+            },
+            transaction: t
           });
           await models.StockTransfer.create({
             transferNumber: element.transferNumber,
@@ -1480,7 +1520,7 @@ async function createDocument(req, res) {
             actualPrice: element.price / (element.conversionFactor || 1),
             approvalId: approval.id,
             quantityForApproval: element.quantity * (element?.conversionFactor || 1)
-          });
+          }, { transaction: t });
         }
       }
     }
@@ -1491,12 +1531,14 @@ async function createDocument(req, res) {
         where: {
           companyId: Number(companyId)
         },
-        raw: true
+        raw: true,
+        transaction: t
       });
       const approvalCount = await models.InventoryApproval.count({
         where: {
           companyId
-        }
+        },
+        transaction: t
       });
       const approval = await models.InventoryApproval.create({
         approvalId: `INA${approvalCount + 1}`,
@@ -1507,14 +1549,15 @@ async function createDocument(req, res) {
         companyId: companyId,
         status: 1,
         approvedBy: null
-      });
+      }, { transaction: t });
       message = settings?.['purchaseDocument'] == 'manual' ? 'inventory' : ''
       for (const element of items) {
         const storeId = await models.Store.findOne({
           where: {
             name: !storeInItemLevel ? store : element.store,
             companyId
-          }
+          },
+          transaction: t
         });
         if (settings?.['purchaseDocument'] != 'manual') {
           let price = 0;
@@ -1523,11 +1566,13 @@ async function createDocument(req, res) {
             where: {
               itemId: element.itemId,
               companyId
-            }
+            },
+            transaction: t
           });
           const existingStock = await models.StoreItems.findAll({
             where: { storeId: storeId.id, itemId: item.id },
             order: [['createdAt', 'ASC']],
+            transaction: t
           });
           for (const stock of existingStock) {
             if (remainingQuantity <= 0) break;
@@ -1537,7 +1582,7 @@ async function createDocument(req, res) {
 
             await models.StoreItems.update(
               { quantity: (stock.quantity - deductQty) },
-              { where: { id: stock.id } }
+              { where: { id: stock.id }, transaction: t }
             );
             await models.StockTransfer.create({
               transferNumber: element.transferNumber,
@@ -1555,7 +1600,7 @@ async function createDocument(req, res) {
               actualPrice: stock.price,
               approvalId: approval.id,
               quantityForApproval: element.quantity
-            });
+            }, { transaction: t });
             price += (stock.price * deductQty);
           }
         }
@@ -1564,7 +1609,8 @@ async function createDocument(req, res) {
             where: {
               itemId: element.itemId,
               companyId
-            }
+            },
+            transaction: t
           });
           await models.StockTransfer.create({
             transferNumber: element.transferNumber,
@@ -1582,7 +1628,7 @@ async function createDocument(req, res) {
             actualPrice: element.price / (element.conversionFactor || 1),
             approvalId: approval.id,
             quantityForApproval: element.quantity * (element?.conversionFactor || 1)
-          });
+          }, { transaction: t });
         }
       }
     }
@@ -1593,7 +1639,8 @@ async function createDocument(req, res) {
           companyId,
           documentNumber: orderConfirmationNumber
         },
-        attributes: ['status', 'id']
+        attributes: ['status', 'id'],
+        transaction: t
       });
       const salesItems = await models.DocumentItems.findAll({
         where: {
@@ -1601,7 +1648,8 @@ async function createDocument(req, res) {
           documentNumber: orderConfirmationNumber
         },
         raw: true,
-        attributes: ['quantity', 'itemId', 'uniqueId']
+        attributes: ['quantity', 'itemId', 'uniqueId'],
+        transaction: t
       });
       const salesItemsMap = salesItems.reduce((acc, curr) => {
         const key = curr?.uniqueId || curr.itemId;
@@ -1618,7 +1666,8 @@ async function createDocument(req, res) {
           }
         },
         raw: true,
-        attributes: ['documentNumber']
+        attributes: ['documentNumber'],
+        transaction: t
       });
       const previousSalesReturnItems = await models.DocumentItems.findAll({
         where: {
@@ -1626,10 +1675,10 @@ async function createDocument(req, res) {
             [Op.in]: previousSalesReturn.map(doc => doc.documentNumber)
           },
           companyId,
-
         },
         raw: true,
-        attributes: ['quantity', 'itemId', 'uniqueId']
+        attributes: ['quantity', 'itemId', 'uniqueId'],
+        transaction: t
       });
       const previousSalesReturnItemsMap = previousSalesReturnItems.reduce((acc, curr) => {
         const key = curr?.uniqueId || curr.itemId;
@@ -1670,7 +1719,7 @@ async function createDocument(req, res) {
       else if (salesOrder.status == 22 || salesOrder.status == 44) {
         status = !partial ? 48 : 44;
       }
-      await salesOrder.update({ status });
+      await salesOrder.update({ status }, { transaction: t });
     }
 
     if (status && documentType === documentTypes.goodsReceive) {
@@ -1679,7 +1728,8 @@ async function createDocument(req, res) {
         where: {
           documentNumber: purchaseOrderNumber,
           companyId
-        }
+        },
+        transaction: t
       });
 
       if (purchase_order && purchase_order.indent_number) {
@@ -1690,14 +1740,15 @@ async function createDocument(req, res) {
             where: {
               companyId,
               documentNumber: ind_number
-            }
+            },
+            transaction: t
           });
 
           // if purchase request status is 14 or 15 then directly update the status to 15
           if (purchase_request.status == 14 || purchase_request.status == 15) {
             await purchase_request.update({
               status: 15
-            });
+            }, { transaction: t });
           }
           else {
             // find all purchase orders against same purchase request 
@@ -1705,7 +1756,8 @@ async function createDocument(req, res) {
               where: {
                 companyId,
                 indent_number: ind_number
-              }
+              },
+              transaction: t
             });
 
             // iterate through all purchase orders
@@ -1717,7 +1769,8 @@ async function createDocument(req, res) {
                   documentType,
                   purchaseOrderNumber: purchase_order.documentNumber
                 },
-                order: [['createdAt', 'DESC']]
+                order: [['createdAt', 'DESC']],
+                transaction: t
               });
 
               let isBreak = false;
@@ -1725,7 +1778,7 @@ async function createDocument(req, res) {
               if (!latest_grn) {
                 await purchase_request.update({
                   status: 17
-                });
+                }, { transaction: t });
                 break;
               }
               else {
@@ -1734,7 +1787,8 @@ async function createDocument(req, res) {
                   where: {
                     documentNumber: latest_grn.documentNumber,
                     companyId
-                  }
+                  },
+                  transaction: t
                 });
                 // iterate through all grns
                 for (const grn of grnsItems) {
@@ -1742,7 +1796,7 @@ async function createDocument(req, res) {
                   if ((showUnits == 0 ? grn.auQuantity : grn.quantity) < grn.receivedQuantity) {
                     await purchase_request.update({
                       status: 17
-                    });
+                    }, { transaction: t });
                     isBreak = true;
                     break;
                   }
@@ -1753,7 +1807,7 @@ async function createDocument(req, res) {
             // if all purchase orders against purchase request have received full quantity then update purchase request status to 18
             await purchase_request.update({
               status: 18
-            });
+            }, { transaction: t });
           }
 
         }
@@ -1766,12 +1820,14 @@ async function createDocument(req, res) {
         where: {
           companyId: Number(companyId)
         },
-        raw: true
+        raw: true,
+        transaction: t
       });
       const approvalCount = await models.InventoryApproval.count({
         where: {
           companyId
-        }
+        },
+        transaction: t
       });
       const approval = await models.InventoryApproval.create({
         approvalId: `INA${approvalCount + 1}`,
@@ -1782,14 +1838,15 @@ async function createDocument(req, res) {
         companyId: companyId,
         status: 1,
         approvedBy: null
-      });
+      }, { transaction: t });
       message = settings?.['serviceDocument'] == 'manual' ? 'inventory' : ''
       for (const element of items) {
         const storeId = await models.Store.findOne({
           where: {
             name: !storeInItemLevel ? store : element.store,
             companyId
-          }
+          },
+          transaction: t
         });
         let price = 0;
         let remainingQuantity = (element.quantity * (element?.conversionFactor || 1));
@@ -1799,11 +1856,13 @@ async function createDocument(req, res) {
             where: {
               itemId: element.itemId,
               companyId
-            }
+            },
+            transaction: t
           });
           const existingStock = await models.StoreItems.findAll({
             where: { storeId: storeId?.id, itemId: item?.id },
             order: [['createdAt', 'ASC']],
+            transaction: t
           });
           for (const stock of existingStock) {
             if (remainingQuantity <= 0) break;
@@ -1813,7 +1872,7 @@ async function createDocument(req, res) {
 
             await models.StoreItems.update(
               { quantity: (stock.quantity - deductQty) },
-              { where: { id: stock.id } }
+              { where: { id: stock.id }, transaction: t }
             );
             await models.StockTransfer.create({
               transferNumber: element.transferNumber,
@@ -1831,7 +1890,7 @@ async function createDocument(req, res) {
               actualPrice: stock.price,
               approvalId: approval.id,
               quantityForApproval: (element.quantity * (element?.conversionFactor || 1))
-            });
+            }, { transaction: t });
             price += (stock.price * deductQty);
           }
         } else {
@@ -1839,7 +1898,8 @@ async function createDocument(req, res) {
             where: {
               itemId: element.itemId,
               companyId
-            }
+            },
+            transaction: t
           });
           await models.StockTransfer.create({
             transferNumber: element.transferNumber,
@@ -1868,7 +1928,8 @@ async function createDocument(req, res) {
           companyId,
           documentNumber: challan_number,
           documentType: documentTypes.serviceChallan
-        }
+        },
+        transaction: t
       });
 
       if (serviceChallan && (serviceChallan.addStockOn === 'GRN' || documentType === documentTypes.serviceQr)) {
@@ -1878,13 +1939,15 @@ async function createDocument(req, res) {
             where: {
               serviceOrderNumber,
               companyId: Number(companyId)
-            }
+            },
+            transaction: t
           });
           if (production) {
             finishedGood = await models.ProductionFinishedGoods.findOne({
               where: {
                 productionId: production.id
-              }
+              },
+              transaction: t
             });
           }
         }
@@ -1893,18 +1956,21 @@ async function createDocument(req, res) {
             where: {
               documentNumber,
               companyId
-            }
+            },
+            transaction: t
           });
         const settings = await models.Settings.findOne({
           where: {
             companyId: Number(companyId)
           },
-          raw: true
+          raw: true,
+          transaction: t
         });
         const approvalCount = await models.InventoryApproval.count({
           where: {
             companyId
-          }
+          },
+          transaction: t
         });
         const approval = await models.InventoryApproval.create({
           approvalId: `INA${approvalCount + 1}`,
@@ -1915,10 +1981,10 @@ async function createDocument(req, res) {
           companyId: companyId,
           status: 1,
           approvedBy: null
-        });
+        }, { transaction: t });
         message = settings?.['serviceDocument'] == 'manual' ? 'inventory' : ''
-        const existingItems = await models.Items.findAll({ where: { companyId: Number(companyId) } });
-        const stores = await models.Store.findAll({ where: { companyId: Number(companyId) } });
+        const existingItems = await models.Items.findAll({ where: { companyId: Number(companyId) }, transaction: t });
+        const stores = await models.Store.findAll({ where: { companyId: Number(companyId) }, transaction: t });
         const itemsMap = new Map(existingItems.map(existingItem => [existingItem.itemId, existingItem.id]));
         const storesMap = new Map(stores.map(store => [store.name, store.id]));
 
@@ -2010,18 +2076,19 @@ async function createDocument(req, res) {
         where: {
           companyId,
           documentNumber: invoiceNumber
-        }
+        },
+        transaction: t
       });
       const total = items?.reduce((acc, curr) => acc + (curr?.totalAfterTax || 0), 0);
       if (invoice) {
         if (documentType === documentTypes.creditNote) {
           await invoice.update({
             creditSetOff: Number(invoice.creditSetOff || 0) + Number(total)
-          });
+          }, { transaction: t });
         } else {
           await invoice.update({
             debitSetOff: Number(invoice.debitSetOff || 0) + Number(total)
-          });
+          }, { transaction: t });
         }
       }
     }
@@ -2030,7 +2097,8 @@ async function createDocument(req, res) {
       await models.Production.update({ serviceOrderNumber: documentNumber }, {
         where: {
           id: Number(productionId)
-        }
+        },
+        transaction: t
       });
     }
 
@@ -2040,7 +2108,8 @@ async function createDocument(req, res) {
           companyId: Number(companyId),
           serviceOrderNumber: documentNumber
         },
-        raw: true
+        raw: true,
+        transaction: t
       });
 
       if (production) {
@@ -2057,9 +2126,10 @@ async function createDocument(req, res) {
         const finishedGood = await models.ProductionFinishedGoods.findOne({
           where: {
             productionId: production.id
-          }
+          },
+          transaction: t
         });
-        await finishedGood.update({ cost: ((finishedGood.cost || 0) + cost) });
+        await finishedGood.update({ cost: ((finishedGood.cost || 0) + cost) }, { transaction: t });
       }
     }
 
@@ -2069,7 +2139,8 @@ async function createDocument(req, res) {
           companyId: Number(companyId),
           serviceOrderNumber: serviceOrderNumber
         },
-        raw: true
+        raw: true,
+        transaction: t
       });
       if (production) {
         const itemsMap = items?.reduce((acc, curr) => {
@@ -2092,22 +2163,24 @@ async function createDocument(req, res) {
         const productionRawMaterial = await models.ProductionRawMaterials.findAll({
           where: {
             productionId: production.id
-          }
+          },
+          transaction: t
         });
         for (const element of productionRawMaterial) {
           if (itemsMap[element.itemId]) {
             await element.update({
               consumedQuantity: (element.consumedQuantity || 0) + Number(itemsMap[element.itemId]),
               averagePrice: (element?.averagePrice || 0) + (Number(itemsMap[element.itemId]) * itemsPriceMap[element.itemId])
-            });
+            }, { transaction: t });
           }
         }
         const finishedGood = await models.ProductionFinishedGoods.findOne({
           where: {
             productionId: production.id
-          }
+          },
+          transaction: t
         });
-        await finishedGood.update({ cost: ((finishedGood.cost || 0) + cost) });
+        await finishedGood.update({ cost: ((finishedGood.cost || 0) + cost) }, { transaction: t });
       }
 
     }
@@ -2118,35 +2191,38 @@ async function createDocument(req, res) {
           companyId,
           documentNumber: challan_number,
           documentType: documentTypes.serviceChallan
-        }
+        },
+        transaction: t
       });
       const production = await models.Production.findOne({
         where: {
           companyId: Number(companyId),
           serviceOrderNumber: serviceOrderNumber
-        }
+        },
+        transaction: t
       });
       if (production && serviceChallan) {
         const finishedGoods = await models.ProductionFinishedGoods.findAll({
           where: {
             productionId: production.id
-          }
+          },
+          transaction: t
         });
         for (const element of finishedGoods) {
           if (documentType === 'Service Grn') {
             await element.update({
               producedQuantity: (element.producedQuantity || 0) + items[0].receivedToday,
               passedQuantity: (element.passedQuantity || 0) + Number(serviceChallan.addStockOn === 'GRN' ? items[0].receivedToday : 0),
-            });
+            }, { transaction: t });
           } else {
             await element.update({
               // producedQuantity: (element?.producedQuantity || 0) + Number(items[0].receivedToday || 0),
               passedQuantity: (element?.passedQuantity || 0) + Number(items[0].receivedToday),
               rejectQuantity: (element?.rejectQuantity || 0) + Number(items[0].pendingQuantity)
-            });
+            }, { transaction: t });
           }
           if (element.passedQuantity >= element.quantity) {
-            await production.update({ status: 4 });
+            await production.update({ status: 4 }, { transaction: t });
           }
         }
       }
@@ -2161,7 +2237,8 @@ async function createDocument(req, res) {
           }
         },
         attributes: ['id', 'itemId'],
-        raw: true
+        raw: true,
+        transaction: t
       });
 
       const itemsMap = existingItems.reduce((acc, curr) => {
@@ -2173,13 +2250,15 @@ async function createDocument(req, res) {
         where: {
           companyId,
           name: store
-        }
+        },
+        transaction: t
       });
       const rejectStore = await models.Store.findOne({
         where: {
           companyId,
           name: rejectedStore
-        }
+        },
+        transaction: t
       });
       const settings = await models.Settings.findOne({
         where: {
@@ -2208,6 +2287,7 @@ async function createDocument(req, res) {
         const existingStock = await models.StoreItems.findAll({
           where: { storeId: fromStore.id, itemId: itemsMap[element.itemId], isRejected: (element?.isRejected || false) },
           order: [['createdAt', 'ASC']],
+          transaction: t
         });
         if (settings?.['stockTransfer'] != 'manual') {
           for (const stock of existingStock) {
@@ -2219,7 +2299,7 @@ async function createDocument(req, res) {
             // Reduce quantity from source store
             await models.StoreItems.update(
               { quantity: (stock.quantity - deductQty) },
-              { where: { id: stock.id } }
+              { where: { id: stock.id }, transaction: t }
             );
 
             await models.StockTransfer.create({
@@ -2235,7 +2315,7 @@ async function createDocument(req, res) {
               isRejected: element?.toReject || false,
               approvalId: approval.id,
               quantityForApproval: element.quantity
-            });
+            }, { transaction: t });
 
             if (element.isRejected != element.toReject) {
               await models.StockTransfer.create({
@@ -2251,7 +2331,7 @@ async function createDocument(req, res) {
                 isRejected: element?.isRejected || false,
                 // approvalId: approval.id,
                 // quantityForApproval: element.quantity
-              });
+              }, { transaction: t });
             }
 
             await models.StoreItems.create({
@@ -2264,7 +2344,7 @@ async function createDocument(req, res) {
               isRejected: element?.toReject || false,
               // approvalId: approval.id,
               // quantityForApproval: deductQty
-            });
+            }, { transaction: t });
           }
         } else {
           await models.StockTransfer.create({
@@ -2280,7 +2360,7 @@ async function createDocument(req, res) {
             approvalId: approval.id,
             quantityForApproval: remainingQuantity,
             toReject: element?.toReject || false
-          });
+          }, { transaction: t });
         }
       }
     }
@@ -2302,18 +2382,20 @@ async function createDocument(req, res) {
         totalAfterTax: finishedGood?.totalAfterTax,
         category: finishedGood?.category,
         uniqueId: crypto.randomUUID(),
-      });
+      }, { transaction: t });
       if (addStockOn === 'GRN' || documentType === 'Service Confirmation Qr') {
         const settings = await models.Settings.findOne({
           where: {
             companyId: Number(companyId)
           },
-          raw: true
+          raw: true,
+          transaction: t
         });
         const approvalCount = await models.InventoryApproval.count({
           where: {
             companyId
-          }
+          },
+          transaction: t
         });
         const approval = await models.InventoryApproval.create({
           approvalId: `INA${approvalCount + 1}`,
@@ -2324,10 +2406,10 @@ async function createDocument(req, res) {
           companyId: companyId,
           status: 1,
           approvedBy: null
-        });
+        }, { transaction: t });
         message = settings?.['serviceDocument'] == 'manual' ? 'inventory' : ''
-        const existingItems = await models.Items.findAll({ where: { companyId: Number(companyId) } });
-        const stores = await models.Store.findAll({ where: { companyId: Number(companyId) } });
+        const existingItems = await models.Items.findAll({ where: { companyId: Number(companyId) }, transaction: t });
+        const stores = await models.Store.findAll({ where: { companyId: Number(companyId) }, transaction: t });
         const itemsMap = new Map(existingItems.map(existingItem => [existingItem.itemId, existingItem.id]));
         const storesMap = new Map(stores.map(store => [store.name, store.id]));
 
@@ -2345,7 +2427,7 @@ async function createDocument(req, res) {
             approvalId: approval.id,
             quantityForApproval: (item?.receivedToday * (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1))) || 0
           }
-        })
+        }), { transaction: t }
         ),
         models.StockTransfer.bulkCreate(items?.filter(item => item?.receivedToday && item.type != 'Finished Good').map(item => {
           const itemId = itemsMap.get(item.itemId) || null;
@@ -2366,7 +2448,7 @@ async function createDocument(req, res) {
             approvalId: approval.id,
             quantityForApproval: (item?.receivedToday * (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1))) || 0
           }
-        })),
+        }), { transaction: t }),
         ]
         );
 
@@ -2386,7 +2468,7 @@ async function createDocument(req, res) {
               approvalId: approval.id,
               quantityForApproval: (item.pendingQuantity * (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1))) || 0
             }
-          })
+          }), { transaction: t }
           ),
           models.StockTransfer.bulkCreate(items?.filter(item => item.pendingQuantity && item.type != 'Finished Good').map(item => {
             const itemId = itemsMap.get(item.itemId) || null;
@@ -2408,7 +2490,7 @@ async function createDocument(req, res) {
               approvalId: approval.id,
               quantityForApproval: (item.pendingQuantity * (item?.conversionFactor || (showUnits == 0 ? item.quantity / item.auQuantity : 1))) || 0
             }
-          })),
+          }), { transaction: t }),
           ]);
         }
       }
@@ -2420,7 +2502,8 @@ async function createDocument(req, res) {
           where: {
             companyId: Number(companyId),
             default: 1
-          }
+          },
+          transaction: t
         });
         const bom = await models.BOMDetails.create(
           {
@@ -2430,9 +2513,9 @@ async function createDocument(req, res) {
             bomDescription: '',
             companyId: Number(companyId),
             userId: Number(createdBy)
-          }
+          }, { transaction: t }
         );
-        bomSeries && await bomSeries.update({ nextNumber: bomSeries?.nextNumber + 1 });
+        bomSeries && await bomSeries.update({ nextNumber: bomSeries?.nextNumber + 1 }, { transaction: t });
         const itemIds = [...items, finishedGood]?.map(item => item?.itemId);
         const existingItems = await models.Items.findAll({
           where: {
@@ -2442,7 +2525,8 @@ async function createDocument(req, res) {
             }
           },
           raw: true,
-          attributes: ['id', 'itemId', 'metricsUnit']
+          attributes: ['id', 'itemId', 'metricsUnit'],
+          transaction: t
         });
         const itemsMap = existingItems?.reduce((acc, curr) => {
           acc[curr.itemId] = curr.metricsUnit;
@@ -2460,7 +2544,7 @@ async function createDocument(req, res) {
           store
         }));
 
-        await models.BOMRawMaterial.bulkCreate(payload);
+        await models.BOMRawMaterial.bulkCreate(payload, { transaction: t });
         await models.BOMFinishedGoods.create({
           bomId: bom.id,
           itemId: finishedGood.itemId,
@@ -2471,7 +2555,7 @@ async function createDocument(req, res) {
           companyId,
           status: 1,
           store
-        });
+        }, { transaction: t });
       }
     }
 
@@ -2491,14 +2575,15 @@ async function createDocument(req, res) {
             companyId,
             documentNumber: enquiryNumber,
             documentType: 'Sales Lead'
-          }
+          },
+          transaction: t
         });
 
         if (salesLead) {
           const linkedDocuments = isValidJSON(salesLead.linkedDocuments) || [];
           if (!linkedDocuments.includes(documentNumber)) {
             linkedDocuments.push(documentNumber);
-            await salesLead.update({ linkedDocuments });
+            await salesLead.update({ linkedDocuments }, { transaction: t });
           }
         }
       }
@@ -2513,14 +2598,15 @@ async function createDocument(req, res) {
             companyId,
             documentNumber: quotationNumber,
             documentType: 'Sales Quotation'
-          }
+          },
+          transaction: t
         });
 
         if (salesQuotation) {
           const linkedDocuments = isValidJSON(salesQuotation.linkedDocuments) || [];
           if (!linkedDocuments.includes(documentNumber)) {
             linkedDocuments.push(documentNumber);
-            await salesQuotation.update({ linkedDocuments });
+            await salesQuotation.update({ linkedDocuments }, { transaction: t });
           }
         }
       }
@@ -2536,14 +2622,15 @@ async function createDocument(req, res) {
             companyId,
             documentNumber: orderConfirmationNumber,
             documentType: 'Sales Order'
-          }
+          },
+          transaction: t
         });
 
         if (salesOrder) {
           const linkedDocuments = isValidJSON(salesOrder.linkedDocuments) || [];
           if (!linkedDocuments.includes(documentNumber)) {
             linkedDocuments.push(documentNumber);
-            await salesOrder.update({ linkedDocuments });
+            await salesOrder.update({ linkedDocuments }, { transaction: t });
           }
         }
 
@@ -2555,13 +2642,14 @@ async function createDocument(req, res) {
             companyId,
             documentNumber: invoiceNumber,
             documentType: 'Invoice'
-          }
+          },
+          transaction: t
         });
         if (salesInvoice) {
           const linkedDocuments = isValidJSON(salesInvoice.linkedDocuments) || [];
           if (!linkedDocuments.includes(documentNumber)) {
             linkedDocuments.push(documentNumber);
-            await salesInvoice.update({ linkedDocuments });
+            await salesInvoice.update({ linkedDocuments }, { transaction: t });
           }
         }
       }
@@ -2577,7 +2665,8 @@ async function createDocument(req, res) {
             companyId,
             documentNumber: purchaseOrderNumber,
             documentType: 'Purchase Order'
-          }
+          },
+          transaction: t
         });
 
         if (purchaseOrder) {
@@ -2585,7 +2674,7 @@ async function createDocument(req, res) {
 
           if (!linkedDocuments.includes(documentNumber)) {
             linkedDocuments.push(documentNumber);
-            await purchaseOrder.update({ linkedDocuments });
+            await purchaseOrder.update({ linkedDocuments }, { transaction: t });
           }
         }
 
@@ -2597,13 +2686,14 @@ async function createDocument(req, res) {
             companyId,
             documentNumber: invoiceNumber,
             documentType: 'Purchase Invoice'
-          }
+          },
+          transaction: t
         });
         if (purchaseInvoice) {
           const linkedDocuments = isValidJSON(purchaseInvoice.linkedDocuments) || [];
           if (!linkedDocuments.includes(documentNumber)) {
             linkedDocuments.push(documentNumber);
-            await purchaseInvoice.update({ linkedDocuments });
+            await purchaseInvoice.update({ linkedDocuments }, { transaction: t });
           }
         }
       }
@@ -2617,13 +2707,14 @@ async function createDocument(req, res) {
             },
             documentType: 'Purchase Request'
           },
-          attributes: ['id', 'linkedDocuments']
+          attributes: ['id', 'linkedDocuments'],
+          transaction: t
         });
         for (const purchaseRequest of purchaseRequests) {
           const linkedDocuments = isValidJSON(purchaseRequest.linkedDocuments) || [];
           if (!linkedDocuments.includes(documentNumber)) {
             linkedDocuments.push(documentNumber);
-            await purchaseRequest.update({ linkedDocuments });
+            await purchaseRequest.update({ linkedDocuments }, { transaction: t });
           }
         }
       }
@@ -2639,14 +2730,15 @@ async function createDocument(req, res) {
             companyId,
             documentNumber: serviceOrderNumber,
             documentType: 'Service Order'
-          }
+          },
+          transaction: t
         });
 
         if (serviceOrder) {
           const linkedDocuments = isValidJSON(serviceOrder.linkedDocuments) || [];
           if (!linkedDocuments.includes(documentNumber)) {
             linkedDocuments.push(documentNumber);
-            await serviceOrder.update({ linkedDocuments });
+            await serviceOrder.update({ linkedDocuments }, { transaction: t });
           }
         }
 
@@ -2663,14 +2755,15 @@ async function createDocument(req, res) {
             companyId,
             documentNumber: ServiceConfirmationNumber,
             documentType: 'Service Confirmation'
-          }
+          },
+          transaction: t
         });
 
         if (serviceConfirmation) {
           const linkedDocuments = isValidJSON(serviceConfirmation.linkedDocuments) || [];
           if (!linkedDocuments.includes(documentNumber)) {
             linkedDocuments.push(documentNumber);
-            await serviceConfirmation.update({ linkedDocuments });
+            await serviceConfirmation.update({ linkedDocuments }, { transaction: t });
           }
         }
 
@@ -2683,6 +2776,7 @@ async function createDocument(req, res) {
           companyId,
           documentNumber: challan_number
         },
+        transaction: t,
         attributes: ['status', 'id']
       });
       if (challan) {
@@ -2690,7 +2784,8 @@ async function createDocument(req, res) {
           where: {
             companyId,
             documentNumber: challan_number
-          }
+          },
+          transaction: t
         });
         const challanItemsMap = challanItems.reduce((acc, curr) => {
           acc[curr.itemId] = curr.quantity;
@@ -2702,6 +2797,7 @@ async function createDocument(req, res) {
             documentType: 'Sales Return',
             challan_number,
           },
+          transaction: t,
           raw: true,
           attributes: ['documentNumber']
         });
@@ -2712,6 +2808,7 @@ async function createDocument(req, res) {
               [Op.in]: previousSalesReturn.map(doc => doc.documentNumber)
             }
           },
+          transaction: t,
           raw: true
         });
         const salesItemsMap = [...previousSalesReturnItems].reduce((acc, curr) => {
@@ -2726,7 +2823,7 @@ async function createDocument(req, res) {
             break;
           }
         }
-        await challan.update({ status: partial ? 31 : 32 });
+        await challan.update({ status: partial ? 31 : 32 }, { transaction: t, });
       }
     }
 
@@ -2734,52 +2831,80 @@ async function createDocument(req, res) {
       const challan = await models.Documents.findOne({
         where: {
           companyId,
-          documentNumber: invoiceNumber
+          documentNumber: invoiceNumber,
         },
-        attributes: ['status', 'id']
+        attributes: ["status", "id"],
+        transaction: t,
       });
+
       if (challan) {
         const challanItems = await models.DocumentItems.findAll({
           where: {
             companyId,
-            documentNumber: invoiceNumber
-          }
+            documentNumber: invoiceNumber,
+          },
+          transaction: t,
         });
+
         const challanItemsMap = challanItems.reduce((acc, curr) => {
-          acc[curr.itemId] = curr.quantity;
+          acc[curr.itemId] = Number(curr.quantity || 0);
           return acc;
         }, {});
+
         const previousSalesReturn = await models.Documents.findAll({
           where: {
             companyId,
-            documentType: 'Sales Return',
+            documentType: "Sales Return",
             invoiceNumber,
           },
           raw: true,
-          attributes: ['documentNumber']
+          attributes: ["documentNumber"],
+          transaction: t,
         });
+
         const previousSalesReturnItems = await models.DocumentItems.findAll({
           where: {
             companyId,
             documentNumber: {
-              [Op.in]: previousSalesReturn.map(doc => doc.documentNumber)
-            }
+              [Op.in]: previousSalesReturn.map(
+                (doc) => doc.documentNumber
+              ),
+            },
           },
-          raw: true
+          raw: true,
+          transaction: t,
         });
-        const salesItemsMap = [...previousSalesReturnItems].reduce((acc, curr) => {
-          acc[curr.itemId] = (acc[curr.itemId] || 0) + Number(curr.quantity);
-          return acc;
-        }, {});
+
+        const salesItemsMap = previousSalesReturnItems.reduce(
+          (acc, curr) => {
+            acc[curr.itemId] =
+              (acc[curr.itemId] || 0) + Number(curr.quantity || 0);
+
+            return acc;
+          },
+          {}
+        );
 
         let partial = false;
+
         for (const key in challanItemsMap) {
-          if (!salesItemsMap[key] || salesItemsMap[key] < challanItemsMap[key]) {
+          if (
+            !salesItemsMap[key] ||
+            Number(salesItemsMap[key]) < Number(challanItemsMap[key])
+          ) {
             partial = true;
             break;
           }
         }
-        await challan.update({ status: partial ? 31 : 32 });
+
+        await challan.update(
+          {
+            status: partial ? 31 : 32,
+          },
+          {
+            transaction: t,
+          }
+        );
       }
     }
 
@@ -2789,7 +2914,8 @@ async function createDocument(req, res) {
           companyId,
           documentNumber: serviceOrderNumber
         },
-        attributes: ['serviceId', 'quantity']
+        attributes: ['serviceId', 'quantity'],
+        transaction: t
       });
 
       const documentItemsMap = documentItems.reduce((acc, curr) => {
@@ -2804,7 +2930,8 @@ async function createDocument(req, res) {
           serviceOrderNumber,
         },
         attributes: ['documentNumber'],
-        raw: true
+        raw: true,
+        transaction: t
       });
 
       const previousServiceInvoiceItems = await models.DocumentItems.findAll({
@@ -2815,6 +2942,7 @@ async function createDocument(req, res) {
           },
         },
         attributes: ['serviceId', 'quantity'],
+        transaction: t
       });
 
       const serviceInvoiceItemsMap = previousServiceInvoiceItems.reduce((acc, curr) => {
@@ -2833,14 +2961,18 @@ async function createDocument(req, res) {
         where: {
           companyId,
           documentNumber: serviceOrderNumber
-        }
+        },
+        transaction: t
       });
     }
 
+    await t.commit();
     res.status(201).json({
       message: !status ? "Document Saved as Draft Successfully" : message ? "Document created successfully and Inventory approval requested." : "Document created successfully!"
     });
-  } catch (error) {
+  }
+  catch (error) {
+    await t.rollback();
     console.log(error);
     res.status(500).json({ message: 'Something went wrong', error });
   }
