@@ -1077,8 +1077,14 @@ async function bulkEditItems(req, res) {
         const subCategories = await models.Categories.findAll({ where: { name: { [Op.in]: subCategoryNames }, companyId } });
         const microCategories = await models.Categories.findAll({ where: { name: { [Op.in]: microCategoryNames }, companyId } });
         const categoryMap = new Map(categories.map(cat => [cat.name, cat]));
-        const subCategoryMap = new Map(subCategories.map(sub => [sub.name, sub]));
-        const microCategoryMap = new Map(microCategories.map(micro => [micro.name, micro]));
+        const subCategoryMap = new Map();
+        subCategories.forEach(sub => {
+            subCategoryMap.set(`${sub.parentId}_${sub.name}`, sub);
+        });
+        const microCategoryMap = new Map();
+        microCategories.forEach(micro => {
+            microCategoryMap.set(`${micro.parentId}_${micro.name}`, micro);
+        });
 
         let errorArray = [];
         let updateData = [];
@@ -1108,23 +1114,27 @@ async function bulkEditItems(req, res) {
             }
 
             let category = categoryMap.get(item.Category) || null;
-            let subCategory = subCategoryMap.get(item["Sub Category"]) || null;
-            let microCategory = microCategoryMap.get(item["Micro Category"]) || null;
+            let effectiveCategoryId = item.Category ? category?.id : existingItem.category;
+
+            let subCategory = null;
+            if (item["Sub Category"]) {
+                subCategory = subCategoryMap.get(`${effectiveCategoryId}_${item["Sub Category"]}`) || null;
+            }
+            let effectiveSubCategoryId = item["Sub Category"] ? subCategory?.id : existingItem.subCategory;
+
+            let microCategory = null;
+            if (item["Micro Category"]) {
+                microCategory = microCategoryMap.get(`${effectiveSubCategoryId}_${item["Micro Category"]}`) || null;
+            }
 
             if (item.Category && !category) {
                 err += "Category Not Found. ";
             }
             if (item["Sub Category"] && !subCategory) {
-                err += "Sub Category Not Found. ";
-            }
-            if (item["Sub Category"] && category.id != subCategory.parentId) {
-                err += "Sub Category Not Found under this Category."
+                err += "Sub Category Not Found under the specified Category. ";
             }
             if (item["Micro Category"] && !microCategory) {
-                err += "Micro Category Not Found. ";
-            }
-            if (item["Micro Category"] && subCategory.id != microCategory.parentId) {
-                err += "Micro Category Not Found under this Sub Category."
+                err += "Micro Category Not Found under the specified Sub Category. ";
             }
 
             if (uniqueCustomField) {
