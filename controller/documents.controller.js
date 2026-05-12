@@ -3019,21 +3019,55 @@ async function getDocuments(req, res) {
       documents = await models.Documents.findAll({
         where: {
           companyId,
-          ...dateFilter
+          ...dateFilter,
+          ...(docTypeFilter?.length > 0 ? !createdBy ? {
+            documentType: {
+              [Op.in]: docTypeFilter,
+            },
+          } : {
+            [Op.or]: [
+              {
+                documentType: {
+                  [Op.in]: docTypeFilter
+                }
+              },
+              {
+                createdBy: Number(createdBy),
+                documentType: {
+                  [Op.in]: [
+                    'Sales Quotation',
+                    'Sales Order',
+                    'Invoice',
+                    'Purchase Request',
+                    'Purchase Order',
+                    'Purchase Invoice',
+                  ]
+                }
+              }
+            ],
+          } : {}),
+          ...(Array.isArray(search) && search.length
+            ? {
+              [Op.or]: search
+                .filter(val => val && val.trim() !== "")
+                .flatMap(val => [
+                  { documentNumber: { [Op.like]: `%${val.trim()}%` } },
+                  { documentType: { [Op.like]: `%${val.trim()}%` } },
+                  { buyerName: { [Op.like]: `%${val.trim()}%` } },
+                ]),
+            }
+            : {}),
         },
+        order: [['createdAt', 'DESC']],
         include: [
           {
             model: models.LogisticDetails,
-            as: 'logisticDetails',
-            where: { companyId: Number(companyId) },
-            required: false,
+            as: 'logisticDetails'
           },
           {
             model: models.Users,
             as: 'creator',
-            attributes: ['id', 'name', 'gstNumber'],
-            where: { companyId: Number(companyId) },
-            required: false,
+            attributes: ['id', 'name', 'gstNumber']
           },
         ],
         distinct: true
