@@ -10,7 +10,7 @@ async function addApprovalPermission(req, res) {
                 }
             });
             if (approval) {
-                approval.update({ documents }, {
+                await approval.update({ documents }, {
                     where: {
                         userId: Number(element)
                     }

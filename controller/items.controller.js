@@ -146,19 +146,20 @@ async function addItem(req, res) {
                 companyId
             }
         });
-        const approval = await models.InventoryApproval.create({
-            approvalId: `INA${approvalCount + 1}`,
-            documentType: 'New Item Added',
-            documentNumber: '',
-            approvalStatus: settings?.['stockUpdate'] == 'manual' ? 'Pending' : 'Auto Approved',
-            requestedBy: userId,
-            companyId: companyId,
-            status: 1,
-            approvedBy: null
-        });
+        let approval = null;
 
         // ✅ Add StockTransfer if currentStock exists
         if (req.body.currentStock) {
+            approval = await models.InventoryApproval.create({
+                approvalId: `INA${approvalCount + 1}`,
+                documentType: 'New Item Added',
+                documentNumber: '',
+                approvalStatus: settings?.['stockUpdate'] == 'manual' ? 'Pending' : 'Auto Approved',
+                requestedBy: userId,
+                companyId: companyId,
+                status: 1,
+                approvedBy: null
+            });
             await models.StockTransfer.create({
                 transferNumber: generateTransferNumber(),
                 fromStoreId: null,
@@ -171,7 +172,7 @@ async function addItem(req, res) {
                 companyId,
                 price: req.body.price,
                 isRejected,
-                approvalId: approval.id,
+                approvalId: approval?.id,
                 quantityForApproval: req.body.currentStock
             });
         }
@@ -187,7 +188,7 @@ async function addItem(req, res) {
             status: 1,
             price: req.body.price || 0,
             isRejected,
-            approvalId: approval.id,
+            approvalId: approval?.id,
             quantityForApproval: req.body.currentStock || 0
         };
 
