@@ -494,7 +494,7 @@ async function getProductions(req, res) {
                 companyId: Number(companyId),
                 bulkProductionId: null,
                 status: {
-                    [Op.in]: isDiscard ? status : [1, 2, 3, 4]
+                    [Op.in]: isDiscard ? status : [1, 2, 3]
                 },
                 createdAt: {
                     [Op.between]: [finalStartDate, finalEndDate]
@@ -614,7 +614,7 @@ async function getBulkProductions(req, res) {
                     [Op.between]: [finalStartDate, finalEndDate]
                 },
                 status: {
-                    [Op.in]: isDiscard ? status : [1, 2, 3, 4]
+                    [Op.in]: isDiscard ? status : [1, 2, 3]
                 }
 
             },

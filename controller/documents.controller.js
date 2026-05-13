@@ -520,30 +520,31 @@ async function createDocument(req, res) {
           // Create deliverychallan or invoice items map where uniqueId/itemId is key and quantity as value
           const deliveryChallanItemsMap = documentItems?.reduce((acc, current) => {
             const key = current?.uniqueId || current.itemId;
-            acc[key] = documentType === "Invoice" ? current.pendingQuantity : current?.receivedQuantity
+            acc[key] = documentType === "Invoice" ? (current.pendingQuantity || 0) : (current?.receivedQuantity || 0)
             return acc;
           }, {});
           // Add quantity of existing items in dellivery challan items map
-          for (const item of items) {
+          for (const item of documentItems) {
             const key = item?.uniqueId || item.itemId;
             if (!documentsItemMap?.[key] || !currentItemsMap?.[key]) continue;
-            const remainingNeeded = Math.max(0, documentsItemMap[key] - (deliveryChallanItemsMap[key] || 0));
-            const amountToConsume = Math.min(remainingNeeded, currentItemsMap[key]);
-            if (deliveryChallanItemsMap[key]) deliveryChallanItemsMap[key] += amountToConsume;
-            else deliveryChallanItemsMap[key] = amountToConsume;
-            currentItemsMap[key] -= amountToConsume;
-            await models.DocumentItems.update(
+            // const remainingNeeded = Math.max(0, documentsItemMap[key] - (deliveryChallanItemsMap[key] || 0));
+            // const amountToConsume = Math.min(remainingNeeded, currentItemsMap[key]);
+            // if (deliveryChallanItemsMap[key]) deliveryChallanItemsMap[key] += amountToConsume;
+            // else deliveryChallanItemsMap[key] = amountToConsume;
+            // currentItemsMap[key] -= amountToConsume;
+            await item.update(
               documentType === "Invoice"
-                ? { pendingQuantity: deliveryChallanItemsMap[key] }
-                : { receivedQuantity: deliveryChallanItemsMap[key] },
-              {
-                where: {
-                  documentNumber: oc_number.documentNumber,
-                  itemId: item.itemId,
-                  companyId
+                ? {
+                  pendingQuantity:
+                    (Number(item?.pendingQuantity) || 0) +
+                    (Number(currentItemsMap[key]) || 0),
+                }
+                : {
+                  receivedQuantity:
+                    (Number(item?.receivedQuantity) || 0) +
+                    (Number(currentItemsMap[key]) || 0),
                 },
-                transaction: t
-              }
+              { transaction: t }
             );
           }
 
@@ -578,7 +579,7 @@ async function createDocument(req, res) {
 
           // comapare documentsItem map and delivery challam items map 
           for (const elem of Object.keys(documentsItemMap)) {
-            if (documentsItemMap[elem] > deliveryChallanItemsMap[elem] || !deliveryChallanItemsMap[elem]) {
+            if (documentsItemMap[elem] > (deliveryChallanItemsMap[elem] + (currentItemsMap?.[elem] || 0))) {
               statusCode = documentType === documentTypes.invoice ? 12 : 10;
               break;
             }

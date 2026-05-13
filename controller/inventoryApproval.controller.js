@@ -29,6 +29,20 @@ async function getApprovalById(req, res) {
       return res.status(404).json({ message: "Approval not found" });
     }
 
+    let production = null;
+    if (["Finished Good", "Raw Material", "Scrap Material"].includes(approval.documentType)) {
+      production = await models.Production.findByPk(approval.documentNumber, { raw: true });
+      if (production) {
+        const finishedGood = await models.ProductionFinishedGoods.findOne({
+          where: {
+            productionId: production.id
+          },
+          raw: true
+        });
+        production.finishedGood = finishedGood;
+      }
+    }
+
     const storeItem = await models.StockTransfer.findAll({
       where: { approvalId },
       raw: true,
@@ -179,6 +193,7 @@ async function getApprovalById(req, res) {
         ...approval,
         requestedBy: userMap[approval?.requestedBy] || null,
         approvedBy: userMap[approval?.approvedBy] || null,
+        productionData: production,
         items: storeItems.map((data) => ({
           ...data,
           item: {
@@ -192,7 +207,7 @@ async function getApprovalById(req, res) {
           fromStore: storeMap?.[data?.fromStoreId] || null,
           toStore: storeMap?.[data?.toStoreId] || null,
           quantity: data.quantity ?? data.quantityForApproval,
-          batches: batchMap?.[data.itemId] || []
+          batches: batchMap?.[data.itemId] || [],
         }))
       }
     });
