@@ -1127,7 +1127,8 @@ async function issueRawMaterial(req, res) {
             requestedBy: userId,
             companyId: companyId,
             status: 1,
-            approvedBy: null
+            approvedBy: null,
+            productionId: production?.productionId
         }, { transaction: tIssue });
         const [stores, items] = await Promise.all([
             models.Store.findAll({ where: { companyId: Number(companyId) }, transaction: tIssue }),
@@ -1432,7 +1433,8 @@ async function updateScrapLogs(req, res) {
             requestedBy: userId,
             companyId: companyId,
             status: 1,
-            approvedBy: null
+            approvedBy: null,
+            productionId: production?.productionId
         }, { transaction: tUpdateScrap });
         for (const element of scrapLogs) {
             if (!element.value || !element.store) continue;
@@ -1572,7 +1574,8 @@ async function saveFinishedGoods(req, res) {
             requestedBy: userId,
             companyId: companyId,
             status: 1,
-            approvedBy: null
+            approvedBy: null,
+            productionId: production?.productionId
         }, { transaction });
 
         let total = 0;
@@ -2844,7 +2847,8 @@ async function returnRawMaterial(req, res) {
             requestedBy: userId,
             companyId: companyId,
             status: 1,
-            approvedBy: null
+            approvedBy: null,
+            productionId: production?.productionId
         }, { transaction: tReturnRM });
 
         for (const element of data) {
@@ -3351,7 +3355,8 @@ async function discardProduction(req, res) {
                     requestedBy: userId,
                     companyId: companyId,
                     status: 1,
-                    approvedBy: null
+                    approvedBy: null,
+                    productionId: element?.productionId
                 }, { transaction: t });
                 approvalMap[element.productionNavigationId] = approval.id;
             }
@@ -3433,7 +3438,8 @@ async function discardProduction(req, res) {
                     requestedBy: userId,
                     companyId: companyId,
                     status: 1,
-                    approvedBy: null
+                    approvedBy: null,
+                    productionId: element?.productionId
                 }, { transaction: t });
                 approvalMap[element.productionNavigationId] = approval.id;
             }
@@ -3516,7 +3522,8 @@ async function discardProduction(req, res) {
                     requestedBy: userId,
                     companyId: companyId,
                     status: 1,
-                    approvedBy: null
+                    approvedBy: null,
+                    productionId: element?.productionId
                 }, { transaction: t });
                 approvalMap[element.productionNavigationId] = approval.id;
             }
@@ -3599,7 +3606,8 @@ async function discardProduction(req, res) {
                     requestedBy: userId,
                     companyId: companyId,
                     status: 1,
-                    approvedBy: null
+                    approvedBy: null,
+                    productionId: element?.productionId
                 }, { transaction: t });
                 approvalMap[element.productionNavigationId] = approval.id;
             }
@@ -3710,7 +3718,8 @@ async function bulkIssue(req, res) {
                 requestedBy: userId,
                 companyId: companyId,
                 status: 1,
-                approvedBy: null
+                approvedBy: null,
+                productionId: production?.productionId
             }, { transaction: t });
             const unit = element.quantity / finishedGoods[0].quantity;
             if (!element.store) continue;
@@ -3809,7 +3818,8 @@ async function bulkIssue(req, res) {
                 requestedBy: userId,
                 companyId: companyId,
                 status: 1,
-                approvedBy: null
+                approvedBy: null,
+                productionId: production?.productionId
             }, { transaction: t });
 
             const stockTransferPayloads = [];
@@ -3898,7 +3908,8 @@ async function bulkIssue(req, res) {
                     requestedBy: userId,
                     companyId: companyId,
                     status: 1,
-                    approvedBy: null
+                    approvedBy: null,
+                    productionId: production?.productionId
                 }, { transaction: t });
                 const item = await models.Items.findOne({ where: { companyId: Number(companyId), itemId: element.itemId }, transaction: t });
                 const stores = storeMap.get(finishedGoodStoreMap[element.itemId]);
@@ -4149,7 +4160,8 @@ async function saveReworkQuantity(req, res) {
             requestedBy: userId,
             companyId: companyId,
             status: 1,
-            approvedBy: null
+            approvedBy: null,
+            productionId: production?.productionId
         }, { transaction });
 
         const costPerUnit = (finishedGoods[0]?.reworkQuantityCost || 0) / (passedQty == 0 ? 1 : passedQty);
