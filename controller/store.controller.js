@@ -324,6 +324,7 @@ async function getStoresByItem(req, res) {
 
 async function stockTransfer(req, res) {
   const { transferNumber, stockData, transferDate, transferredBy, companyId, useFIFO, comment, userId } = req.body;
+  const transaction = await models.sequelize.transaction();
 
   try {
     // Iterate through each stock transfer item
@@ -331,12 +332,14 @@ async function stockTransfer(req, res) {
       where: {
         companyId: Number(companyId)
       },
-      raw: true
+      raw: true,
+      transaction
     });
     const approvalCount = await models.InventoryApproval.count({
       where: {
         companyId
-      }
+      },
+      transaction
     });
     const inventoryHandling = stockData?.[0]?.addReduce ? settings?.['stockUpdate'] : settings?.['stockTransfer'];
     const approval = await models.InventoryApproval.create({
@@ -348,7 +351,7 @@ async function stockTransfer(req, res) {
       companyId: companyId,
       status: 1,
       approvedBy: null
-    });
+    }, { transaction });
 
 
     for (const element of stockData) {
@@ -361,6 +364,7 @@ async function stockTransfer(req, res) {
           const existingStock = await models.StoreItems.findAll({
             where: { storeId: (element.fromStore || element.toStore), itemId: element.itemId, isRejected: (element?.isReject || false) },
             order: [['createdAt', 'ASC']], // Oldest entries first
+            transaction
           });
           for (const stock of existingStock) {
             if (remainingQuantity <= 0) break;
@@ -371,7 +375,7 @@ async function stockTransfer(req, res) {
             // Reduce quantity from source store
             await models.StoreItems.update(
               { quantity: (stock.quantity - deductQty) },
-              { where: { id: stock.id } }
+              { where: { id: stock.id }, transaction }
             );
 
             if (!addReduce) {
@@ -385,7 +389,7 @@ async function stockTransfer(req, res) {
                 isRejected: element?.toReject || false,
                 approvalId: approval.id,
                 quantityForApproval: deductQty
-              });
+              }, { transaction });
 
               if (element?.toStore == element?.fromStore) {
                 await models.StockTransfer.create({
@@ -402,7 +406,7 @@ async function stockTransfer(req, res) {
                   isRejected: element?.toReject || false,
                   approvalId: approval.id,
                   quantityForApproval: deductQty
-                });
+                }, { transaction });
                 await models.StockTransfer.create({
                   transferNumber,
                   fromStoreId: element?.fromStore,
@@ -417,7 +421,7 @@ async function stockTransfer(req, res) {
                   isRejected: element?.toReject ? false : true,
                   approvalId: approval.id,
                   quantityForApproval: deductQty
-                });
+                }, { transaction });
 
               }
 
@@ -437,7 +441,7 @@ async function stockTransfer(req, res) {
                   approvalId: approval.id,
                   quantityForApproval: deductQty,
                   toReject: element?.toReject || false
-                });
+                }, { transaction });
               }
 
             }
@@ -456,7 +460,7 @@ async function stockTransfer(req, res) {
               isRejected: element?.isReject || false,
               approvalId: approval.id,
               quantityForApproval: -deductQty
-            });
+            }, { transaction });
 
             price += (stock.price * deductQty);
           }
@@ -477,7 +481,7 @@ async function stockTransfer(req, res) {
             approvalId: approval.id,
             quantityForApproval: -remainingQuantity,
             toReject: element?.toReject || false
-          });
+          }, { transaction });
         }
       }
 
@@ -496,7 +500,7 @@ async function stockTransfer(req, res) {
           isRejected: element?.isReject || false,
           approvalId: approval.id,
           quantityForApproval: element.quantity * (element?.conversionFactor || 1)
-        });
+        }, { transaction });
       }
 
       // Add quantity to destination store for Add operations
@@ -511,15 +515,18 @@ async function stockTransfer(req, res) {
           isRejected: element?.isReject || false,
           approvalId: approval.id,
           quantityForApproval: element.quantity * (element?.conversionFactor || 1)
-        });
+        }, { transaction });
       }
     }
+
+    await transaction.commit();
 
     res.status(201).json({
       message: inventoryHandling == 'manual' ? 'Inventory Approval Requested.' : "Stock transfer completed successfully with FIFO handling",
     });
   } catch (error) {
     console.log(error);
+    await transaction.rollback();
     res.status(500).json({
       message: "Something went wrong, please try again later!",
       error,
@@ -961,82 +968,92 @@ async function getAllStoresWithItems(req, res) {
   if (!storeIds?.length) return res.status(404).json({ message: "Store Not found." });
 
   try {
-    const storeItemsData = [];
-    for (const storeId of storeIds) {
-      // Fetch StoreItems and UOMs
-      const [storeItemsRaw, uomData] = await Promise.all([
-        models.StoreItems.findAll({
-          where: { storeId, isRejected },
-          raw: true
-        }),
-        models.UOM.findAll({ raw: true })
-      ]);
+    // Step 1: Bulk fetch StoreItems and UOMs
+    const [storeItemsRaw, uomData] = await Promise.all([
+      models.StoreItems.findAll({
+        where: { storeId: storeIds, isRejected },
+        raw: true
+      }),
+      models.UOM.findAll({ raw: true })
+    ]);
 
-      // Map UOM IDs to codes
-      const uomMap = uomData.reduce((map, uom) => {
-        map[uom.id] = uom.code;
-        return map;
-      }, {});
+    // Map UOM IDs to codes
+    const uomMap = uomData.reduce((map, uom) => {
+      map[uom.id] = uom.code;
+      return map;
+    }, {});
 
-      const itemQuantityMap = {};
-      const itemPriceMap = {};
-      const uniqueStoreItems = {};
+    // Step 2: Aggregate quantities and prices per store and item
+    const storeItemsByStore = {}; // storeId -> [itemIds]
+    const aggregatedData = {}; // storeId -> itemId -> { quantity, totalPrice, template }
+    const itemIdsSet = new Set();
 
-      for (const item of storeItemsRaw) {
-        const itemId = item.itemId;
-        const quantity = item.quantity;
-        const price = item.price;
-
-        // Aggregate quantity and price
-        itemQuantityMap[itemId] = (itemQuantityMap[itemId] || 0) + quantity;
-        if (quantity > 0) {
-          itemPriceMap[itemId] = (itemPriceMap[itemId] || 0) + (price * quantity);
-        }
-
-        // Store one instance of each item
-        if (!uniqueStoreItems[itemId]) {
-          uniqueStoreItems[itemId] = item;
-        }
+    for (const item of storeItemsRaw) {
+      const { storeId, itemId, quantity, price } = item;
+      
+      if (!aggregatedData[storeId]) {
+        aggregatedData[storeId] = {};
+        storeItemsByStore[storeId] = [];
       }
+      
+      if (!aggregatedData[storeId][itemId]) {
+        aggregatedData[storeId][itemId] = { quantity: 0, totalPrice: 0, template: item };
+        storeItemsByStore[storeId].push(itemId);
+      }
+      
+      aggregatedData[storeId][itemId].quantity += quantity;
+      if (quantity > 0) {
+        aggregatedData[storeId][itemId].totalPrice += (price * quantity);
+      }
+      itemIdsSet.add(itemId);
+    }
 
-      const itemIds = Object.keys(uniqueStoreItems);
+    const itemIds = Array.from(itemIdsSet);
 
-      // Fetch item data and alternate units in bulk
-      const [itemsData, alternateUnitsData] = await Promise.all([
-        models.Items.findAll({
-          where: { id: itemIds },
-          raw: true
-        }),
-        models.AlternateUnits.findAll({
-          where: { itemId: itemIds },
-          raw: true
-        })
-      ]);
+    // Step 3: Bulk fetch Items and AlternateUnits
+    const [itemsData, alternateUnitsData] = await Promise.all([
+      models.Items.findAll({
+        where: { id: itemIds },
+        raw: true
+      }),
+      models.AlternateUnits.findAll({
+        where: { itemId: itemIds },
+        raw: true
+      })
+    ]);
 
-      // Map alternate units by itemId
-      const alternateUnitsMap = alternateUnitsData.reduce((acc, unit) => {
-        const itemId = unit.itemId;
-        const unitWithCode = { ...unit, code: uomMap[unit.alternateUnits] || null };
-        acc[itemId] = acc[itemId] || [];
-        acc[itemId].push(unitWithCode);
-        return acc;
-      }, {});
+    // Map items by ID
+    const itemsMap = itemsData.reduce((acc, item) => {
+      acc[item.id] = item;
+      return acc;
+    }, {});
 
-      // Build final store items
-      const storeItems = itemIds.map(itemId => {
-        const baseItem = uniqueStoreItems[itemId];
+    // Map alternate units by itemId
+    const alternateUnitsMap = alternateUnitsData.reduce((acc, unit) => {
+      const itemId = unit.itemId;
+      const unitWithCode = { ...unit, code: uomMap[unit.alternateUnits] || null };
+      acc[itemId] = acc[itemId] || [];
+      acc[itemId].push(unitWithCode);
+      return acc;
+    }, {});
+
+    // Step 4: Build final result maintaining the order of storeIds
+    const storeItemsData = storeIds.map(storeId => {
+      const itemsForStore = storeItemsByStore[storeId] || [];
+      return itemsForStore.map(itemId => {
+        const aggregation = aggregatedData[storeId][itemId];
         return {
-          ...baseItem,
-          quantity: itemQuantityMap[itemId],
-          averagePrice: itemPriceMap[itemId] || 0,
+          ...aggregation.template,
+          quantity: aggregation.quantity,
+          averagePrice: aggregation.totalPrice || 0,
           itemId: {
-            ...itemsData.find(item => item.id === Number(itemId)),
+            ...itemsMap[itemId],
             alternateUnit: alternateUnitsMap[itemId] || []
           }
         };
       });
-      storeItemsData.push(storeItems);
-    }
+    });
+
     return res.status(200).json({ storeItemsData });
 
   } catch (error) {

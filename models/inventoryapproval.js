@@ -21,6 +21,7 @@ module.exports = (sequelize, DataTypes) => {
             approvalDate: DataTypes.DATE,
             batchesAssigned: DataTypes.BOOLEAN,
             comment: DataTypes.STRING,
+            productionId: DataTypes.STRING,
         },
         {
             sequelize,
