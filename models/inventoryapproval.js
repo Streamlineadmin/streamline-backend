@@ -22,6 +22,8 @@ module.exports = (sequelize, DataTypes) => {
             batchesAssigned: DataTypes.BOOLEAN,
             comment: DataTypes.STRING,
             productionId: DataTypes.STRING,
+            bulkProductionId: DataTypes.INTEGER,
+            bulkProductionNumber: DataTypes.STRING
         },
         {
             sequelize,

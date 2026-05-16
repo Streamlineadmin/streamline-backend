@@ -30,7 +30,7 @@ async function getApprovalById(req, res) {
     }
 
     let production = null;
-    if (["Finished Good", "Raw Material", "Scrap Material"].includes(approval.documentType)) {
+    if (["Finished Good", "Raw Material", "Scrap Material", "Raw Material Return"].includes(approval.documentType) || approval.documentType?.includes("Production Discarded")) {
       production = await models.Production.findByPk(approval.documentNumber, { raw: true });
       if (production) {
         const finishedGood = await models.ProductionFinishedGoods.findOne({
@@ -735,7 +735,7 @@ async function acceptRejectApproval(req, res) {
               companyId: element.companyId,
               price: stock.price,
               productionId: element.productionId,
-              productionNavigationId: element.id,
+              productionNavigationId: element.productionNavigationId,
               isRejected: element.isRejected,
               actualPrice: stock.price,
               approvalId: approval.id,
@@ -746,9 +746,19 @@ async function acceptRejectApproval(req, res) {
             price += stock.price * deductQty;
           }
 
+          let productionIds = [];
+
+          if (approval?.bulkProductionId) {
+            productionIds = await models.Production.findAll({
+              where: {
+                bulkProductionId: approval.bulkProductionId
+              },
+            });
+          }
+
           const rawMaterial = await models.ProductionRawMaterials.findOne({
             where: {
-              productionId: approval.documentNumber,
+              productionId: productionIds.length > 0 ? productionIds.map(ids => ids.id) : approval.documentNumber,
               itemId: itemIdMap[element.itemId]?.itemId
             },
 
@@ -782,9 +792,18 @@ async function acceptRejectApproval(req, res) {
       }
 
       if (approval?.documentType == 'Scrap Material') {
+        let productionIds = [];
+
+        if (approval?.bulkProductionId) {
+          productionIds = await models.Production.findAll({
+            where: {
+              bulkProductionId: approval.bulkProductionId
+            },
+          });
+        }
         const productionScrapMaterials = await models.ProductionScrapMaterials.findAll({
           where: {
-            productionId: approval.documentNumber
+            productionId: productionIds?.length > 0 ? productionIds.map(ids => ids.id) : approval.documentNumber
           },
 
           transaction: tAcceptReject
