@@ -705,6 +705,10 @@ async function getProductionById(req, res) {
             },
             raw: true
         });
+        if (production?.bulkProductionId) {
+            const bulkProd = await models.BulkProduction.findByPk(production?.bulkProductionId);
+            if (bulkProd) production.bulkProductionNumber = bulkProd?.productionId;
+        }
         const scrapBatchItems = await models.BatchItems.findAll({
             where: {
                 documentNumber: productionId,
@@ -1060,7 +1064,7 @@ async function bulkGetProductionsByIds(req, res) {
                 bom: bomsByBomId[production.bomId] || null,
                 scrapLogs: scrapLogsByProductionId[production.id] || [],
                 rawMaterials: rawMaterialsByProductionId[production.id] || [],
-                finishedGoods: finishedGoodsByProductionId[production.id] || [],
+                finishedGoods: finishedGoodsByProductionId[production.id]?.map(data => ({ ...data, productionNumber: production.productionId })) || [],
                 process: processesByProductionId[production.id] || [],
                 additionalCharges: additionalChargesByProductionId[production.id] || []
             };
@@ -1080,7 +1084,7 @@ async function bulkGetProductionsByIds(req, res) {
 async function issueRawMaterial(req, res) {
     const tIssue = await models.sequelize.transaction();
     try {
-        const { rawMaterialData, companyId, userId, by } = req.body;
+        const { rawMaterialData, companyId, userId, by, bulkProductionNumber, bulkProductionId } = req.body;
         const uoms = await models.UOM.findAll({
             where: {
                 [Op.or]: [
@@ -1128,7 +1132,9 @@ async function issueRawMaterial(req, res) {
             companyId: companyId,
             status: 1,
             approvedBy: null,
-            productionId: production?.productionId
+            productionId: production?.productionId,
+            bulkProductionId: bulkProductionId || null,
+            bulkProductionNumber: bulkProductionNumber || null
         }, { transaction: tIssue });
         const [stores, items] = await Promise.all([
             models.Store.findAll({ where: { companyId: Number(companyId) }, transaction: tIssue }),
@@ -1392,7 +1398,7 @@ async function updateCost(req, res) {
 async function updateScrapLogs(req, res) {
     const tUpdateScrap = await models.sequelize.transaction();
     try {
-        const { scrapLogs, companyId, userId, by } = req.body;
+        const { scrapLogs, companyId, userId, by, bulkProductionNumber, bulkProductionId } = req.body;
         const uoms = await models.UOM.findAll({
             where: {
                 [Op.or]: [
@@ -1434,7 +1440,9 @@ async function updateScrapLogs(req, res) {
             companyId: companyId,
             status: 1,
             approvedBy: null,
-            productionId: production?.productionId
+            productionId: production?.productionId,
+            bulkProductionId: bulkProductionId || null,
+            bulkProductionNumber: bulkProductionNumber || null
         }, { transaction: tUpdateScrap });
         for (const element of scrapLogs) {
             if (!element.value || !element.store) continue;
@@ -1534,7 +1542,9 @@ async function saveFinishedGoods(req, res) {
             userId,
             by,
             rejectQuantityCostPerUnit,
-            comments
+            comments,
+            bulkProductionId,
+            bulkProductionNumber
         } = req.body;
 
         const uoms = await models.UOM.findAll({
@@ -1575,7 +1585,9 @@ async function saveFinishedGoods(req, res) {
             companyId: companyId,
             status: 1,
             approvedBy: null,
-            productionId: production?.productionId
+            productionId: production?.productionId,
+            bulkProductionId: bulkProductionId || null,
+            bulkProductionNumber: bulkProductionNumber || null
         }, { transaction });
 
         let total = 0;
@@ -2938,6 +2950,15 @@ async function startBulkProduction(req, res) {
             transaction: tBulkProd
         });
 
+        const series = await models.DocumentSeries.findOne({
+            where: {
+                companyId: Number(companyId),
+                DocType: 'Bulk Production',
+                default: 1
+            },
+            transaction: tBulkProd
+        });
+
         const bulkProductionCount = await models.BulkProduction.count({
             where: {
                 companyId
@@ -2947,7 +2968,7 @@ async function startBulkProduction(req, res) {
 
         const parentProduction = await models.BulkProduction.create({
             companyId,
-            productionId: `BulkProduction-${bulkProductionCount + 1}`,
+            productionId: series ? series?.prefix?.toString?.() + series?.nextNumber : `BulkProduction-${bulkProductionCount + 1}`,
             status: 1
         }, { transaction: tBulkProd });
 
@@ -3162,6 +3183,10 @@ async function startBulkProduction(req, res) {
             );
         }
 
+        if (series) {
+            await series.update({ nextNumber: series.nextNumber + 1 }, { transaction: tBulkProd });
+        }
+
         await tBulkProd.commit();
         res.status(201).json({ message: 'Production Created Successfully.', data: parentProduction });
     } catch (error) {
@@ -3268,7 +3293,7 @@ async function remainingProduction(req, res) {
 async function discardProduction(req, res) {
     const t = await models.sequelize.transaction();
     try {
-        const { id, companyId, userId } = req.body;
+        const { id, companyId, userId, bulkProductionNumber, bulkProductionId } = req.body;
 
         const idsToDiscard = new Set();
         const fetchChildren = async (parentIds) => {
@@ -3345,7 +3370,8 @@ async function discardProduction(req, res) {
                 const approvalCount = await models.InventoryApproval.count({
                     where: {
                         companyId
-                    }
+                    },
+                    transaction: t
                 });
                 const approval = await models.InventoryApproval.create({
                     approvalId: `INA${approvalCount + 1}`,
@@ -3356,7 +3382,9 @@ async function discardProduction(req, res) {
                     companyId: companyId,
                     status: 1,
                     approvedBy: null,
-                    productionId: element?.productionId
+                    productionId: element?.productionId,
+                    bulkProductionId: bulkProductionId || null,
+                    bulkProductionNumber: bulkProductionNumber || null
                 }, { transaction: t });
                 approvalMap[element.productionNavigationId] = approval.id;
             }
@@ -3428,7 +3456,8 @@ async function discardProduction(req, res) {
                 const approvalCount = await models.InventoryApproval.count({
                     where: {
                         companyId
-                    }
+                    },
+                    transaction: t
                 });
                 const approval = await models.InventoryApproval.create({
                     approvalId: `INA${approvalCount + 1}`,
@@ -3439,7 +3468,9 @@ async function discardProduction(req, res) {
                     companyId: companyId,
                     status: 1,
                     approvedBy: null,
-                    productionId: element?.productionId
+                    productionId: element?.productionId,
+                    bulkProductionId: bulkProductionId || null,
+                    bulkProductionNumber: bulkProductionNumber || null
                 }, { transaction: t });
                 approvalMap[element.productionNavigationId] = approval.id;
             }
@@ -3512,7 +3543,8 @@ async function discardProduction(req, res) {
                 const approvalCount = await models.InventoryApproval.count({
                     where: {
                         companyId
-                    }
+                    },
+                    transaction: t
                 });
                 const approval = await models.InventoryApproval.create({
                     approvalId: `INA${approvalCount + 1}`,
@@ -3523,7 +3555,9 @@ async function discardProduction(req, res) {
                     companyId: companyId,
                     status: 1,
                     approvedBy: null,
-                    productionId: element?.productionId
+                    productionId: element?.productionId,
+                    bulkProductionId: bulkProductionId || null,
+                    bulkProductionNumber: bulkProductionNumber || null
                 }, { transaction: t });
                 approvalMap[element.productionNavigationId] = approval.id;
             }
@@ -3596,7 +3630,8 @@ async function discardProduction(req, res) {
                 const approvalCount = await models.InventoryApproval.count({
                     where: {
                         companyId
-                    }
+                    },
+                    transaction: t
                 });
                 const approval = await models.InventoryApproval.create({
                     approvalId: `INA${approvalCount + 1}`,
@@ -3607,7 +3642,9 @@ async function discardProduction(req, res) {
                     companyId: companyId,
                     status: 1,
                     approvedBy: null,
-                    productionId: element?.productionId
+                    productionId: element?.productionId,
+                    bulkProductionId: bulkProductionId || null,
+                    bulkProductionNumber: bulkProductionNumber || null
                 }, { transaction: t });
                 approvalMap[element.productionNavigationId] = approval.id;
             }
