@@ -30,7 +30,30 @@ async function getApprovalById(req, res) {
     }
 
     let production = null;
-    if (["Finished Good", "Raw Material", "Scrap Material", "Raw Material Return"].includes(approval.documentType) || approval.documentType?.includes("Production Discarded")) {
+    if (approval.bulkProductionId) {
+      production = await models.Production.findAll({
+        where: {
+          bulkProductionId: approval.bulkProductionId
+        }
+      });
+      if (production) {
+
+        const finishedGoods = await models.ProductionFinishedGoods.findAll({
+          where: {
+            productionId: { [Op.in]: production.map(p => p.id) }
+          },
+          raw: true
+        });
+        production = {
+          productionId: approval.documentNumber,
+          finishedGood: {
+            itemId: finishedGoods?.map(fg => fg.itemId).join(', '),
+            itemName: finishedGoods?.map(fg => fg.itemName).join(', '),
+          }
+        }
+
+      }
+    } else if (["Finished Good", "Raw Material", "Scrap Material", "Raw Material Return"].includes(approval.documentType) || approval.documentType?.includes("Production Discarded")) {
       production = await models.Production.findByPk(approval.documentNumber, { raw: true });
       if (production) {
         const finishedGood = await models.ProductionFinishedGoods.findOne({
