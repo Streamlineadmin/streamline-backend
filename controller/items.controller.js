@@ -468,11 +468,11 @@ async function getItems(req, res) {
         // Step 2: Retrieve store IDs and quantities
         const itemIds = items.map((item) => item.id);
 
-        // const storeItems = await models.StoreItems.findAll({
-        //     where: { itemId: itemIds },
-        //     attributes: ['itemId', 'storeId', 'quantity', 'isRejected'],
-        //     raw: true,
-        // });
+        const storeItems = await models.StoreItems.findAll({
+            where: { itemId: itemIds },
+            attributes: ['itemId', 'storeId', 'quantity', 'isRejected'],
+            raw: true,
+        });
 
         // Step 3: Retrieve alternate units
         const alternateUnits = await models.AlternateUnits.findAll({
@@ -483,28 +483,28 @@ async function getItems(req, res) {
 
         // Step 4: Structure the response
         const itemsWithStores = items.map((item) => {
-            // const relatedStoreItems = storeItems.filter((si) => si.itemId === item.id);
+            const relatedStoreItems = storeItems.filter((si) => si.itemId === item.id);
 
             // Group quantities by store and isRejected
-            // const storeDataMap = {};
-            // relatedStoreItems.forEach(({ storeId, quantity, isRejected }) => {
-            //     if (!storeDataMap[storeId]) {
-            //         storeDataMap[storeId] = { quantity: 0, rejectedQuantity: 0 };
-            //     }
-            //     if (isRejected) {
-            //         storeDataMap[storeId].rejectedQuantity += quantity;
-            //     } else {
-            //         storeDataMap[storeId].quantity += quantity;
-            //     }
-            // });
+            const storeDataMap = {};
+            relatedStoreItems.forEach(({ storeId, quantity, isRejected }) => {
+                if (!storeDataMap[storeId]) {
+                    storeDataMap[storeId] = { quantity: 0, rejectedQuantity: 0 };
+                }
+                if (isRejected) {
+                    storeDataMap[storeId].rejectedQuantity += quantity;
+                } else {
+                    storeDataMap[storeId].quantity += quantity;
+                }
+            });
 
-            // const stores = Object.entries(storeDataMap)
-            //     .filter(([_, data]) => data.quantity > 0 || data.rejectedQuantity > 0)
-            //     .map(([storeId, data]) => ({
-            //         storeId: parseInt(storeId),
-            //         ...(data?.quantity ? { quantity: data.quantity } : {}),
-            //         rejectedQuantity: data.rejectedQuantity,
-            //     }));
+            const stores = Object.entries(storeDataMap)
+                .filter(([_, data]) => data.quantity > 0 || data.rejectedQuantity > 0)
+                .map(([storeId, data]) => ({
+                    storeId: parseInt(storeId),
+                    ...(data?.quantity ? { quantity: data.quantity } : {}),
+                    rejectedQuantity: data.rejectedQuantity,
+                }));
 
             const itemAlternateUnits = alternateUnits
                 .filter((unit) => unit.itemId === item.id)
@@ -516,8 +516,8 @@ async function getItems(req, res) {
 
             return {
                 ...item,
-                // stores,
-                stores: [],
+                stores,
+                // stores: [],
                 alternateUnits: itemAlternateUnits,
             };
         });
