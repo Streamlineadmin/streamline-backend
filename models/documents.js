@@ -190,6 +190,9 @@ module.exports = (sequelize, DataTypes) => {
     irnDate: DataTypes.DATE,
     ackNumber: DataTypes.STRING,
     ackDate: DataTypes.STRING,
+    ewayBillValidTill: DataTypes.STRING,
+    ewayBillDate: DataTypes.STRING,
+    ewayBillNumber: DataTypes.STRING,
   }, {
     sequelize,
     modelName: 'Documents',

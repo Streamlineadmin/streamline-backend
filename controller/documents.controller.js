@@ -6132,6 +6132,145 @@ async function createEInvoice(req, res) {
   }
 }
 
+async function createEwayBillFromEInvoice(req, res) {
+  try {
+    const {
+      irn,
+      distance,
+      transMode,
+      transId,
+      transName,
+      transDocDt,
+      transDocNo,
+      vehNo,
+      vehType,
+      userName,
+      password,
+      gst,
+      documentNumber,
+      companyId,
+    } = req.body;
+
+    // =========================
+    // AUTH TOKEN GENERATION
+    // =========================
+    const authResponse = await axios.get(
+      "https://staging.perione.in/einvoice/authenticate",
+      {
+        params: {
+          email: process.env.EMAIL,
+        },
+        headers: {
+          client_id: process.env.CLIENT_ID,
+          client_secret: process.env.CLIENT_SECRET,
+          gstin: gst,
+          username: userName,
+          password: password,
+          ip_address: "192.68.45.37",
+        },
+      }
+    );
+
+    const authToken = authResponse?.data?.data?.AuthToken;
+
+    if (!authToken) {
+      return res.status(400).json({
+        message: "Failed to generate Auth Token",
+        errors: authResponse?.data?.data || authResponse?.data,
+      });
+    }
+
+    // =========================
+    // EWAY BILL PAYLOAD
+    // =========================
+    const eWayBillPayload = {
+      Irn: irn,
+      Distance: Number(distance || 0),
+      TransMode: String(transMode || "1"),
+      TransId: gst,
+      TransName: transName,
+      TransDocDt: transDocDt,
+      TransDocNo: transDocNo,
+
+      ...(String(transMode) == "1" && {
+        VehNo: vehNo,
+        VehType: vehType || "R",
+      }),
+    };
+
+    // =========================
+    // GENERATE EWAY BILL
+    // =========================
+    const response = await axios.post(
+      "https://staging.perione.in/einvoice/type/GENERATE_EWAYBILL/version/V1_03",
+      eWayBillPayload,
+      {
+        params: {
+          email: process.env.EMAIL,
+          timeout: 60000,
+        },
+        headers: {
+          "Content-Type": "application/json",
+          client_id: process.env.CLIENT_ID,
+          client_secret: process.env.CLIENT_SECRET,
+          gstin: gst,
+          username: userName,
+          password: password,
+          "auth-token": authToken,
+          ip_address: "192.68.45.37",
+        },
+      }
+    );
+
+    const ewayData = response?.data?.data;
+
+    const ewbNo = ewayData?.EwbNo || null;
+    const ewbDt = ewayData?.EwbDt || null;
+    const ewbValidTill = ewayData?.EwbValidTill || null;
+
+    if (!ewbNo) {
+      return res.status(400).json({
+        message: "E-Way Bill generation failed.",
+        errors: response?.data?.data || response?.data,
+      });
+    }
+
+    // =========================
+    // UPDATE DOCUMENT
+    // =========================
+    const existingDocument = await models.Documents.findOne({
+      where: {
+        companyId,
+        documentNumber,
+      },
+    });
+
+    if (existingDocument) {
+      await existingDocument.update({
+        ewayBillNumber: ewbNo,
+        ewayBillDate: ewbDt,
+        ewayBillValidTill: ewbValidTill,
+        ewayBillCreated: true
+      });
+    }
+
+    return res.status(200).json({
+      message: "E-Way Bill Generated Successfully.",
+      data: ewayData,
+    });
+  } catch (error) {
+    console.error(
+      "E-Way Bill Error:",
+      error.response?.data || error.message
+    );
+
+    return res.status(500).json({
+      message: "Internal Server Error",
+      error: error.response?.data || error.message,
+    });
+  }
+}
+
 const createEWayBill = async (req, res) => {
   const { document, formData } = req.body;
   try {
@@ -6492,5 +6631,6 @@ module.exports = {
   fetchCurrentDoc,
   emailDocument,
   cancelEInvoice,
-  getChallanDocumentItems
+  getChallanDocumentItems,
+  createEwayBillFromEInvoice
 };
