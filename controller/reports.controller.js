@@ -2299,7 +2299,7 @@ async function getReports(req, res) {
                 if (!acc[grnToChallanMap[curr.documentNumber]]) {
                     acc[grnToChallanMap[curr.documentNumber]] = {};
                 }
-                acc[grnToChallanMap[curr.documentNumber]][curr.uniqueId || curr.itemId] = (acc[grnToChallanMap[curr.documentNumber]][curr.uniqueId || curr.itemId] || 0) + Number(curr.receivedQuantity || 0);
+                acc[grnToChallanMap[curr.documentNumber]][curr.uniqueId || curr.itemId] = (acc[grnToChallanMap[curr.documentNumber]][curr.uniqueId || curr.itemId] || 0) + Number(curr.receivedToday || 0);
                 return acc;
             }, {});
 
