@@ -2,7 +2,7 @@
 const { Model } = require("sequelize");
 
 module.exports = (sequelize, DataTypes) => {
-  class BOMProductionProcess  extends Model {
+  class BOMProductionProcess extends Model {
     static associate(models) {
       // If you want back-refs:
       this.belongsTo(models.BOMDetails, { foreignKey: 'bomId' });
@@ -31,13 +31,18 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.INTEGER,
         allowNull: false,
       },
+      processCode: DataTypes.STRING,
+      processName: DataTypes.STRING,
+      description: DataTypes.TEXT,
+      plannedTime: DataTypes.STRING,
+      cost: DataTypes.FLOAT,
       companyId: DataTypes.INTEGER,
       userId: DataTypes.INTEGER,
       status: DataTypes.STRING,
     },
     {
       sequelize,
-      tableName: "BOMProductionsProcesses", 
+      tableName: "BOMProductionsProcesses",
       modelName: "BOMProductionProcess",
       timestamps: true,
     }

@@ -24,6 +24,11 @@ async function createBOMProductionProcess(req, res) {
       processes.map((process) => ({
         bomId,
         processId: process.processId,
+        processCode: process.processCode,
+        processName: process.processName,
+        description: process.description,
+        plannedTime: process.plannedTime,
+        cost: process.cost,
         companyId,
         status,
         userId,
@@ -83,63 +88,54 @@ async function getBOMProductionProcesses(req, res) {
 }
 
 async function updateBOMProductionProcess(req, res) {
+  const t = await models.sequelize.transaction();
+
   try {
     const { bomId, processes, companyId, userId, status } = req.body;
 
     if (!bomId || !Array.isArray(processes)) {
-      return res
-        .status(400)
-        .json({ message: "Missing or invalid bomId or processes" });
-    }
-
-    const existingProcesses = await models.BOMProductionProcess.findAll({
-      where: { bomId, companyId },
-    });
-
-    const existingProcessIds = existingProcesses.map((p) => p.processId);
-    const newProcessIds = processes.map((p) => p.processId);
-
-    const toAdd = processes
-      .map((p, index) => ({
-        ...p,
-        sequence: index + 1,
-      }))
-      .filter((p) => !existingProcessIds.includes(p.processId));
-
-    const toDelete = existingProcesses.filter(
-      (p) => !newProcessIds.includes(p.processId)
-    );
-
-    if (toAdd.length > 0) {
-      await models.BOMProductionProcess.bulkCreate(
-        toAdd.map((process) => ({
-          bomId,
-          processId: process.processId,
-          companyId,
-          status,
-          userId,
-          sequence: process.sequence,
-        }))
-      );
-    }
-
-    if (toDelete.length > 0) {
-      const deleteIds = toDelete.map((p) => p.id);
-      await models.BOMProductionProcess.destroy({
-        where: { id: deleteIds },
+      return res.status(400).json({
+        message: "Missing or invalid bomId or processes",
       });
     }
 
+    // Delete all existing processes for this BOM
+    await models.BOMProductionProcess.destroy({
+      where: { bomId, companyId },
+      transaction: t,
+    });
+
+    // Create fresh entries
+    if (processes.length > 0) {
+      await models.BOMProductionProcess.bulkCreate(
+        processes.map((process, index) => ({
+          bomId,
+          processId: process.processId,
+          processCode: process.processCode,
+          processName: process.processName,
+          description: process.description,
+          plannedTime: process.plannedTime,
+          cost: process.cost,
+          companyId,
+          status,
+          userId,
+          sequence: index + 1,
+        })),
+        { transaction: t }
+      );
+    }
+
+    await t.commit();
+
     res.status(200).json({
-      message: "BOM processes updated successfully with sequence",
-      added: toAdd.map((p) => ({
-        processId: p.processId,
-        sequence: p.sequence,
-      })),
-      deleted: toDelete.map((p) => p.processId),
+      message: "BOM processes replaced successfully",
+      total: processes.length,
     });
   } catch (error) {
+    await t.rollback();
+
     console.error("Error updating BOM processes:", error);
+
     res.status(500).json({
       message: "Failed to update BOM processes",
       error: error.message,

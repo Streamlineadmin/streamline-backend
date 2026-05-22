@@ -271,20 +271,20 @@ async function getBOMById(req, res) {
           as: "BOMProductionProcesses",
           where: { companyId },
           required: false,
-          include: [
-            {
-              model: models.ProductionProcess,
-              where: { companyId },
-              required: false,
-              attributes: [
-                "processCode",
-                "processName",
-                "description",
-                "plannedTime",
-                "cost",
-              ],
-            },
-          ],
+          // include: [
+          //   {
+          //     model: models.ProductionProcess,
+          //     where: { companyId },
+          //     required: false,
+          //     attributes: [
+          //       "processCode",
+          //       "processName",
+          //       "description",
+          //       "plannedTime",
+          //       "cost",
+          //     ],
+          //   },
+          // ],
         },
         { model: models.BOMFinishedGoods, as: "finishedGoods", where: { companyId }, required: false },
         { model: models.BOMRawMaterial, as: "rawMaterials", where: { companyId }, required: false },

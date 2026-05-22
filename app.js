@@ -167,6 +167,52 @@ app.get("/", (req, res) => {
 // Serve files from the 'uploads' folder
 app.use("/uploads", express.static("uploads"), fileRoute);
 
+app.post("/migrateBomProcess", async (req, res) => {
+  try {
+    const processes = await models.ProductionProcess.findAll({
+      raw: true,
+    });
+
+    const processMap = processes.reduce((acc, curr) => {
+      acc[curr.id] = curr;
+      return acc;
+    }, {});
+
+    const bomProcesses = await models.BOMProductionProcess.findAll({
+      raw: true,
+    });
+
+    const updateData = bomProcesses.map((process) => ({
+      id: process.id,
+      processCode: processMap[process.processId]?.processCode || null,
+      processName: processMap[process.processId]?.processName || null,
+      description: processMap[process.processId]?.description || null,
+      plannedTime: processMap[process.processId]?.plannedTime || null,
+      cost: processMap[process.processId]?.cost || null,
+    }));
+
+    await models.BOMProductionProcess.bulkCreate(updateData, {
+      updateOnDuplicate: [
+        "processCode",
+        "processName",
+        "description",
+        "plannedTime",
+        "cost",
+      ],
+    });
+
+    res.status(200).json({
+      message: "BOM processes migrated successfully",
+    });
+  } catch (error) {
+    console.error("Error occurred while migrating BOM processes:", error);
+
+    res.status(500).json({
+      error: "Internal server error",
+    });
+  }
+});
+
 app.post("/deleteCompaniesData", async (req, res) => {
   const t = await models.sequelize.transaction();
   try {

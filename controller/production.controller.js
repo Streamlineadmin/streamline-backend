@@ -52,16 +52,16 @@ async function startProduction(req, res) {
                 models.BOMAdditionalCharges.findAll({ where: { bomId: production.bomId }, transaction: tStart }),
             ]);
 
-            const productionProcessId = productionProcess.map(data => data.processId);
+            // const productionProcessId = productionProcess.map(data => data.processId);
 
-            const process = await models.ProductionProcess.findAll({
-                where: {
-                    id: {
-                        [Op.in]: productionProcessId
-                    }
-                },
-                transaction: tStart
-            });
+            // const process = await models.ProductionProcess.findAll({
+            //     where: {
+            //         id: {
+            //             [Op.in]: productionProcessId
+            //         }
+            //     },
+            //     transaction: tStart
+            // });
 
             const itemsId = [];
             scrapLogs.forEach((data) => itemsId.push(data.itemId));
@@ -168,15 +168,15 @@ async function startProduction(req, res) {
                     }, {});
 
                     const finishedGoodsQuantity = quantMap[element.id];
-                    const productionProcessId = productionProcess.map(data => data.processId);
-                    const process = await models.ProductionProcess.findAll({
-                        where: {
-                            id: {
-                                [Op.in]: productionProcessId
-                            }
-                        },
-                        transaction: tStart
-                    });
+                    // const productionProcessId = productionProcess.map(data => data.processId);
+                    // const process = await models.ProductionProcess.findAll({
+                    //     where: {
+                    //         id: {
+                    //             [Op.in]: productionProcessId
+                    //         }
+                    //     },
+                    //     transaction: tStart
+                    // });
                     const rawMaterial = childs[element.id];
                     const bulkRawMaterial = rawMaterial?.map((data) => {
                         const quantity = (childRawsMap?.[data.itemId] || 1) / childFinishedGoods[0]?.quantity;
@@ -261,7 +261,7 @@ async function startProduction(req, res) {
                         }
                     });
 
-                    const bulkProcess = process.map((data) => {
+                    const bulkProcess = productionProcess.map((data) => {
 
                         const [days, hours, minutes, seconds] = !data?.plannedTime ? [0, 0, 0, 0] : data?.plannedTime?.split(":")?.map(Number);
                         const totalMinutes = (((days * 24) + hours) * 60) + minutes;
@@ -383,7 +383,7 @@ async function startProduction(req, res) {
                 }
             });
 
-            const bulkProcess = process.map((data) => {
+            const bulkProcess = productionProcess.map((data) => {
 
                 const [days, hours, minutes, seconds] = !data?.plannedTime ? [0, 0, 0, 0] : data?.plannedTime?.split(":")?.map(Number);
                 const totalMinutes = (((days * 24) + hours) * 60) + minutes;
@@ -3012,16 +3012,16 @@ async function startBulkProduction(req, res) {
                 models.BOMAdditionalCharges.findAll({ where: { bomId: production.bomId }, transaction: tBulkProd }),
             ]);
 
-            const productionProcessId = productionProcess.map(data => data.processId);
+            // const productionProcessId = productionProcess.map(data => data.processId);
 
-            const process = await models.ProductionProcess.findAll({
-                where: {
-                    id: {
-                        [Op.in]: productionProcessId
-                    }
-                },
-                transaction: tBulkProd
-            });
+            // const process = await models.ProductionProcess.findAll({
+            //     where: {
+            //         id: {
+            //             [Op.in]: productionProcessId
+            //         }
+            //     },
+            //     transaction: tBulkProd
+            // });
 
             const itemsId = [];
             scrapLogs.forEach((data) => itemsId.push(data.itemId));
@@ -3133,7 +3133,7 @@ async function startBulkProduction(req, res) {
                 }
             });
 
-            const bulkProcess = process.map((data) => {
+            const bulkProcess = productionProcess.map((data) => {
 
                 const [days, hours, minutes, seconds] = !data?.plannedTime ? [0, 0, 0, 0] : data?.plannedTime?.split(":")?.map(Number);
                 const totalMinutes = (((days * 24) + hours) * 60) + minutes;
