@@ -2792,10 +2792,21 @@ async function removeRows(req, res) {
 
 async function viewProductionHistory(req, res) {
     try {
-        const { productionId } = req.body;
+        const { productionId, isBulkProduction = false, bulkProductionId } = req.body;
+        let productionsIds = [];
+        if (isBulkProduction && bulkProductionId) {
+            productions = await models.Production.findAll({
+                where: {
+                    bulkProductionId: Number(bulkProductionId)
+                },
+                attributes: ['id'],
+                raw: true
+            })
+            productionsIds = productions.map(p => p.id);
+        }
         const data = await models.ProductionHistory.findAll({
             where: {
-                productionId
+                productionId: isBulkProduction && bulkProductionId ? productionsIds : productionId
             },
             raw: true,
             order: [['createdAt', 'DESC']]
