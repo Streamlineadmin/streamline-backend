@@ -2614,27 +2614,44 @@ async function createDocument(req, res) {
 
       // SALES FLOW
       if (
-        ["Invoice", "Sales Return", "Credit Note", "Debit Note", "Delivery Challan", "Proforma Invoice"]
-          .includes(documentType) &&
+        [
+          "Invoice",
+          "Sales Return",
+          "Credit Note",
+          "Debit Note",
+          "Delivery Challan",
+          "Proforma Invoice",
+        ].includes(documentType) &&
         orderConfirmationNumber
       ) {
-        const salesOrder = await models.Documents.findOne({
+
+        // Handle both single value and comma-separated values
+        const orderNumbers = orderConfirmationNumber
+          .split(",")
+          .map(item => item.trim())
+          .filter(Boolean);
+
+        const salesOrders = await models.Documents.findAll({
           where: {
             companyId,
-            documentNumber: orderConfirmationNumber,
-            documentType: 'Sales Order'
+            documentNumber: orderNumbers,
+            documentType: "Sales Order",
           },
-          transaction: t
+          transaction: t,
         });
 
-        if (salesOrder) {
+        for (const salesOrder of salesOrders) {
           const linkedDocuments = isValidJSON(salesOrder.linkedDocuments) || [];
+
           if (!linkedDocuments.includes(documentNumber)) {
             linkedDocuments.push(documentNumber);
-            await salesOrder.update({ linkedDocuments }, { transaction: t });
+
+            await salesOrder.update(
+              { linkedDocuments },
+              { transaction: t }
+            );
           }
         }
-
       }
 
       if ((documentType === 'Credit Note' || documentType === 'Debit Note') && !orderConfirmationNumber) {
@@ -4392,26 +4409,47 @@ async function discardDocument(req, res) {
       }
     }
     if (
-      ["Invoice", "Sales Return", "Credit Note", "Debit Note", "Delivery Challan", "Proforma Invoice"]
-        .includes(document.documentType) &&
+      [
+        "Invoice",
+        "Sales Return",
+        "Credit Note",
+        "Debit Note",
+        "Delivery Challan",
+        "Proforma Invoice",
+      ].includes(document.documentType) &&
       document.orderConfirmationNumber
     ) {
-      const salesOrder = await models.Documents.findOne({
+
+      // Handle single + comma separated order numbers
+      const orderNumbers = document.orderConfirmationNumber
+        .split(",")
+        .map(item => item.trim())
+        .filter(Boolean);
+
+      const salesOrders = await models.Documents.findAll({
         where: {
           companyId,
-          documentNumber: document.orderConfirmationNumber,
-          documentType: 'Sales Order'
+          documentNumber: orderNumbers,
+          documentType: "Sales Order",
         },
-        transaction: t
+        transaction: t,
       });
 
-      if (salesOrder && Array.isArray(isValidJSON(salesOrder.linkedDocuments))) {
-        const updatedLinkedDocuments = isValidJSON(salesOrder.linkedDocuments)
-          .filter(docNo => docNo !== document.documentNumber);
+      for (const salesOrder of salesOrders) {
+        const linkedDocuments = isValidJSON(salesOrder.linkedDocuments);
 
-        // Update only if something changed
-        if (updatedLinkedDocuments.length !== isValidJSON(salesOrder.linkedDocuments).length) {
-          await salesOrder.update({ linkedDocuments: updatedLinkedDocuments }, { transaction: t });
+        if (Array.isArray(linkedDocuments)) {
+          const updatedLinkedDocuments = linkedDocuments.filter(
+            docNo => docNo !== document.documentNumber
+          );
+
+          // Update only if changed
+          if (updatedLinkedDocuments.length !== linkedDocuments.length) {
+            await salesOrder.update(
+              { linkedDocuments: updatedLinkedDocuments },
+              { transaction: t }
+            );
+          }
         }
       }
     }
