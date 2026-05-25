@@ -112,116 +112,193 @@ async function addTeam(req, res) {
 }
 
 
-// function editTeam(req, res) {
+// async function editTeam(req, res) {
 //     const teamId = req.body.teamId;
 //     const companyId = req.body.companyId;
+//     const ip_address = req.body.ip_address;
 //     const updatedTeamData = {
 //         companyId,
 //         name: req.body.name,
 //         description: req.body.description,
-//         ip_address: req.body.ip_address,
-//         status: req.body.status || 1  // Defaults to 1 if not provided
+//         ip_address,
+//         status: req.body.status || 1
 //     };
+//     const rolePermissions = req.body.rolePermissions || [];
 
-//     // Check if the team name already exists for the given company but exclude the current team
-//     models.Teams.findOne({
-//         where: { name: req.body.name, companyId, id: { [models.Sequelize.Op.ne]: teamId } }
-//     }).then(existingTeam => {
+//     try {
+//         // Check if a different team with the same name already exists
+//         const existingTeam = await models.Teams.findOne({
+//             where: {
+//                 name: req.body.name,
+//                 companyId,
+//                 id: { [models.Sequelize.Op.ne]: teamId }
+//             }
+//         });
+
 //         if (existingTeam) {
-//             // If a team with the same name already exists for the company
 //             return res.status(409).json({
 //                 message: "Team name already exists for this company!",
 //             });
-//         } else {
-//             // Proceed with the update
-//             models.Teams.update(updatedTeamData, { where: { id: teamId } })
-//                 .then(result => {
-//                     if (result[0] > 0) {
-//                         res.status(200).json({
-//                             message: "Team updated successfully",
-//                             post: updatedTeamData
-//                         });
-//                     } else {
-//                         res.status(404).json({
-//                             message: "Team not found"
-//                         });
-//                     }
-//                 })
-//                 .catch(error => {
-//                     res.status(500).json({
-//                         message: "Something went wrong, please try again later!",
-//                         error: error.message || error
-//                     });
-//                 });
 //         }
-//     }).catch(error => {
-//         res.status(500).json({
+
+//         // Update the team
+//         const result = await models.Teams.update(updatedTeamData, { where: { id: teamId } });
+
+//         if (result[0] === 0) {
+//             return res.status(404).json({ message: "Team not found" });
+//         }
+
+//         // Delete existing RolePermissions
+//         await models.RolePermissions.destroy({ where: { role: teamId } });
+
+//         const rolePermissionInserts = []; // ✅ Declare this array
+
+//         for (const perm of rolePermissions) {
+//             const feature = await models.PermissionsFeatures.findOne({
+//                 where: { feature: perm.feature }
+//             });
+
+//             if (!feature) continue;
+
+//             for (const sub of perm.subFeature) {
+//                 const subFeature = await models.PermissionsSubFeatures.findOne({
+//                     where: { subfeature: sub.name, parent: feature.id }
+//                 });
+
+//                 if (!subFeature) continue;
+
+//                 rolePermissionInserts.push({
+//                     role: teamId,
+//                     companyId,
+//                     permission: feature.id,
+//                     subpermission: subFeature.id,
+//                     create: sub.create || 0,
+//                     view: sub.view || 0,
+//                     edit: sub.edit || 0,
+//                     delete: sub.delete || 0,
+//                     ip_address,
+//                     status: 1
+//                 });
+//             }
+//         }
+
+//         // Bulk insert
+//         if (rolePermissionInserts.length > 0) {
+//             await models.RolePermissions.bulkCreate(rolePermissionInserts);
+//         }
+
+//         return res.status(200).json({
+//             message: "Team and permissions updated successfully",
+//             team: updatedTeamData,
+//         });
+
+//     } catch (error) {
+//         return res.status(500).json({
 //             message: "Something went wrong, please try again later!",
 //             error: error.message || error
 //         });
-//     });
+//     }
 // }
 
 async function editTeam(req, res) {
-    const teamId = req.body.teamId;
-    const companyId = req.body.companyId;
-    const ip_address = req.body.ip_address;
-    const updatedTeamData = {
-        companyId,
-        name: req.body.name,
-        description: req.body.description,
-        ip_address,
-        status: req.body.status || 1
-    };
-    const rolePermissions = req.body.rolePermissions || [];
-
+    const transaction = await models.sequelize.transaction();
     try {
-        // Check if a different team with the same name already exists
+        const {
+            teamId,
+            companyId,
+            ip_address,
+            name,
+            description,
+            status = 1,
+            rolePermissions = []
+        } = req.body;
+
+        // Check duplicate team name
         const existingTeam = await models.Teams.findOne({
             where: {
-                name: req.body.name,
+                name,
                 companyId,
-                id: { [models.Sequelize.Op.ne]: teamId }
-            }
+                id: {
+                    [Op.ne]: teamId
+                }
+            },
+            transaction
         });
 
         if (existingTeam) {
+            await transaction.rollback();
+
             return res.status(409).json({
-                message: "Team name already exists for this company!",
+                message: "Team name already exists for this company!"
             });
         }
 
-        // Update the team
-        const result = await models.Teams.update(updatedTeamData, { where: { id: teamId } });
+        // Update Team
+        const [updatedRows] = await models.Teams.update(
+            {
+                companyId,
+                name,
+                description,
+                ip_address,
+                status
+            },
+            {
+                where: { id: teamId },
+                transaction
+            }
+        );
 
-        if (result[0] === 0) {
-            return res.status(404).json({ message: "Team not found" });
+        if (updatedRows === 0) {
+            await transaction.rollback();
+
+            return res.status(404).json({
+                message: "Team not found"
+            });
         }
 
-        // Delete existing RolePermissions
-        await models.RolePermissions.destroy({ where: { role: teamId } });
+        // Fetch all features
+        const features = await models.PermissionsFeatures.findAll({
+            raw: true,
+            transaction
+        });
 
-        const rolePermissionInserts = []; // ✅ Declare this array
+        const featureMap = {};
+        features.forEach(feature => {
+            featureMap[feature.feature] = feature.id;
+        });
+
+        // Fetch all subfeatures
+        const subFeatures = await models.PermissionsSubFeatures.findAll({
+            raw: true,
+            transaction
+        });
+
+        const subFeatureMap = {};
+
+        subFeatures.forEach(sub => {
+            const key = `${sub.parent}_${sub.subfeature}`;
+            subFeatureMap[key] = sub.id;
+        });
+
+        // Prepare inserts
+        const rolePermissionInserts = [];
 
         for (const perm of rolePermissions) {
-            const feature = await models.PermissionsFeatures.findOne({
-                where: { feature: perm.feature }
-            });
+            const featureId = featureMap[perm.feature];
 
-            if (!feature) continue;
+            if (!featureId) continue;
 
-            for (const sub of perm.subFeature) {
-                const subFeature = await models.PermissionsSubFeatures.findOne({
-                    where: { subfeature: sub.name, parent: feature.id }
-                });
+            for (const sub of perm.subFeature || []) {
+                const subFeatureId =
+                    subFeatureMap[`${featureId}_${sub.name}`];
 
-                if (!subFeature) continue;
+                if (!subFeatureId) continue;
 
                 rolePermissionInserts.push({
                     role: teamId,
                     companyId,
-                    permission: feature.id,
-                    subpermission: subFeature.id,
+                    permission: featureId,
+                    subpermission: subFeatureId,
                     create: sub.create || 0,
                     view: sub.view || 0,
                     edit: sub.edit || 0,
@@ -232,26 +309,37 @@ async function editTeam(req, res) {
             }
         }
 
-        // Bulk insert
-        if (rolePermissionInserts.length > 0) {
-            await models.RolePermissions.bulkCreate(rolePermissionInserts);
+        // Delete old permissions
+        await models.RolePermissions.destroy({
+            where: {
+                role: teamId
+            },
+            transaction
+        });
+
+        // Bulk insert new permissions
+        if (rolePermissionInserts.length) {
+            await models.RolePermissions.bulkCreate(
+                rolePermissionInserts,
+                { transaction }
+            );
         }
 
+        await transaction.commit();
+
         return res.status(200).json({
-            message: "Team and permissions updated successfully",
-            team: updatedTeamData,
+            message: "Team and permissions updated successfully"
         });
 
     } catch (error) {
+        await transaction.rollback();
+
         return res.status(500).json({
             message: "Something went wrong, please try again later!",
             error: error.message || error
         });
     }
 }
-
-
-
 
 function deleteTeam(req, res) {
     const teamId = req.body.teamId;  // Assuming the team ID is passed as a URL parameter

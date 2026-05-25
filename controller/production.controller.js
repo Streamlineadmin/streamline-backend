@@ -444,7 +444,7 @@ async function startProduction(req, res) {
 
 async function getProductions(req, res) {
     try {
-        const { companyId, endDate, startDate, isDiscard, status } = req.body;
+        const { companyId, endDate, startDate, isDiscard, status, requestedBy } = req.body;
         let finalStartDate;
         let finalEndDate;
 
@@ -498,7 +498,8 @@ async function getProductions(req, res) {
                 },
                 createdAt: {
                     [Op.between]: [finalStartDate, finalEndDate]
-                }
+                },
+                ...(requestedBy ? { [Op.or]: [{ assignedTo: requestedBy }, { createdBy: requestedBy }] } : {})
             },
             raw: true
         });
@@ -591,7 +592,7 @@ async function getProductions(req, res) {
 
 async function getBulkProductions(req, res) {
     try {
-        const { companyId, startDate, endDate, isDiscard, status } = req.body;
+        const { companyId, startDate, endDate, isDiscard, status, requestedBy } = req.body;
         let finalStartDate;
         let finalEndDate;
 
@@ -632,7 +633,8 @@ async function getBulkProductions(req, res) {
                 },
                 status: {
                     [Op.ne]: 0
-                }
+                },
+                ...(requestedBy ? { [Op.or]: [{ assignedTo: requestedBy }, { createdBy: requestedBy }] } : {})
             },
             raw: true
         });

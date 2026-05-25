@@ -9,6 +9,25 @@ const nodemailer = require('nodemailer');
 const path = require("path");
 const fs = require("fs");
 
+function buildJsonLikeSearch(columnName, values) {
+  const searchValues = (Array.isArray(values) ? values : [values])
+    .filter(value => typeof value === 'string' && value.trim() !== '')
+    .map(value => value.trim().toLowerCase());
+
+  if (!searchValues.length) {
+    return {};
+  }
+
+  return {
+    [Op.or]: searchValues.map(value =>
+      where(
+        fn("LOWER", cast(col(columnName), "text")),
+        { [Op.like]: `%${value}%` }
+      )
+    ),
+  };
+}
+
 async function createDocument(req, res) {
   const t = await models.sequelize.transaction();
   try {
@@ -2998,7 +3017,7 @@ async function createDocument(req, res) {
 async function getDocuments(req, res) {
   try {
 
-    const { companyId, documentNumber, buyerName, field, counts, createdBy, approvedBy, requestedBy, currentPage, labels, pageSize, documentType = '', search = '', dealStatus, docTypeFilter, dateRange } = req.body;
+    const { companyId, linkedDocuments, documentNumber, buyerName, field, counts, createdBy, approvedBy, requestedBy, currentPage, labels, pageSize, documentType = '', search = '', dealStatus, docTypeFilter, dateRange } = req.body;
 
     const offset = ((currentPage || 1) - 1) * (pageSize || 10);
     let documentstype = [];
@@ -3038,6 +3057,7 @@ async function getDocuments(req, res) {
         where: {
           companyId,
           ...dateFilter,
+          ...buildJsonLikeSearch('linkedDocuments', linkedDocuments),
           ...(docTypeFilter?.length > 0 ? !createdBy ? {
             documentType: {
               [Op.in]: docTypeFilter,
@@ -3096,6 +3116,7 @@ async function getDocuments(req, res) {
         where: {
           companyId,
           ...dateFilter,
+          ...buildJsonLikeSearch('linkedDocuments', linkedDocuments),
           ...(documentstype.length > 0 && {
             documentType: {
               [Op.in]: documentstype
@@ -5143,7 +5164,6 @@ async function editDocument(req, res) {
       additionalDetails,
       signature,
       companyId,
-      createdBy,
       status: requestForApproval ? 29 : status,
       ip_address,
       paymentDate,
