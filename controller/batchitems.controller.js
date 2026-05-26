@@ -143,7 +143,7 @@ async function getBatchByItems(req, res) {
 
 async function updateBatchByItems(req, res) {
     try {
-        const { batchItems, documentNumber, companyId } = req.body;
+        const { batchItems, documentNumber, companyId, productionId, by } = req.body;
         if (documentNumber) {
             await models.Documents.update({ isBatchAssigned: true }, {
                 where: {
@@ -179,6 +179,13 @@ async function updateBatchByItems(req, res) {
                         consumedQuantity: (batchItem.consumedQuantity || 0) + element.consumedToday
                     });
                 }
+                if (productionId && by) {
+                    await models.ProductionHistory.create({
+                        productionId: Number(productionId),
+                        actionType: 'Batch consumed.',
+                        summary: `${element?.itemName} - ${element?.consumedToday} quantity consumed from batch ${element?.barCode} by ${by}`
+                    });
+                }
             }
         }
 
@@ -192,15 +199,19 @@ async function updateBatchByItems(req, res) {
 async function createSelectBatches(req, res) {
     const t = await models.sequelize.transaction();
     try {
-        const { companyId, userId, getBatchData, productionId, approvalId, batchData, addBatchData, batches, documentNumber, documentType, store } = req.body;
+        const { companyId, userId, by, getBatchData, productionId, approvalId, batchData, addBatchData, batches, documentNumber, documentType, store } = req.body;
 
         if (batchData && Array.isArray(batchData) && batchData?.length) {
             const batchItems = [];
             let prefix = '', nextNumber = 0;
             for (const element of batchData) {
+                let batchCodeNumbers = [];
+                let totalQuantity = 0;
                 for (const batch of element.batchItems) {
                     prefix = batch.barCodeNumber?.prefix;
                     nextNumber = batch.barCodeNumber?.number + 1;
+                    totalQuantity += batch.quantity;
+                    batchCodeNumbers.push(prefix + nextNumber);
                     batchItems.push({
                         companyId: Number(companyId),
                         createdBy: Number(userId),
@@ -217,6 +228,13 @@ async function createSelectBatches(req, res) {
                         status: 1,
                         isRejected: batch?.isRejected || false
                     });
+                }
+                if (by && batchCodeNumbers.length > 0 && totalQuantity > 0) {
+                    await models.ProductionHistory.create({
+                        productionId: Number(productionId),
+                        actionType: 'Batch created.',
+                        summary: `${element?.itemName} - ${element.batchItems?.length} batch${element.batchItems?.length > 1 ? 'es' : ''} created ${batchCodeNumbers.join(", ")} for ${element?.isRejected ? 'rejected' : 'approved'} item with total quantity ${totalQuantity} by ${by}`
+                    }, { transaction: t });
                 }
             }
             if (batchItems.length) {

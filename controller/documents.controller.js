@@ -9,6 +9,25 @@ const nodemailer = require('nodemailer');
 const path = require("path");
 const fs = require("fs");
 
+function buildJsonLikeSearch(columnName, values) {
+  const searchValues = (Array.isArray(values) ? values : [values])
+    .filter(value => typeof value === 'string' && value.trim() !== '')
+    .map(value => value.trim().toLowerCase());
+
+  if (!searchValues.length) {
+    return {};
+  }
+
+  return {
+    [Op.or]: searchValues.map(value =>
+      where(
+        fn("LOWER", cast(col(columnName), "text")),
+        { [Op.like]: `%${value}%` }
+      )
+    ),
+  };
+}
+
 async function createDocument(req, res) {
   const t = await models.sequelize.transaction();
   try {
@@ -229,7 +248,7 @@ async function createDocument(req, res) {
       purchaseOrderNumber,
       purchaseOrderDate,
       grn_number,
-      grn_Date,
+      grn_Date: grn_number ? grn_Date : null,
       indent_number,
       indent_date,
       supplier_invoice_number,
@@ -333,7 +352,7 @@ async function createDocument(req, res) {
       purchaseOrderNumber,
       purchaseOrderDate,
       grn_number,
-      grn_Date,
+      grn_Date: grn_number ? grn_Date : null,
       indent_number,
       indent_date,
       supplier_invoice_number,
@@ -2614,27 +2633,44 @@ async function createDocument(req, res) {
 
       // SALES FLOW
       if (
-        ["Invoice", "Sales Return", "Credit Note", "Debit Note", "Delivery Challan", "Proforma Invoice"]
-          .includes(documentType) &&
+        [
+          "Invoice",
+          "Sales Return",
+          "Credit Note",
+          "Debit Note",
+          "Delivery Challan",
+          "Proforma Invoice",
+        ].includes(documentType) &&
         orderConfirmationNumber
       ) {
-        const salesOrder = await models.Documents.findOne({
+
+        // Handle both single value and comma-separated values
+        const orderNumbers = orderConfirmationNumber
+          .split(",")
+          .map(item => item.trim())
+          .filter(Boolean);
+
+        const salesOrders = await models.Documents.findAll({
           where: {
             companyId,
-            documentNumber: orderConfirmationNumber,
-            documentType: 'Sales Order'
+            documentNumber: orderNumbers,
+            documentType: "Sales Order",
           },
-          transaction: t
+          transaction: t,
         });
 
-        if (salesOrder) {
+        for (const salesOrder of salesOrders) {
           const linkedDocuments = isValidJSON(salesOrder.linkedDocuments) || [];
+
           if (!linkedDocuments.includes(documentNumber)) {
             linkedDocuments.push(documentNumber);
-            await salesOrder.update({ linkedDocuments }, { transaction: t });
+
+            await salesOrder.update(
+              { linkedDocuments },
+              { transaction: t }
+            );
           }
         }
-
       }
 
       if ((documentType === 'Credit Note' || documentType === 'Debit Note') && !orderConfirmationNumber) {
@@ -2981,7 +3017,7 @@ async function createDocument(req, res) {
 async function getDocuments(req, res) {
   try {
 
-    const { companyId, documentNumber, buyerName, field, counts, createdBy, approvedBy, requestedBy, currentPage, labels, pageSize, documentType = '', search = '', dealStatus, docTypeFilter, dateRange } = req.body;
+    const { companyId, linkedDocuments, documentNumber, buyerName, field, counts, createdBy, approvedBy, requestedBy, currentPage, labels, pageSize, documentType = '', search = '', dealStatus, docTypeFilter, dateRange } = req.body;
 
     const offset = ((currentPage || 1) - 1) * (pageSize || 10);
     let documentstype = [];
@@ -3021,6 +3057,7 @@ async function getDocuments(req, res) {
         where: {
           companyId,
           ...dateFilter,
+          ...buildJsonLikeSearch('linkedDocuments', linkedDocuments),
           ...(docTypeFilter?.length > 0 ? !createdBy ? {
             documentType: {
               [Op.in]: docTypeFilter,
@@ -3079,6 +3116,7 @@ async function getDocuments(req, res) {
         where: {
           companyId,
           ...dateFilter,
+          ...buildJsonLikeSearch('linkedDocuments', linkedDocuments),
           ...(documentstype.length > 0 && {
             documentType: {
               [Op.in]: documentstype
@@ -4392,26 +4430,47 @@ async function discardDocument(req, res) {
       }
     }
     if (
-      ["Invoice", "Sales Return", "Credit Note", "Debit Note", "Delivery Challan", "Proforma Invoice"]
-        .includes(document.documentType) &&
+      [
+        "Invoice",
+        "Sales Return",
+        "Credit Note",
+        "Debit Note",
+        "Delivery Challan",
+        "Proforma Invoice",
+      ].includes(document.documentType) &&
       document.orderConfirmationNumber
     ) {
-      const salesOrder = await models.Documents.findOne({
+
+      // Handle single + comma separated order numbers
+      const orderNumbers = document.orderConfirmationNumber
+        .split(",")
+        .map(item => item.trim())
+        .filter(Boolean);
+
+      const salesOrders = await models.Documents.findAll({
         where: {
           companyId,
-          documentNumber: document.orderConfirmationNumber,
-          documentType: 'Sales Order'
+          documentNumber: orderNumbers,
+          documentType: "Sales Order",
         },
-        transaction: t
+        transaction: t,
       });
 
-      if (salesOrder && Array.isArray(isValidJSON(salesOrder.linkedDocuments))) {
-        const updatedLinkedDocuments = isValidJSON(salesOrder.linkedDocuments)
-          .filter(docNo => docNo !== document.documentNumber);
+      for (const salesOrder of salesOrders) {
+        const linkedDocuments = isValidJSON(salesOrder.linkedDocuments);
 
-        // Update only if something changed
-        if (updatedLinkedDocuments.length !== isValidJSON(salesOrder.linkedDocuments).length) {
-          await salesOrder.update({ linkedDocuments: updatedLinkedDocuments }, { transaction: t });
+        if (Array.isArray(linkedDocuments)) {
+          const updatedLinkedDocuments = linkedDocuments.filter(
+            docNo => docNo !== document.documentNumber
+          );
+
+          // Update only if changed
+          if (updatedLinkedDocuments.length !== linkedDocuments.length) {
+            await salesOrder.update(
+              { linkedDocuments: updatedLinkedDocuments },
+              { transaction: t }
+            );
+          }
         }
       }
     }
@@ -5105,7 +5164,6 @@ async function editDocument(req, res) {
       additionalDetails,
       signature,
       companyId,
-      createdBy,
       status: requestForApproval ? 29 : status,
       ip_address,
       paymentDate,
@@ -5134,7 +5192,7 @@ async function editDocument(req, res) {
       purchaseOrderNumber,
       purchaseOrderDate,
       grn_number,
-      grn_Date,
+      grn_Date: grn_number ? grn_Date : null,
       indent_number,
       indent_date,
       supplier_invoice_number,
