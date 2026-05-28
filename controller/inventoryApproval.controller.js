@@ -94,7 +94,7 @@ async function getApprovalById(req, res) {
       storeItemMap[false] = {};
       storeItemMap[true] = {};
       for (const element of storeItem) {
-        const isRejected = element.isRejected || false;
+        const isRejected = !!element.isRejected;
         element.quantity = Math.abs(element.quantity) || 0;
         element.quantityForApproval = Math.abs(element.quantityForApproval) || 0;
         if (!storeItemMap?.[isRejected]?.[element?.itemId]) {
@@ -122,7 +122,7 @@ async function getApprovalById(req, res) {
         element.quantity = Math.abs(element.quantity) || 0;
         element.quantityForApproval = Math.abs(element.quantityForApproval) || 0;
         const storeId = element?.toStoreId || element?.fromStoreId;
-        const isRejected = element.isRejected || false;
+        const isRejected = !!element.isRejected;
         if (!storeItemMap?.[storeId]) {
           storeItemMap[storeId] = {};
         }
