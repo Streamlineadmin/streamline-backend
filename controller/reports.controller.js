@@ -2403,7 +2403,7 @@ async function getReports(req, res) {
                 productionNavigationId: productionsMap[challan.serviceOrderNumber]?.id || '',
                 serviceChallanQuantity: challan.quantity,
                 grnQuantity: grnItemsMap[challan.documentNumber]?.[challan.uniqueId || challan.itemId] || 0,
-                grnPendingQuantity: Math.max(Number(challan.quantity || 0) - (grnItemsMap[challan.documentNumber]?.[challan.uniqueId || challan.itemId] || 0), 0)
+                serviceGrnPendingQuantity: Math.max(Number(challan.quantity || 0) - (grnItemsMap[challan.documentNumber]?.[challan.uniqueId || challan.itemId] || 0), 0)
             }))
 
             return res.status(200).json({ data, total: data?.length });
