@@ -21,4 +21,5 @@ router.post("/stockLevelAnalysis", dashboardController.stockLevelAnalysis);
 router.post("/stockAgeing", dashboardController.stockAgeing);
 router.post("/onTimeDelayProduction", dashboardController.onTimeDelayProduction);
 router.post("/workOrderStatus", dashboardController.workOrderStatus);
+router.post("/getSalesDashboardDetails", dashboardController.getSalesDashboardDetails);
 module.exports = router;
