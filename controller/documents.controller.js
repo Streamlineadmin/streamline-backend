@@ -1654,18 +1654,23 @@ async function createDocument(req, res) {
     }
 
     if (status && documentType === documentTypes.salesReturn && orderConfirmationNumber) {
-      const salesOrder = await models.Documents.findOne({
+      const orderConfirmationNumbers = orderConfirmationNumber.split(',').map(num => num.trim()).filter(Boolean);
+      const salesOrders = await models.Documents.findAll({
         where: {
           companyId,
-          documentNumber: orderConfirmationNumber
+          documentNumber: {
+            [Op.in]: orderConfirmationNumbers
+          }
         },
-        attributes: ['status', 'id'],
+        attributes: ['status', 'id', 'documentNumber'],
         transaction: t
       });
       const salesItems = await models.DocumentItems.findAll({
         where: {
           companyId,
-          documentNumber: orderConfirmationNumber
+          documentNumber: {
+            [Op.in]: orderConfirmationNumbers
+          }
         },
         raw: true,
         attributes: ['quantity', 'itemId', 'uniqueId'],
@@ -1680,19 +1685,23 @@ async function createDocument(req, res) {
         where: {
           companyId,
           documentType: 'Sales Return',
-          orderConfirmationNumber,
           status: {
             [Op.notIn]: [0, 2]
           }
         },
         raw: true,
-        attributes: ['documentNumber'],
+        attributes: ['documentNumber', 'orderConfirmationNumber'],
         transaction: t
+      });
+      const filteredPreviousReturns = previousSalesReturn.filter(doc => {
+        if (!doc.orderConfirmationNumber) return false;
+        const docNums = doc.orderConfirmationNumber.split(',').map(num => num.trim()).filter(Boolean);
+        return docNums.some(num => orderConfirmationNumbers.includes(num));
       });
       const previousSalesReturnItems = await models.DocumentItems.findAll({
         where: {
           documentNumber: {
-            [Op.in]: previousSalesReturn.map(doc => doc.documentNumber)
+            [Op.in]: filteredPreviousReturns.map(doc => doc.documentNumber)
           },
           companyId,
         },
@@ -1714,32 +1723,34 @@ async function createDocument(req, res) {
           break;
         }
       }
-      let status = 1;
-      if (salesOrder.status == 10) {
-        status = !partial ? 37 : 33;
+      for (const salesOrder of salesOrders) {
+        let status = 1;
+        if (salesOrder.status == 10) {
+          status = !partial ? 37 : 33;
+        }
+        else if (salesOrder.status == 11 || salesOrder.status == 34) {
+          status = !partial ? 38 : 34;
+        }
+        else if (salesOrder.status == 12 || salesOrder.status == 35) {
+          status = !partial ? 39 : 35;
+        }
+        else if (salesOrder.status == 13 || salesOrder.status == 36) {
+          status = !partial ? 40 : 36;
+        }
+        else if (salesOrder.status == 19 || salesOrder.status == 41) {
+          status = !partial ? 45 : 41;
+        }
+        else if (salesOrder.status == 20 || salesOrder.status == 42) {
+          status = !partial ? 46 : 42;
+        }
+        else if (salesOrder.status == 21 || salesOrder.status == 43) {
+          status = !partial ? 47 : 43;
+        }
+        else if (salesOrder.status == 22 || salesOrder.status == 44) {
+          status = !partial ? 48 : 44;
+        }
+        await salesOrder.update({ status }, { transaction: t });
       }
-      else if (salesOrder.status == 11 || salesOrder.status == 34) {
-        status = !partial ? 38 : 34;
-      }
-      else if (salesOrder.status == 12 || salesOrder.status == 35) {
-        status = !partial ? 39 : 35;
-      }
-      else if (salesOrder.status == 13 || salesOrder.status == 36) {
-        status = !partial ? 40 : 36;
-      }
-      else if (salesOrder.status == 19 || salesOrder.status == 41) {
-        status = !partial ? 45 : 41;
-      }
-      else if (salesOrder.status == 20 || salesOrder.status == 42) {
-        status = !partial ? 46 : 42;
-      }
-      else if (salesOrder.status == 21 || salesOrder.status == 43) {
-        status = !partial ? 47 : 43;
-      }
-      else if (salesOrder.status == 22 || salesOrder.status == 44) {
-        status = !partial ? 48 : 44;
-      }
-      await salesOrder.update({ status }, { transaction: t });
     }
 
     if (status && documentType === documentTypes.goodsReceive) {
