@@ -496,7 +496,7 @@ function convertStatus(statusCode) {
 
 async function getDashboardData(req, res) {
     try {
-        const { companyId, dataFor, start, end, assignedTo, salesOrderNumber } = req.body;
+        const { companyId, dataFor, start, end, assignedTo, salesOrderNumber, salesBasis, topSellingBasis } = req.body;
         if (dataFor === 'Production') {
             const items = await models.Items.findAll({
                 where: {
@@ -784,6 +784,238 @@ async function getDashboardData(req, res) {
                 stockAgeingMap,
                 fastSlowMovingMap,
                 wipCost
+            });
+        }
+        if (dataFor === "Sales") {
+            const parseDateString = (str) => {
+                if (!str) return null;
+                let d = new Date(str);
+                if (!isNaN(d.getTime())) return d;
+                // Try parsing DD/MM/YYYY
+                const parts = String(str).split('/');
+                if (parts.length === 3) {
+                    const day = parseInt(parts[0], 10);
+                    const month = parseInt(parts[1], 10) - 1;
+                    const year = parseInt(parts[2], 10);
+                    d = new Date(year, month, day);
+                    if (!isNaN(d.getTime())) return d;
+                }
+                return null;
+            };
+
+            const now = new Date();
+            let startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+            let endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+
+            if (start && end) {
+                const parsedStart = new Date(start);
+                const parsedEnd = new Date(end);
+                if (!isNaN(parsedStart.getTime()) && !isNaN(parsedEnd.getTime())) {
+                    startOfMonth = parsedStart;
+                    endOfMonth = parsedEnd;
+                }
+            }
+
+            const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+            const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+
+            // 1. Sales This month (invoice basics)
+            const invoices = await models.Documents.findAll({
+                where: {
+                    companyId: Number(companyId),
+                    documentType: salesBasis || 'Invoice',
+                    status: {
+                        [Op.ne]: 0
+                    },
+                    createdAt: {
+                        [Op.between]: [startOfMonth, endOfMonth]
+                    }
+                },
+                attributes: ['documentNumber'],
+                raw: true
+            });
+
+            const invoiceNumbers = invoices.map(inv => inv.documentNumber);
+            let salesThisMonth = 0;
+            if (invoiceNumbers.length > 0) {
+                const invoiceItems = await models.DocumentItems.findAll({
+                    where: {
+                        companyId: Number(companyId),
+                        documentNumber: {
+                            [Op.in]: invoiceNumbers
+                        }
+                    },
+                    attributes: ['totalAfterTax'],
+                    raw: true
+                });
+                salesThisMonth = invoiceItems.reduce((acc, curr) => acc + (parseFloat(curr.totalAfterTax) || 0), 0);
+            }
+
+            // 2. Sales Order Count This month
+            const salesOrderCount = await models.Documents.count({
+                where: {
+                    companyId: Number(companyId),
+                    documentType: 'Sales Order',
+                    status: {
+                        [Op.ne]: 0
+                    },
+                    createdAt: {
+                        [Op.between]: [startOfMonth, endOfMonth]
+                    }
+                }
+            });
+
+            // 3. Order dispatch status This month (On time, delay) (challan basic)
+            const challans = await models.Documents.findAll({
+                where: {
+                    companyId: Number(companyId),
+                    documentType: 'Delivery Challan',
+                    status: {
+                        [Op.ne]: 0
+                    },
+                    createdAt: {
+                        [Op.between]: [startOfMonth, endOfMonth]
+                    }
+                },
+                attributes: ['documentNumber', 'challan_date', 'deliveryDate', 'orderConfirmationNumber', 'createdAt'],
+                raw: true
+            });
+
+            let onTimeChallans = 0;
+            let delayChallans = 0;
+
+            if (challans.length > 0) {
+                const linkedOrderNumbers = [...new Set(challans.map(c => c.orderConfirmationNumber).filter(Boolean))];
+                let salesOrderMap = {};
+                if (linkedOrderNumbers.length > 0) {
+                    const salesOrders = await models.Documents.findAll({
+                        where: {
+                            companyId: Number(companyId),
+                            documentType: 'Sales Order',
+                            documentNumber: {
+                                [Op.in]: linkedOrderNumbers
+                            }
+                        },
+                        attributes: ['documentNumber', 'deliveryDate'],
+                        raw: true
+                    });
+                    salesOrderMap = salesOrders.reduce((acc, curr) => {
+                        acc[curr.documentNumber] = curr.deliveryDate;
+                        return acc;
+                    }, {});
+                }
+
+                for (const challan of challans) {
+                    const actualDate = parseDateString(challan.challan_date) || parseDateString(challan.createdAt);
+                    const expectedDateString = challan.deliveryDate || (challan.orderConfirmationNumber ? salesOrderMap[challan.orderConfirmationNumber] : null);
+                    const expectedDate = parseDateString(expectedDateString);
+
+                    if (actualDate && expectedDate) {
+                        const act = new Date(actualDate);
+                        const exp = new Date(expectedDate);
+                        act.setHours(0, 0, 0, 0);
+                        exp.setHours(0, 0, 0, 0);
+
+                        if (act > exp) {
+                            delayChallans += 1;
+                        } else {
+                            onTimeChallans += 1;
+                        }
+                    } else {
+                        onTimeChallans += 1;
+                    }
+                }
+            }
+
+            // 4. Order for today's delivery
+            const salesOrders = await models.Documents.findAll({
+                where: {
+                    companyId: Number(companyId),
+                    documentType: 'Sales Order',
+                    status: {
+                        [Op.ne]: 0
+                    }
+                },
+                attributes: ['id', 'documentNumber', 'buyerName', 'deliveryDate', 'status', 'createdAt'],
+                raw: true
+            });
+
+            const todayDeliveries = salesOrders.filter(doc => {
+                if (!doc.deliveryDate) return false;
+                const d = parseDateString(doc.deliveryDate);
+                if (!d) return false;
+                if (start && end) {
+                    return d >= startOfMonth && d <= endOfMonth;
+                } else {
+                    return d >= startOfToday && d <= endOfToday;
+                }
+            });
+
+            // 5. Top Selling item this month (show 10 by default) (Invoice or challan basic)
+            const salesDocsForTop = await models.Documents.findAll({
+                where: {
+                    companyId: Number(companyId),
+                    documentType: topSellingBasis ? topSellingBasis : {
+                        [Op.in]: ['Invoice', 'Delivery Challan']
+                    },
+                    status: {
+                        [Op.ne]: 0
+                    },
+                    createdAt: {
+                        [Op.between]: [startOfMonth, endOfMonth]
+                    }
+                },
+                attributes: ['documentNumber'],
+                raw: true
+            });
+
+            const salesDocNumbers = salesDocsForTop.map(doc => doc.documentNumber);
+            const sellingItemsMap = {};
+
+            if (salesDocNumbers.length > 0) {
+                const docItems = await models.DocumentItems.findAll({
+                    where: {
+                        companyId: Number(companyId),
+                        documentNumber: {
+                            [Op.in]: salesDocNumbers
+                        }
+                    },
+                    raw: true
+                });
+
+                for (const item of docItems) {
+                    const key = item.itemId;
+                    if (!key) continue;
+                    if (!sellingItemsMap[key]) {
+                        sellingItemsMap[key] = {
+                            itemId: key,
+                            itemName: item.itemName,
+                            quantity: 0,
+                            totalSales: 0,
+                            UOM: item.UOM
+                        };
+                    }
+                    sellingItemsMap[key].quantity += (parseFloat(item.quantity) || 0);
+                    sellingItemsMap[key].totalSales += (parseFloat(item.totalAfterTax) || 0);
+                }
+            }
+
+            const topSellingItems = Object.values(sellingItemsMap)
+                .sort((a, b) => b.quantity - a.quantity)
+                .slice(0, 10);
+
+            return res.status(200).json({
+                salesThisMonth: Number(salesThisMonth.toFixed(2)),
+                salesOrderCount,
+                deliveryChallanCount: challans.length,
+                invoiceCount: invoices.length,
+                dispatchStatus: {
+                    onTime: onTimeChallans,
+                    delay: delayChallans
+                },
+                todayDeliveriesCount: todayDeliveries.length,
+                todayDeliveries,
+                topSellingItems
             });
         }
         return res.status(200).json({});
@@ -1309,6 +1541,192 @@ async function workOrderStatus(req, res) {
     }
 }
 
+async function getSalesDashboardDetails(req, res) {
+    try {
+        const { companyId, type, start, end } = req.body;
+        if (!companyId || !type) {
+            return res.status(400).json({
+                message: "companyId and type are required"
+            });
+        }
+
+        const validTypes = ['salesOrder', 'todayDeliveries', 'deliveryChallan', 'invoice', 'onTimeChallan', 'delayChallan'];
+        if (!validTypes.includes(type)) {
+            return res.status(400).json({
+                message: "Invalid type. Must be one of: 'salesOrder', 'todayDeliveries', 'deliveryChallan', 'invoice', 'onTimeChallan', 'delayChallan'"
+            });
+        }
+
+        const now = new Date();
+        let startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+        let endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+
+        if (start && end) {
+            const parsedStart = new Date(start);
+            const parsedEnd = new Date(end);
+            if (!isNaN(parsedStart.getTime()) && !isNaN(parsedEnd.getTime())) {
+                startOfMonth = parsedStart;
+                endOfMonth = parsedEnd;
+            }
+        }
+
+        const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+        const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+
+        const parseDateString = (str) => {
+            if (!str) return null;
+            let d = new Date(str);
+            if (!isNaN(d.getTime())) return d;
+            const parts = String(str).split('/');
+            if (parts.length === 3) {
+                const day = parseInt(parts[0], 10);
+                const month = parseInt(parts[1], 10) - 1;
+                const year = parseInt(parts[2], 10);
+                d = new Date(year, month, day);
+                if (!isNaN(d.getTime())) return d;
+            }
+            return null;
+        };
+
+        let data = [];
+
+        if (type === 'salesOrder') {
+            data = await models.Documents.findAll({
+                where: {
+                    companyId: Number(companyId),
+                    documentType: 'Sales Order',
+                    status: {
+                        [Op.ne]: 0
+                    },
+                    createdAt: {
+                        [Op.between]: [startOfMonth, endOfMonth]
+                    }
+                },
+                order: [['createdAt', 'DESC']],
+                raw: true
+            });
+        } else if (type === 'todayDeliveries') {
+            const salesOrders = await models.Documents.findAll({
+                where: {
+                    companyId: Number(companyId),
+                    documentType: 'Sales Order',
+                    status: {
+                        [Op.ne]: 0
+                    }
+                },
+                order: [['createdAt', 'DESC']],
+                raw: true
+            });
+
+            data = salesOrders.filter(doc => {
+                if (!doc.deliveryDate) return false;
+                const d = parseDateString(doc.deliveryDate);
+                if (!d) return false;
+                if (start && end) {
+                    return d >= startOfMonth && d <= endOfMonth;
+                } else {
+                    return d >= startOfToday && d <= endOfToday;
+                }
+            });
+        } else if (type === 'deliveryChallan' || type === 'onTimeChallan' || type === 'delayChallan') {
+            const challans = await models.Documents.findAll({
+                where: {
+                    companyId: Number(companyId),
+                    documentType: 'Delivery Challan',
+                    status: {
+                        [Op.ne]: 0
+                    },
+                    createdAt: {
+                        [Op.between]: [startOfMonth, endOfMonth]
+                    }
+                },
+                order: [['createdAt', 'DESC']],
+                raw: true
+            });
+
+            if (type === 'deliveryChallan') {
+                data = challans;
+            } else {
+                // Fetch linked Sales Orders to map expected delivery dates
+                const linkedOrderNumbers = challans
+                    .map((doc) => doc.orderConfirmationNumber)
+                    .filter((num) => num);
+
+                let salesOrderMap = {};
+                if (linkedOrderNumbers.length > 0) {
+                    const salesOrders = await models.Documents.findAll({
+                        where: {
+                            companyId: Number(companyId),
+                            documentType: 'Sales Order',
+                            documentNumber: {
+                                [Op.in]: linkedOrderNumbers
+                            }
+                        },
+                        attributes: ['documentNumber', 'deliveryDate'],
+                        raw: true
+                    });
+                    salesOrderMap = salesOrders.reduce((acc, curr) => {
+                        acc[curr.documentNumber] = curr.deliveryDate;
+                        return acc;
+                    }, {});
+                }
+
+                const filtered = [];
+                for (const challan of challans) {
+                    const actualDate = parseDateString(challan.challan_date) || parseDateString(challan.createdAt);
+                    const expectedDateString = challan.deliveryDate || (challan.orderConfirmationNumber ? salesOrderMap[challan.orderConfirmationNumber] : null);
+                    const expectedDate = parseDateString(expectedDateString);
+
+                    let isDelay = false;
+                    if (actualDate && expectedDate) {
+                        const act = new Date(actualDate);
+                        const exp = new Date(expectedDate);
+                        act.setHours(0, 0, 0, 0);
+                        exp.setHours(0, 0, 0, 0);
+                        if (act > exp) {
+                            isDelay = true;
+                        }
+                    }
+
+                    if (type === 'delayChallan' && isDelay) {
+                        filtered.push(challan);
+                    } else if (type === 'onTimeChallan' && !isDelay) {
+                        filtered.push(challan);
+                    }
+                }
+                data = filtered;
+            }
+        } else if (type === 'invoice') {
+            data = await models.Documents.findAll({
+                where: {
+                    companyId: Number(companyId),
+                    documentType: 'Invoice',
+                    status: {
+                        [Op.ne]: 0
+                    },
+                    createdAt: {
+                        [Op.between]: [startOfMonth, endOfMonth]
+                    }
+                },
+                order: [['createdAt', 'DESC']],
+                raw: true
+            });
+        }
+
+        return res.status(200).json({
+            message: `${type} records fetched successfully`,
+            data: data
+        });
+
+    } catch (err) {
+        console.log(err);
+        res.status(500).json({
+            message: "Failed to fetch sales dashboard details",
+            error: err.message || err
+        });
+    }
+}
+
 module.exports = {
     dashboard: dashboard,
     getBuyerSupplierCount: getBuyerSupplierCount,
@@ -1328,5 +1746,6 @@ module.exports = {
     stockLevelAnalysis: stockLevelAnalysis,
     stockAgeing: stockAgeing,
     onTimeDelayProduction: onTimeDelayProduction,
-    workOrderStatus: workOrderStatus
+    workOrderStatus: workOrderStatus,
+    getSalesDashboardDetails: getSalesDashboardDetails
 };
