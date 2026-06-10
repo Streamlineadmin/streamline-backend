@@ -6880,6 +6880,36 @@ async function createEInvoice(req, res) {
 
     TotInvVal += additionalChargeTotals.othChrg;
 
+    let tcsPercent = 0;
+    let tcsApply = 'beforeTax';
+    if (document?.tcsData) {
+      const parsedTcs = isValidJSON(document.tcsData);
+      if (parsedTcs) {
+        const keys = Object.keys(parsedTcs).filter(k => k !== 'tcsApply');
+        if (keys.length > 0 && keys[0].trim().toLowerCase() === 'tcs') {
+          tcsPercent = parseFloat(parsedTcs[keys[0]]) || 0;
+        }
+        if (parsedTcs.tcsApply) {
+          tcsApply = parsedTcs.tcsApply;
+        }
+      }
+    }
+
+    const TcsVal = round2(
+      tcsPercent > 0
+        ? (tcsApply === "afterTax"
+            ? TotInvVal
+            : (AssVal + additionalChargeTotals.othChrg)) * (tcsPercent / 100)
+        : 0
+    );
+
+    additionalChargeTotals.othChrg = round2(additionalChargeTotals.othChrg + TcsVal);
+    TotInvVal = round2(TotInvVal + TcsVal);
+
+    const RndOff = document?.isRounded ? round2(Math.round(TotInvVal) - TotInvVal) : 0;
+    if (document?.isRounded) {
+      TotInvVal = Math.round(TotInvVal);
+    }
 
     const eInvoice = {
       Version: "1.1",
@@ -6957,6 +6987,7 @@ async function createEInvoice(req, res) {
         SgstVal: round2(SgstVal),
         IgstVal: round2(IgstVal),
         OthChrg: round2(additionalChargeTotals.othChrg),
+        RndOff: round2(RndOff),
         TotInvVal: round2(TotInvVal),
       },
     };
