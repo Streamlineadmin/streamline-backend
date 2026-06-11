@@ -7132,7 +7132,7 @@ async function createEwayBillFromEInvoice(req, res) {
     // =========================
     const eWayBillPayload = {
       Irn: irn,
-      Distance: Number(distance || 0),
+      Distance: 0,
       TransMode: String(transMode || "1"),
       TransId: gst,
       TransName: transName,
