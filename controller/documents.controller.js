@@ -7102,7 +7102,7 @@ async function createEwayBillFromEInvoice(req, res) {
     // AUTH TOKEN GENERATION
     // =========================
     const authResponse = await axios.get(
-      "https://staging.perione.in/einvoice/authenticate",
+      "https://api.perione.in/einvoice/authenticate",
       {
         params: {
           email: process.env.EMAIL,
@@ -7149,7 +7149,7 @@ async function createEwayBillFromEInvoice(req, res) {
     // GENERATE EWAY BILL
     // =========================
     const response = await axios.post(
-      "https://staging.perione.in/einvoice/type/GENERATE_EWAYBILL/version/V1_03",
+      "https://api.perione.in/einvoice/type/GENERATE_EWAYBILL/version/V1_03",
       eWayBillPayload,
       {
         params: {

@@ -534,13 +534,24 @@ async function getItems(req, res) {
 }
 
 async function getPaginatedItems(req, res) {
-    const { companyId, currentPage, pageSize, itemId, itemName, itemType, price, search, customFields, filters } = req.body;
+    const { companyId, currentPage, pageSize, itemId, itemName, itemType, price, search, customFields, filters, sortBy, sortOrder } = req.body;
 
     try {
+        let orderClause = [['createdAt', 'DESC']];
+        if (sortBy && sortOrder) {
+            const allowedSortFields = ['itemId', 'itemName'];
+            if (allowedSortFields.includes(sortBy)) {
+                const orderDir = (sortOrder === 'ASC' || sortOrder === 'DESC' || sortOrder === 'ascend' || sortOrder === 'descend')
+                    ? (sortOrder === 'ascend' || sortOrder === 'ASC' ? 'ASC' : 'DESC')
+                    : 'ASC';
+                orderClause = [[sortBy, orderDir]];
+            }
+        }
+
         const queryOptions = {
             where: { companyId },
             raw: true,
-            order: [['createdAt', 'DESC']]
+            order: orderClause
         };
 
         if (search) {
