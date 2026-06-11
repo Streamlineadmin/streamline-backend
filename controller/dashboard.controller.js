@@ -865,6 +865,38 @@ async function getDashboardData(req, res) {
                 }
             });
 
+            // Month wise Sales Order Count (current year)
+            const startOfYear = new Date(now.getFullYear(), 0, 1);
+            const endOfYear = new Date(now.getFullYear(), 11, 31, 23, 59, 59, 999);
+            const yearlySalesOrders = await models.Documents.findAll({
+                where: {
+                    companyId: Number(companyId),
+                    documentType: 'Sales Order',
+                    status: {
+                        [Op.ne]: 0
+                    },
+                    createdAt: {
+                        [Op.between]: [startOfYear, endOfYear]
+                    }
+                },
+                attributes: ['createdAt'],
+                raw: true
+            });
+
+            const salesMonthMap = {};
+            const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+            yearlySalesOrders.forEach((record) => {
+                const monthIndex = new Date(record.createdAt).getMonth();
+                const monthName = monthNames[monthIndex];
+                salesMonthMap[monthName] = (salesMonthMap[monthName] || 0) + 1;
+            });
+            const currentMonth = now.getMonth();
+            const sortedMonthMap = {};
+            monthNames.slice(0, currentMonth + 1).forEach((m) => {
+                if (salesMonthMap[m]) sortedMonthMap[m] = salesMonthMap[m];
+                else sortedMonthMap[m] = 0;
+            });
+
             // 3. Order dispatch status This month (On time, delay) (challan basic)
             const challans = await models.Documents.findAll({
                 where: {
@@ -1015,7 +1047,8 @@ async function getDashboardData(req, res) {
                 },
                 todayDeliveriesCount: todayDeliveries.length,
                 todayDeliveries,
-                topSellingItems
+                topSellingItems,
+                sortedMonthMap
             });
         }
         return res.status(200).json({});

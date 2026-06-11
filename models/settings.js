@@ -43,6 +43,8 @@ module.exports = (sequelize, DataTypes) => {
         subHeading: DataTypes.STRING,
         subHeading2: DataTypes.STRING,
         inventorySlipTemplate: DataTypes.STRING,
+        salesBasis: DataTypes.STRING,
+        topSalesItemsBasis: DataTypes.STRING,
     }, {
         sequelize,
         modelName: 'Settings',
