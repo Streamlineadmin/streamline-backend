@@ -496,7 +496,7 @@ function convertStatus(statusCode) {
 
 async function getDashboardData(req, res) {
     try {
-        const { companyId, dataFor, start, end, assignedTo, salesOrderNumber, salesBasis, topSellingBasis } = req.body;
+        const { companyId, dataFor, start, end, assignedTo, salesOrderNumber, salesBasis, topSellingBasis, salesYear } = req.body;
         if (dataFor === 'Production') {
             const items = await models.Items.findAll({
                 where: {
@@ -865,9 +865,10 @@ async function getDashboardData(req, res) {
                 }
             });
 
-            // Month wise Sales Order Count (current year)
-            const startOfYear = new Date(now.getFullYear(), 0, 1);
-            const endOfYear = new Date(now.getFullYear(), 11, 31, 23, 59, 59, 999);
+            // Month wise Sales Order Count (selected or current year)
+            const targetYear = salesYear ? Number(salesYear) : now.getFullYear();
+            const startOfYear = new Date(targetYear, 0, 1);
+            const endOfYear = new Date(targetYear, 11, 31, 23, 59, 59, 999);
             const yearlySalesOrders = await models.Documents.findAll({
                 where: {
                     companyId: Number(companyId),
@@ -890,15 +891,16 @@ async function getDashboardData(req, res) {
                 const monthName = monthNames[monthIndex];
                 salesMonthMap[monthName] = (salesMonthMap[monthName] || 0) + 1;
             });
-            const currentMonth = now.getMonth();
+            const isCurrentYear = targetYear === now.getFullYear();
+            const monthsToInclude = isCurrentYear ? monthNames.slice(0, now.getMonth() + 1) : monthNames;
             const sortedMonthMap = {};
-            monthNames.slice(0, currentMonth + 1).forEach((m) => {
+            monthsToInclude.forEach((m) => {
                 if (salesMonthMap[m]) sortedMonthMap[m] = salesMonthMap[m];
                 else sortedMonthMap[m] = 0;
             });
 
-            // 3. Order dispatch status This month (On time, delay) (challan basic)
-            const challans = await models.Documents.findAll({
+            // 3. Delivery Challan Count This month (to display on the cards)
+            const deliveryChallanCount = await models.Documents.count({
                 where: {
                     companyId: Number(companyId),
                     documentType: 'Delivery Challan',
@@ -908,56 +910,45 @@ async function getDashboardData(req, res) {
                     createdAt: {
                         [Op.between]: [startOfMonth, endOfMonth]
                     }
+                }
+            });
+
+            // Order dispatch status (Sales Order status mapping)
+            const dispatchSalesOrders = await models.Documents.findAll({
+                where: {
+                    companyId: Number(companyId),
+                    documentType: 'Sales Order',
+                    status: {
+                        [Op.ne]: 0
+                    },
+                    createdAt: {
+                        [Op.between]: [startOfMonth, endOfMonth]
+                    }
                 },
-                attributes: ['documentNumber', 'challan_date', 'deliveryDate', 'orderConfirmationNumber', 'createdAt'],
+                attributes: ['status'],
                 raw: true
             });
 
-            let onTimeChallans = 0;
-            let delayChallans = 0;
+            let pendingCount = 0;
+            let partiallyDeliveredCount = 0;
+            let fullyDeliveredCount = 0;
+            let cancelledCount = 0;
 
-            if (challans.length > 0) {
-                const linkedOrderNumbers = [...new Set(challans.map(c => c.orderConfirmationNumber).filter(Boolean))];
-                let salesOrderMap = {};
-                if (linkedOrderNumbers.length > 0) {
-                    const salesOrders = await models.Documents.findAll({
-                        where: {
-                            companyId: Number(companyId),
-                            documentType: 'Sales Order',
-                            documentNumber: {
-                                [Op.in]: linkedOrderNumbers
-                            }
-                        },
-                        attributes: ['documentNumber', 'deliveryDate'],
-                        raw: true
-                    });
-                    salesOrderMap = salesOrders.reduce((acc, curr) => {
-                        acc[curr.documentNumber] = curr.deliveryDate;
-                        return acc;
-                    }, {});
+            const statusPartially = [10, 19, 20, 33, 37, 41, 42, 45, 46];
+            const statusFully = [11, 21, 22, 34, 38, 43, 44, 47, 48];
+
+            dispatchSalesOrders.forEach(order => {
+                const status = order.status;
+                if (status === 2) {
+                    cancelledCount++;
+                } else if (statusPartially.includes(status)) {
+                    partiallyDeliveredCount++;
+                } else if (statusFully.includes(status)) {
+                    fullyDeliveredCount++;
+                } else {
+                    pendingCount++;
                 }
-
-                for (const challan of challans) {
-                    const actualDate = parseDateString(challan.challan_date) || parseDateString(challan.createdAt);
-                    const expectedDateString = challan.deliveryDate || (challan.orderConfirmationNumber ? salesOrderMap[challan.orderConfirmationNumber] : null);
-                    const expectedDate = parseDateString(expectedDateString);
-
-                    if (actualDate && expectedDate) {
-                        const act = new Date(actualDate);
-                        const exp = new Date(expectedDate);
-                        act.setHours(0, 0, 0, 0);
-                        exp.setHours(0, 0, 0, 0);
-
-                        if (act > exp) {
-                            delayChallans += 1;
-                        } else {
-                            onTimeChallans += 1;
-                        }
-                    } else {
-                        onTimeChallans += 1;
-                    }
-                }
-            }
+            });
 
             // 4. Order for today's delivery
             const salesOrders = await models.Documents.findAll({
@@ -1039,11 +1030,13 @@ async function getDashboardData(req, res) {
             return res.status(200).json({
                 salesThisMonth: Number(salesThisMonth.toFixed(2)),
                 salesOrderCount,
-                deliveryChallanCount: challans.length,
+                deliveryChallanCount,
                 invoiceCount: invoices.length,
                 dispatchStatus: {
-                    onTime: onTimeChallans,
-                    delay: delayChallans
+                    pending: pendingCount,
+                    partiallyDelivered: partiallyDeliveredCount,
+                    fullyDelivered: fullyDeliveredCount,
+                    cancelled: cancelledCount
                 },
                 todayDeliveriesCount: todayDeliveries.length,
                 todayDeliveries,
@@ -1583,10 +1576,10 @@ async function getSalesDashboardDetails(req, res) {
             });
         }
 
-        const validTypes = ['salesOrder', 'todayDeliveries', 'deliveryChallan', 'invoice', 'onTimeChallan', 'delayChallan'];
+        const validTypes = ['salesOrder', 'todayDeliveries', 'deliveryChallan', 'invoice', 'pendingDispatch', 'partiallyDeliveredDispatch', 'fullyDeliveredDispatch', 'cancelledDispatch'];
         if (!validTypes.includes(type)) {
             return res.status(400).json({
-                message: "Invalid type. Must be one of: 'salesOrder', 'todayDeliveries', 'deliveryChallan', 'invoice', 'onTimeChallan', 'delayChallan'"
+                message: "Invalid type. Must be one of: 'salesOrder', 'todayDeliveries', 'deliveryChallan', 'invoice', 'pendingDispatch', 'partiallyDeliveredDispatch', 'fullyDeliveredDispatch', 'cancelledDispatch'"
             });
         }
 
@@ -1661,8 +1654,8 @@ async function getSalesDashboardDetails(req, res) {
                     return d >= startOfToday && d <= endOfToday;
                 }
             });
-        } else if (type === 'deliveryChallan' || type === 'onTimeChallan' || type === 'delayChallan') {
-            const challans = await models.Documents.findAll({
+        } else if (type === 'deliveryChallan') {
+            data = await models.Documents.findAll({
                 where: {
                     companyId: Number(companyId),
                     documentType: 'Delivery Challan',
@@ -1676,58 +1669,33 @@ async function getSalesDashboardDetails(req, res) {
                 order: [['createdAt', 'DESC']],
                 raw: true
             });
+        } else if (['pendingDispatch', 'partiallyDeliveredDispatch', 'fullyDeliveredDispatch', 'cancelledDispatch'].includes(type)) {
+            const statusPartially = [10, 19, 20, 33, 37, 41, 42, 45, 46];
+            const statusFully = [11, 21, 22, 34, 38, 43, 44, 47, 48];
 
-            if (type === 'deliveryChallan') {
-                data = challans;
-            } else {
-                // Fetch linked Sales Orders to map expected delivery dates
-                const linkedOrderNumbers = challans
-                    .map((doc) => doc.orderConfirmationNumber)
-                    .filter((num) => num);
-
-                let salesOrderMap = {};
-                if (linkedOrderNumbers.length > 0) {
-                    const salesOrders = await models.Documents.findAll({
-                        where: {
-                            companyId: Number(companyId),
-                            documentType: 'Sales Order',
-                            documentNumber: {
-                                [Op.in]: linkedOrderNumbers
-                            }
-                        },
-                        attributes: ['documentNumber', 'deliveryDate'],
-                        raw: true
-                    });
-                    salesOrderMap = salesOrders.reduce((acc, curr) => {
-                        acc[curr.documentNumber] = curr.deliveryDate;
-                        return acc;
-                    }, {});
-                }
-
-                const filtered = [];
-                for (const challan of challans) {
-                    const actualDate = parseDateString(challan.challan_date) || parseDateString(challan.createdAt);
-                    const expectedDateString = challan.deliveryDate || (challan.orderConfirmationNumber ? salesOrderMap[challan.orderConfirmationNumber] : null);
-                    const expectedDate = parseDateString(expectedDateString);
-
-                    let isDelay = false;
-                    if (actualDate && expectedDate) {
-                        const act = new Date(actualDate);
-                        const exp = new Date(expectedDate);
-                        act.setHours(0, 0, 0, 0);
-                        exp.setHours(0, 0, 0, 0);
-                        if (act > exp) {
-                            isDelay = true;
-                        }
+            const salesOrders = await models.Documents.findAll({
+                where: {
+                    companyId: Number(companyId),
+                    documentType: 'Sales Order',
+                    status: {
+                        [Op.ne]: 0
+                    },
+                    createdAt: {
+                        [Op.between]: [startOfMonth, endOfMonth]
                     }
+                },
+                order: [['createdAt', 'DESC']],
+                raw: true
+            });
 
-                    if (type === 'delayChallan' && isDelay) {
-                        filtered.push(challan);
-                    } else if (type === 'onTimeChallan' && !isDelay) {
-                        filtered.push(challan);
-                    }
-                }
-                data = filtered;
+            if (type === 'cancelledDispatch') {
+                data = salesOrders.filter(doc => doc.status === 2);
+            } else if (type === 'partiallyDeliveredDispatch') {
+                data = salesOrders.filter(doc => statusPartially.includes(doc.status));
+            } else if (type === 'fullyDeliveredDispatch') {
+                data = salesOrders.filter(doc => statusFully.includes(doc.status));
+            } else if (type === 'pendingDispatch') {
+                data = salesOrders.filter(doc => doc.status !== 2 && !statusPartially.includes(doc.status) && !statusFully.includes(doc.status));
             }
         } else if (type === 'invoice') {
             data = await models.Documents.findAll({

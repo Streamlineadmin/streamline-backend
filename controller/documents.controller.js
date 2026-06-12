@@ -5142,6 +5142,115 @@ async function editDocument(req, res) {
       }
     }
 
+    // Handle Purchase Order edit receivedToday updates
+    if (documentType === documentTypes.purchaseOrder) {
+      const oldIndentNumbers = document.indent_number ? document.indent_number.split(',') : [];
+      const newIndentNumbers = (status && indent_number) ? indent_number.split(',') : [];
+      const allIndentNumbers = [...new Set([...oldIndentNumbers, ...newIndentNumbers])];
+
+      if (allIndentNumbers.length > 0) {
+        const oldItems = await models.DocumentItems.findAll({
+          where: {
+            companyId,
+            documentNumber: document.documentNumber
+          }
+        });
+        const oldItemsMap = oldItems.reduce((acc, curr) => {
+          const key = curr.uniqueId || curr.itemId;
+          acc[key] = {
+            quantity: curr.quantity,
+            conversionFactor: curr.conversionFactor || 1
+          };
+          return acc;
+        }, {});
+
+        const newItemsMap = items.reduce((acc, curr) => {
+          const key = curr.uniqueId || curr.itemId;
+          acc[key] = {
+            quantity: curr.quantity,
+            conversionFactor: curr.conversionFactor || 1
+          };
+          return acc;
+        }, {});
+
+        for (const ind_number of allIndentNumbers) {
+          const purchaseRequest = await models.Documents.findOne({
+            where: {
+              companyId,
+              documentNumber: ind_number
+            }
+          });
+
+          if (purchaseRequest) {
+            const purchaseRequestItems = await models.DocumentItems.findAll({
+              where: {
+                companyId,
+                documentNumber: ind_number
+              }
+            });
+
+            const isOldIndent = oldIndentNumbers.includes(ind_number);
+            const isNewIndent = newIndentNumbers.includes(ind_number);
+
+            for (const prItem of purchaseRequestItems) {
+              const key = prItem.uniqueId || prItem.itemId;
+
+              const oldQtyInPRUnit = (isOldIndent && oldItemsMap[key])
+                ? oldItemsMap[key].quantity * (oldItemsMap[key].conversionFactor / (prItem.conversionFactor || 1))
+                : 0;
+
+              const newQtyInPRUnit = (isNewIndent && newItemsMap[key])
+                ? newItemsMap[key].quantity * (newItemsMap[key].conversionFactor / (prItem.conversionFactor || 1))
+                : 0;
+
+              const delta = newQtyInPRUnit - oldQtyInPRUnit;
+
+              if (delta !== 0) {
+                let updatedReceivedToday = (prItem.receivedToday || 0) + delta;
+                if (updatedReceivedToday < 0) updatedReceivedToday = 0;
+                if (updatedReceivedToday > prItem.quantity) updatedReceivedToday = prItem.quantity;
+
+                await prItem.update({ receivedToday: updatedReceivedToday });
+              }
+            }
+
+            let requestStatus = purchaseRequest.status, isPartial = false;
+            for (const prItem of purchaseRequestItems) {
+              if (prItem.quantity > prItem.receivedToday) {
+                isPartial = true;
+                if (requestStatus == 1 || requestStatus == 16) {
+                  requestStatus = 14;
+                }
+                break;
+              }
+            }
+            if (!isPartial) {
+              if (requestStatus == 1 || requestStatus == 14) {
+                requestStatus = 16;
+              }
+              else if (requestStatus == 15) requestStatus = 17;
+            } else {
+              let allZero = true;
+              for (const prItem of purchaseRequestItems) {
+                if (prItem.receivedToday > 0) {
+                  allZero = false;
+                  break;
+                }
+              }
+              if (allZero) {
+                if (requestStatus == 14 || requestStatus == 16) {
+                  requestStatus = 1;
+                } else if (requestStatus == 17) {
+                  requestStatus = 15;
+                }
+              }
+            }
+            await purchaseRequest.update({ status: requestStatus });
+          }
+        }
+      }
+    }
+
     await document.update({
       documentType,
       documentNumber,
