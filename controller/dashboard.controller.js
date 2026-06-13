@@ -496,7 +496,7 @@ function convertStatus(statusCode) {
 
 async function getDashboardData(req, res) {
     try {
-        const { companyId, dataFor, start, end, assignedTo, salesOrderNumber, salesBasis, topSellingBasis, salesYear } = req.body;
+        const { companyId, dataFor, start, end, assignedTo, salesOrderNumber, salesBasis, topSellingBasis, salesYear, purchaseBasis, topPurchaseBasis, purchaseYear } = req.body;
         if (dataFor === 'Production') {
             const items = await models.Items.findAll({
                 where: {
@@ -1044,6 +1044,293 @@ async function getDashboardData(req, res) {
                 sortedMonthMap
             });
         }
+        if (dataFor === "Purchase") {
+            const parseDateString = (str) => {
+                if (!str) return null;
+                let d = new Date(str);
+                if (!isNaN(d.getTime())) return d;
+                const parts = String(str).split('/');
+                if (parts.length === 3) {
+                    const day = parseInt(parts[0], 10);
+                    const month = parseInt(parts[1], 10) - 1;
+                    const year = parseInt(parts[2], 10);
+                    d = new Date(year, month, day);
+                    if (!isNaN(d.getTime())) return d;
+                }
+                return null;
+            };
+
+            const now = new Date();
+            let startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+            let endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+
+            if (start && end) {
+                const parsedStart = new Date(start);
+                const parsedEnd = new Date(end);
+                if (!isNaN(parsedStart.getTime()) && !isNaN(parsedEnd.getTime())) {
+                    startOfMonth = parsedStart;
+                    endOfMonth = parsedEnd;
+                }
+            }
+
+            // 1. Total Purchase Value (PO Basis / Purchase Invoice )
+            const activePurchaseBasis = purchaseBasis || 'Purchase Invoice';
+            const purchaseDocs = await models.Documents.findAll({
+                where: {
+                    companyId: Number(companyId),
+                    documentType: activePurchaseBasis,
+                    status: {
+                        [Op.ne]: 0
+                    },
+                    createdAt: {
+                        [Op.between]: [startOfMonth, endOfMonth]
+                    }
+                },
+                attributes: ['documentNumber'],
+                raw: true
+            });
+
+            const purchaseDocNumbers = purchaseDocs.map(doc => doc.documentNumber);
+            let totalPurchaseValue = 0;
+            if (purchaseDocNumbers.length > 0) {
+                const purchaseItems = await models.DocumentItems.findAll({
+                    where: {
+                        companyId: Number(companyId),
+                        documentNumber: {
+                            [Op.in]: purchaseDocNumbers
+                        }
+                    },
+                    attributes: ['totalAfterTax'],
+                    raw: true
+                });
+                totalPurchaseValue = purchaseItems.reduce((acc, curr) => acc + (parseFloat(curr.totalAfterTax) || 0), 0);
+            }
+
+            // 2. PO Count
+            const purchaseOrderCount = await models.Documents.count({
+                where: {
+                    companyId: Number(companyId),
+                    documentType: 'Purchase Order',
+                    status: {
+                        [Op.ne]: 0
+                    },
+                    createdAt: {
+                        [Op.between]: [startOfMonth, endOfMonth]
+                    }
+                }
+            });
+
+            // 3. Purchase Invoice Count
+            const purchaseInvoiceCount = await models.Documents.count({
+                where: {
+                    companyId: Number(companyId),
+                    documentType: 'Purchase Invoice',
+                    status: {
+                        [Op.ne]: 0
+                    },
+                    createdAt: {
+                        [Op.between]: [startOfMonth, endOfMonth]
+                    }
+                }
+            });
+
+            // 4. Supplier Count
+            const uniqueSuppliers = await models.Documents.findAll({
+                where: {
+                    companyId: Number(companyId),
+                    documentType: {
+                        [Op.in]: ['Purchase Order', 'Purchase Invoice']
+                    },
+                    status: {
+                        [Op.ne]: 0
+                    },
+                    createdAt: {
+                        [Op.between]: [startOfMonth, endOfMonth]
+                    },
+                    supplierName: {
+                        [Op.and]: [
+                            { [Op.ne]: null },
+                            { [Op.ne]: '' }
+                        ]
+                    }
+                },
+                attributes: [
+                    [models.sequelize.fn('DISTINCT', models.sequelize.col('supplierName')), 'supplierName']
+                ],
+                raw: true
+            });
+            const supplierCount = uniqueSuppliers.length;
+
+            // 5. Monthly Purchase Trend (selected or current year)
+            const targetYear = purchaseYear ? Number(purchaseYear) : now.getFullYear();
+            const startOfYear = new Date(targetYear, 0, 1);
+            const endOfYear = new Date(targetYear, 11, 31, 23, 59, 59, 999);
+
+            const yearlyPurchaseDocs = await models.Documents.findAll({
+                where: {
+                    companyId: Number(companyId),
+                    documentType: activePurchaseBasis,
+                    status: {
+                        [Op.ne]: 0
+                    },
+                    createdAt: {
+                        [Op.between]: [startOfYear, endOfYear]
+                    }
+                },
+                attributes: ['documentNumber', 'createdAt'],
+                raw: true
+            });
+
+            const yearlyDocNumbers = yearlyPurchaseDocs.map(doc => doc.documentNumber);
+            const yearlyItemsMap = {};
+            if (yearlyDocNumbers.length > 0) {
+                const yearlyDocItems = await models.DocumentItems.findAll({
+                    where: {
+                        companyId: Number(companyId),
+                        documentNumber: {
+                            [Op.in]: yearlyDocNumbers
+                        }
+                    },
+                    attributes: ['documentNumber', 'totalAfterTax'],
+                    raw: true
+                });
+                yearlyDocItems.forEach(item => {
+                    if (!yearlyItemsMap[item.documentNumber]) {
+                        yearlyItemsMap[item.documentNumber] = 0;
+                    }
+                    yearlyItemsMap[item.documentNumber] += (parseFloat(item.totalAfterTax) || 0);
+                });
+            }
+
+            const purchaseMonthMap = {};
+            const purchaseMonthValueMap = {};
+            const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+            
+            yearlyPurchaseDocs.forEach((record) => {
+                const monthIndex = new Date(record.createdAt).getMonth();
+                const monthName = monthNames[monthIndex];
+                purchaseMonthMap[monthName] = (purchaseMonthMap[monthName] || 0) + 1;
+                
+                const val = yearlyItemsMap[record.documentNumber] || 0;
+                purchaseMonthValueMap[monthName] = (purchaseMonthValueMap[monthName] || 0) + val;
+            });
+
+            const isCurrentYear = targetYear === now.getFullYear();
+            const monthsToInclude = isCurrentYear ? monthNames.slice(0, now.getMonth() + 1) : monthNames;
+            
+            const sortedMonthMap = {};
+            const sortedMonthValueMap = {};
+            monthsToInclude.forEach((m) => {
+                sortedMonthMap[m] = purchaseMonthMap[m] || 0;
+                sortedMonthValueMap[m] = Number((purchaseMonthValueMap[m] || 0).toFixed(2));
+            });
+
+            // 6. Top Purchased Items
+            const activeTopPurchaseBasis = topPurchaseBasis || 'Purchase Invoice';
+            const purchaseDocsForTop = await models.Documents.findAll({
+                where: {
+                    companyId: Number(companyId),
+                    documentType: activeTopPurchaseBasis,
+                    status: {
+                        [Op.ne]: 0
+                    },
+                    createdAt: {
+                        [Op.between]: [startOfMonth, endOfMonth]
+                    }
+                },
+                attributes: ['documentNumber'],
+                raw: true
+            });
+
+            const topDocNumbers = purchaseDocsForTop.map(doc => doc.documentNumber);
+            const purchasedItemsMap = {};
+
+            if (topDocNumbers.length > 0) {
+                const docItems = await models.DocumentItems.findAll({
+                    where: {
+                        companyId: Number(companyId),
+                        documentNumber: {
+                            [Op.in]: topDocNumbers
+                        }
+                    },
+                    raw: true
+                });
+
+                for (const item of docItems) {
+                    const key = item.itemId;
+                    if (!key) continue;
+                    if (!purchasedItemsMap[key]) {
+                        purchasedItemsMap[key] = {
+                            itemId: key,
+                            itemName: item.itemName,
+                            quantity: 0,
+                            totalPurchase: 0,
+                            UOM: item.UOM
+                        };
+                    }
+                    purchasedItemsMap[key].quantity += (parseFloat(item.quantity) || 0);
+                    purchasedItemsMap[key].totalPurchase += (parseFloat(item.totalAfterTax) || 0);
+                }
+            }
+
+            const topPurchasedItems = Object.values(purchasedItemsMap)
+                .sort((a, b) => b.quantity - a.quantity)
+                .slice(0, 10);
+
+            // 7. Purchase Order Status (Completed, Partial, Pending, Cancelled)
+            const purchaseOrders = await models.Documents.findAll({
+                where: {
+                    companyId: Number(companyId),
+                    documentType: 'Purchase Order',
+                    status: {
+                        [Op.ne]: 0
+                    },
+                    createdAt: {
+                        [Op.between]: [startOfMonth, endOfMonth]
+                    }
+                },
+                attributes: ['status'],
+                raw: true
+            });
+
+            let fullyReceivedCount = 0;
+            let partiallyReceivedCount = 0;
+            let pendingCount = 0;
+            let cancelledCount = 0;
+
+            const statusFullyReceived = [5, 6, 24, 25, 27, 28];
+            const statusPartiallyReceived = [4, 23, 26];
+            const statusCancelled = [2];
+
+            purchaseOrders.forEach(order => {
+                const status = order.status;
+                if (statusCancelled.includes(status)) {
+                    cancelledCount++;
+                } else if (statusPartiallyReceived.includes(status)) {
+                    partiallyReceivedCount++;
+                } else if (statusFullyReceived.includes(status)) {
+                    fullyReceivedCount++;
+                } else {
+                    pendingCount++;
+                }
+            });
+
+            return res.status(200).json({
+                totalPurchaseValue: Number(totalPurchaseValue.toFixed(2)),
+                purchaseOrderCount,
+                purchaseInvoiceCount,
+                supplierCount,
+                purchaseOrderStatus: {
+                    fullyReceived: fullyReceivedCount,
+                    partiallyReceived: partiallyReceivedCount,
+                    pending: pendingCount,
+                    cancelled: cancelledCount
+                },
+                topPurchasedItems,
+                sortedMonthMap,
+                sortedMonthValueMap
+            });
+        }
         return res.status(200).json({});
     } catch (err) {
         console.log(err);
@@ -1576,10 +1863,10 @@ async function getSalesDashboardDetails(req, res) {
             });
         }
 
-        const validTypes = ['salesOrder', 'todayDeliveries', 'deliveryChallan', 'invoice', 'pendingDispatch', 'partiallyDeliveredDispatch', 'fullyDeliveredDispatch', 'cancelledDispatch'];
+        const validTypes = ['salesOrder', 'todayDeliveries', 'deliveryChallan', 'invoice', 'pendingDispatch', 'partiallyDeliveredDispatch', 'fullyDeliveredDispatch', 'cancelledDispatch', 'purchaseOrder', 'purchaseInvoice'];
         if (!validTypes.includes(type)) {
             return res.status(400).json({
-                message: "Invalid type. Must be one of: 'salesOrder', 'todayDeliveries', 'deliveryChallan', 'invoice', 'pendingDispatch', 'partiallyDeliveredDispatch', 'fullyDeliveredDispatch', 'cancelledDispatch'"
+                message: "Invalid type. Must be one of: 'salesOrder', 'todayDeliveries', 'deliveryChallan', 'invoice', 'pendingDispatch', 'partiallyDeliveredDispatch', 'fullyDeliveredDispatch', 'cancelledDispatch', 'purchaseOrder', 'purchaseInvoice'"
             });
         }
 
@@ -1702,6 +1989,36 @@ async function getSalesDashboardDetails(req, res) {
                 where: {
                     companyId: Number(companyId),
                     documentType: 'Invoice',
+                    status: {
+                        [Op.ne]: 0
+                    },
+                    createdAt: {
+                        [Op.between]: [startOfMonth, endOfMonth]
+                    }
+                },
+                order: [['createdAt', 'DESC']],
+                raw: true
+            });
+        } else if (type === 'purchaseOrder') {
+            data = await models.Documents.findAll({
+                where: {
+                    companyId: Number(companyId),
+                    documentType: 'Purchase Order',
+                    status: {
+                        [Op.ne]: 0
+                    },
+                    createdAt: {
+                        [Op.between]: [startOfMonth, endOfMonth]
+                    }
+                },
+                order: [['createdAt', 'DESC']],
+                raw: true
+            });
+        } else if (type === 'purchaseInvoice') {
+            data = await models.Documents.findAll({
+                where: {
+                    companyId: Number(companyId),
+                    documentType: 'Purchase Invoice',
                     status: {
                         [Op.ne]: 0
                     },

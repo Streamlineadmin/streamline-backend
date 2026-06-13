@@ -1361,7 +1361,7 @@ async function createDocument(req, res) {
         raw: true,
         transaction: t
       });
-      if (settings?.addStockOnPurchaseInvoice == 'true') {
+      if (settings?.addStockOnPurchaseInvoice == 'true' && !purchaseOrderNumber) {
         const approvalCount = await models.InventoryApproval.count({
           where: {
             companyId
@@ -3463,7 +3463,10 @@ async function getDocumentById(req, res) {
       documentComments,
     };
 
-    if (document.documentType === documentTypes.goodsReceive || document.documentType === documentTypes.qualityReport) {
+    if (document.documentType === documentTypes.goodsReceive ||
+      document.documentType === documentTypes.qualityReport ||
+      document.documentType === documentTypes.purchaseInvoice
+    ) {
       const batchItems = await models.BatchItems.findAll({
         where: {
           companyId,
@@ -7007,8 +7010,8 @@ async function createEInvoice(req, res) {
     const TcsVal = round2(
       tcsPercent > 0
         ? (tcsApply === "afterTax"
-            ? TotInvVal
-            : (AssVal + additionalChargeTotals.othChrg)) * (tcsPercent / 100)
+          ? TotInvVal
+          : (AssVal + additionalChargeTotals.othChrg)) * (tcsPercent / 100)
         : 0
     );
 
