@@ -1361,7 +1361,7 @@ async function createDocument(req, res) {
         raw: true,
         transaction: t
       });
-      if (settings?.addStockOnPurchaseInvoice == 'true') {
+      if (settings?.addStockOnPurchaseInvoice == 'true' && !purchaseOrderNumber) {
         const approvalCount = await models.InventoryApproval.count({
           where: {
             companyId
@@ -3463,7 +3463,10 @@ async function getDocumentById(req, res) {
       documentComments,
     };
 
-    if (document.documentType === documentTypes.goodsReceive || document.documentType === documentTypes.qualityReport) {
+    if (document.documentType === documentTypes.goodsReceive ||
+      document.documentType === documentTypes.qualityReport ||
+      document.documentType === documentTypes.purchaseInvoice
+    ) {
       const batchItems = await models.BatchItems.findAll({
         where: {
           companyId,
@@ -5139,6 +5142,115 @@ async function editDocument(req, res) {
       });
       if (document) {
         return res.status(400).json({ message: 'This document reference is available in other document. It is not be Edited.' });
+      }
+    }
+
+    // Handle Purchase Order edit receivedToday updates
+    if (documentType === documentTypes.purchaseOrder) {
+      const oldIndentNumbers = document.indent_number ? document.indent_number.split(',') : [];
+      const newIndentNumbers = (status && indent_number) ? indent_number.split(',') : [];
+      const allIndentNumbers = [...new Set([...oldIndentNumbers, ...newIndentNumbers])];
+
+      if (allIndentNumbers.length > 0) {
+        const oldItems = await models.DocumentItems.findAll({
+          where: {
+            companyId,
+            documentNumber: document.documentNumber
+          }
+        });
+        const oldItemsMap = oldItems.reduce((acc, curr) => {
+          const key = curr.uniqueId || curr.itemId;
+          acc[key] = {
+            quantity: curr.quantity,
+            conversionFactor: curr.conversionFactor || 1
+          };
+          return acc;
+        }, {});
+
+        const newItemsMap = items.reduce((acc, curr) => {
+          const key = curr.uniqueId || curr.itemId;
+          acc[key] = {
+            quantity: curr.quantity,
+            conversionFactor: curr.conversionFactor || 1
+          };
+          return acc;
+        }, {});
+
+        for (const ind_number of allIndentNumbers) {
+          const purchaseRequest = await models.Documents.findOne({
+            where: {
+              companyId,
+              documentNumber: ind_number
+            }
+          });
+
+          if (purchaseRequest) {
+            const purchaseRequestItems = await models.DocumentItems.findAll({
+              where: {
+                companyId,
+                documentNumber: ind_number
+              }
+            });
+
+            const isOldIndent = oldIndentNumbers.includes(ind_number);
+            const isNewIndent = newIndentNumbers.includes(ind_number);
+
+            for (const prItem of purchaseRequestItems) {
+              const key = prItem.uniqueId || prItem.itemId;
+
+              const oldQtyInPRUnit = (isOldIndent && oldItemsMap[key])
+                ? oldItemsMap[key].quantity * (oldItemsMap[key].conversionFactor / (prItem.conversionFactor || 1))
+                : 0;
+
+              const newQtyInPRUnit = (isNewIndent && newItemsMap[key])
+                ? newItemsMap[key].quantity * (newItemsMap[key].conversionFactor / (prItem.conversionFactor || 1))
+                : 0;
+
+              const delta = newQtyInPRUnit - oldQtyInPRUnit;
+
+              if (delta !== 0) {
+                let updatedReceivedToday = (prItem.receivedToday || 0) + delta;
+                if (updatedReceivedToday < 0) updatedReceivedToday = 0;
+                if (updatedReceivedToday > prItem.quantity) updatedReceivedToday = prItem.quantity;
+
+                await prItem.update({ receivedToday: updatedReceivedToday });
+              }
+            }
+
+            let requestStatus = purchaseRequest.status, isPartial = false;
+            for (const prItem of purchaseRequestItems) {
+              if (prItem.quantity > prItem.receivedToday) {
+                isPartial = true;
+                if (requestStatus == 1 || requestStatus == 16) {
+                  requestStatus = 14;
+                }
+                break;
+              }
+            }
+            if (!isPartial) {
+              if (requestStatus == 1 || requestStatus == 14) {
+                requestStatus = 16;
+              }
+              else if (requestStatus == 15) requestStatus = 17;
+            } else {
+              let allZero = true;
+              for (const prItem of purchaseRequestItems) {
+                if (prItem.receivedToday > 0) {
+                  allZero = false;
+                  break;
+                }
+              }
+              if (allZero) {
+                if (requestStatus == 14 || requestStatus == 16) {
+                  requestStatus = 1;
+                } else if (requestStatus == 17) {
+                  requestStatus = 15;
+                }
+              }
+            }
+            await purchaseRequest.update({ status: requestStatus });
+          }
+        }
       }
     }
 
@@ -6880,6 +6992,36 @@ async function createEInvoice(req, res) {
 
     TotInvVal += additionalChargeTotals.othChrg;
 
+    let tcsPercent = 0;
+    let tcsApply = 'beforeTax';
+    if (document?.tcsData) {
+      const parsedTcs = isValidJSON(document.tcsData);
+      if (parsedTcs) {
+        const keys = Object.keys(parsedTcs).filter(k => k !== 'tcsApply');
+        if (keys.length > 0 && keys[0].trim().toLowerCase() === 'tcs') {
+          tcsPercent = parseFloat(parsedTcs[keys[0]]) || 0;
+        }
+        if (parsedTcs.tcsApply) {
+          tcsApply = parsedTcs.tcsApply;
+        }
+      }
+    }
+
+    const TcsVal = round2(
+      tcsPercent > 0
+        ? (tcsApply === "afterTax"
+          ? TotInvVal
+          : (AssVal + additionalChargeTotals.othChrg)) * (tcsPercent / 100)
+        : 0
+    );
+
+    additionalChargeTotals.othChrg = round2(additionalChargeTotals.othChrg + TcsVal);
+    TotInvVal = round2(TotInvVal + TcsVal);
+
+    const RndOff = document?.isRounded ? round2(Math.round(TotInvVal) - TotInvVal) : 0;
+    if (document?.isRounded) {
+      TotInvVal = Math.round(TotInvVal);
+    }
 
     const eInvoice = {
       Version: "1.1",
@@ -6957,6 +7099,7 @@ async function createEInvoice(req, res) {
         SgstVal: round2(SgstVal),
         IgstVal: round2(IgstVal),
         OthChrg: round2(additionalChargeTotals.othChrg),
+        RndOff: round2(RndOff),
         TotInvVal: round2(TotInvVal),
       },
     };
@@ -7071,7 +7214,7 @@ async function createEwayBillFromEInvoice(req, res) {
     // AUTH TOKEN GENERATION
     // =========================
     const authResponse = await axios.get(
-      "https://staging.perione.in/einvoice/authenticate",
+      "https://api.perione.in/einvoice/authenticate",
       {
         params: {
           email: process.env.EMAIL,
@@ -7101,7 +7244,7 @@ async function createEwayBillFromEInvoice(req, res) {
     // =========================
     const eWayBillPayload = {
       Irn: irn,
-      Distance: Number(distance || 0),
+      Distance: 0,
       TransMode: String(transMode || "1"),
       TransId: gst,
       TransName: transName,
@@ -7118,7 +7261,7 @@ async function createEwayBillFromEInvoice(req, res) {
     // GENERATE EWAY BILL
     // =========================
     const response = await axios.post(
-      "https://staging.perione.in/einvoice/type/GENERATE_EWAYBILL/version/V1_03",
+      "https://api.perione.in/einvoice/type/GENERATE_EWAYBILL/version/V1_03",
       eWayBillPayload,
       {
         params: {
