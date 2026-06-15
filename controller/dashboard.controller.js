@@ -1135,31 +1135,14 @@ async function getDashboardData(req, res) {
             });
 
             // 4. Supplier Count
-            const uniqueSuppliers = await models.Documents.findAll({
+            const supplierCount = await models.BuyerSupplier.count({
                 where: {
                     companyId: Number(companyId),
-                    documentType: {
-                        [Op.in]: ['Purchase Order', 'Purchase Invoice']
-                    },
-                    status: {
-                        [Op.ne]: 0
-                    },
-                    createdAt: {
-                        [Op.between]: [startOfMonth, endOfMonth]
-                    },
-                    supplierName: {
-                        [Op.and]: [
-                            { [Op.ne]: null },
-                            { [Op.ne]: '' }
-                        ]
+                    companyType: {
+                        [Op.in]: [2, 3]
                     }
-                },
-                attributes: [
-                    [models.sequelize.fn('DISTINCT', models.sequelize.col('supplierName')), 'supplierName']
-                ],
-                raw: true
+                }
             });
-            const supplierCount = uniqueSuppliers.length;
 
             // 5. Monthly Purchase Trend (selected or current year)
             const targetYear = purchaseYear ? Number(purchaseYear) : now.getFullYear();
