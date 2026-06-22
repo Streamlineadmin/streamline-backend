@@ -139,7 +139,23 @@ async function createDocument(req, res) {
       serviceOrderDate = '',
       contactPerson = '',
       storeInItemLevel = false,
-      hideColumns = []
+      hideColumns = [],
+      isMultiCurrency = false,
+      exchangeRate = 1.0,
+      currencyCode = '',
+      portOfLoading = null,
+      portOfDischarge = null,
+      countryOfOrigin = null,
+      countryOfDischarge = null,
+      finalDestination = null,
+      countryOfFinalDestination = null,
+      lcNumber = null,
+      lcIssueBank = null,
+      lutNumber = null,
+      lutValidTill = null,
+      containerNumber = null,
+      endUserCode = null,
+      supplyType = null
     } = req.body;
 
     let message = '';
@@ -276,7 +292,23 @@ async function createDocument(req, res) {
       customFields,
       serviceOrderDate,
       serviceOrderNumber,
-      hideColumns
+      hideColumns,
+      isMultiCurrency,
+      exchangeRate,
+      currencyCode,
+      portOfLoading,
+      portOfDischarge,
+      countryOfOrigin,
+      countryOfDischarge,
+      finalDestination,
+      countryOfFinalDestination,
+      lcNumber,
+      lcIssueBank,
+      lutNumber,
+      lutValidTill,
+      containerNumber,
+      endUserCode,
+      supplyType
     }, { transaction: t });
 
     else {
@@ -380,7 +412,23 @@ async function createDocument(req, res) {
       customFields,
       serviceOrderDate,
       serviceOrderNumber,
-      hideColumns
+      hideColumns,
+      isMultiCurrency,
+      exchangeRate,
+      currencyCode,
+      portOfLoading,
+      portOfDischarge,
+      countryOfOrigin,
+      countryOfDischarge,
+      finalDestination,
+      countryOfFinalDestination,
+      lcNumber,
+      lcIssueBank,
+      lutNumber,
+      lutValidTill,
+      containerNumber,
+      endUserCode,
+      supplyType
     }, {
       where: {
         companyId,
@@ -4957,7 +5005,23 @@ async function editDocument(req, res) {
       batches = null,
       supplyState = '',
       requestForApproval,
-      customFields
+      customFields,
+      isMultiCurrency = false,
+      exchangeRate = 1.0,
+      currencyCode = '',
+      portOfLoading = null,
+      portOfDischarge = null,
+      countryOfOrigin = null,
+      countryOfDischarge = null,
+      finalDestination = null,
+      countryOfFinalDestination = null,
+      lcNumber = null,
+      lcIssueBank = null,
+      lutNumber = null,
+      lutValidTill = null,
+      containerNumber = null,
+      endUserCode = null,
+      supplyType = null
     } = req.body;
 
     const document = await models.Documents.findOne({
@@ -5340,7 +5404,23 @@ async function editDocument(req, res) {
       department,
       showUnits,
       supplyState,
-      customFields
+      customFields,
+      isMultiCurrency,
+      exchangeRate,
+      currencyCode,
+      portOfLoading,
+      portOfDischarge,
+      countryOfOrigin,
+      countryOfDischarge,
+      finalDestination,
+      countryOfFinalDestination,
+      lcNumber,
+      lcIssueBank,
+      lutNumber,
+      lutValidTill,
+      containerNumber,
+      endUserCode,
+      supplyType
     });
 
     await models.CompanyTermsCondition.destroy({
@@ -7178,7 +7258,8 @@ async function createEInvoice(req, res) {
   } catch (error) {
     console.error(
       "E-Invoice Error:",
-      error.response?.data || error.message
+      error.response?.data || error.message,
+      error
     );
 
     return res.status(500).json({
