@@ -41,6 +41,7 @@ async function createDocument(req, res) {
       buyerDeliveryAddress = null,
       buyerContactNumber = null,
       buyerEmail = null,
+      convertToInr = false,
       supplierName = null,
       supplierBillingAddress = null,
       supplierDeliverAddress = null,
@@ -159,6 +160,196 @@ async function createDocument(req, res) {
     } = req.body;
 
     let message = '';
+
+    if (convertToInr) {
+      const document = await models.Documents.create({
+        documentType,
+        documentNumber: documentNumber + "-converttoinr",
+        buyerName,
+        contactPerson,
+        documentTo,
+        buyerBillingAddress,
+        advancePayment,
+        GSTValue,
+        buyerGSTNumber,
+        supplierGSTNumber,
+        buyerSupplierKYCDetails,
+        is_refered,
+        buyerDeliveryAddress,
+        buyerContactNumber,
+        buyerEmail,
+        supplierName,
+        supplierBillingAddress,
+        supplierDeliverAddress,
+        supplierContactNo,
+        supplierEmail,
+        documentDate,
+        ammendment,
+        deliveryDate,
+        ServiceConfirmationNumber,
+        ServiceConfirmationDate,
+        paymentTerm,
+        store,
+        rejectedStore,
+        enquiryNumber,
+        enquiryDate,
+        logisticDetailsId,
+        additionalDetails,
+        signature,
+        companyId,
+        createdBy,
+        status: requestForApproval ? 29 : status,
+        ip_address,
+        paymentDate,
+        POCName,
+        POCNumber,
+        POCDate,
+        OCNumber,
+        OCDate,
+        transporterName,
+        TGNumber,
+        TDNumber,
+        TDDate,
+        VehicleNumber,
+        replyDate,
+        Attention,
+        invoiceNumber,
+        invoiceDate,
+        billDate,
+        returnRecieveDate,
+        creditNoteNumber,
+        creditNotedate,
+        quotationNumber,
+        quotationDate,
+        orderConfirmationNumber,
+        orderConfirmationDate,
+        purchaseOrderNumber,
+        purchaseOrderDate,
+        grn_number,
+        grn_Date: grn_number ? grn_Date : null,
+        indent_number,
+        indent_date,
+        supplier_invoice_number,
+        supplier_invoice_date,
+        challan_number,
+        challan_date,
+        debit_note_number,
+        debit_note_date,
+        performaInvoiceNumber,
+        salesReturnNumber,
+        salesReturnDate,
+        performaInvoiceDate,
+        pay_to_transporter,
+        inspection_date,
+        BuyerPANNumber,
+        isRounded,
+        tcsData,
+        addStockOn,
+        purpose,
+        requiredDate,
+        requestedBy,
+        department,
+        showUnits,
+        supplyState,
+        customFields,
+        serviceOrderDate,
+        serviceOrderNumber,
+        hideColumns,
+        isMultiCurrency,
+        exchangeRate,
+        currencyCode,
+        portOfLoading,
+        portOfDischarge,
+        countryOfOrigin,
+        countryOfDischarge,
+        finalDestination,
+        countryOfFinalDestination,
+        lcNumber,
+        lcIssueBank,
+        lutNumber,
+        lutValidTill,
+        containerNumber,
+        endUserCode,
+        supplyType
+      }, { transaction: t });
+      await Promise.all([
+        models.DocumentItems.bulkCreate(
+          items.map(item => {
+            return ({
+              documentNumber: document.documentNumber ,
+              companyId: companyId,
+              itemId: item.itemId,
+              itemName: item.itemName,
+              HSN: item.HSN,
+              UOM: item.UOM,
+              quantity: item.quantity,
+              price: item.price,
+              discountOne: item.discountOne,
+              discountTwo: item.discountTwo,
+              totalDiscount: item.totalDiscount,
+              taxType: item.taxType,
+              tax: item.tax,
+              totalTax: item.totalTax,
+              totalBeforeTax: item.totalBeforeTax,
+              totalAfterTax: item.totalAfterTax,
+              receivedToday: item.receivedToday || 0,
+              pendingQuantity: documentType === "Sales Order" ? 0 : (item.pendingQuantity || 0),
+              receivedQuantity: documentType === "Sales Order" ? 0 : (item.receivedQuantity || 0),
+              auQuantity: item?.auQuantity,
+              alternateUnit: item?.alternateUnit,
+              conversionFactor: item?.conversionFactor,
+              ServiceID: item?.ServiceID,
+              ServiceName: item?.ServiceName,
+              additionalDetails: item?.additionalDetails,
+              customFields: item?.customFields,
+              imageUrl: item?.imageUrl,
+              category: item?.category,
+              store: item?.store,
+              poNumbers: documentType === 'Invoice' ? item?.poNumbers ? item.poNumbers : null : null,
+              uniqueId: item?.uniqueId || crypto.randomUUID(),
+            })
+          }), { transaction: t }
+        ),
+        models.DocumentAdditionalCharges.bulkCreate(
+          additionalCharges.map(charge => ({
+            companyId: companyId,
+            documentNumber: document.documentNumber ,
+            chargingFor: charge.chargingFor,
+            price: charge.price,
+            tax: charge.tax,
+            total: charge.total,
+            status: charge.status,
+            ip_address: charge.ip_address
+          })), { transaction: t }
+        ),
+        models.DocumentBankDetails.create({
+          documentNumber: document.documentNumber ,
+          companyId: companyId,
+          bankName: bankDetails.bankName || null,
+          accountName: bankDetails.accountName || null,
+          accountNumber: bankDetails.accountNumber || null,
+          branch: bankDetails.branch || null,
+          IFSCCode: bankDetails.IFSCCode || null,
+          MICRCode: bankDetails.MICRCode || null,
+          address: bankDetails.address || null,
+          SWIFTCode: bankDetails.SWIFTCode || null,
+          status: bankDetails.status || 1,
+          ip_address: bankDetails.ip_address || null,
+        }, { transaction: t }),
+        models.DocumentAttachments.bulkCreate(
+          attachments.map(attachment => ({
+            documentNumber: document.documentNumber,
+            companyId: companyId,
+            attachmentName: attachment
+          })), { transaction: t }
+        ),
+
+      ]);
+      await t.commit();
+      return res.status(201).json({
+        message: "Document Converted to INR successfully!"
+      });
+    }
 
     if (!isDraft) {
       if (documentType != documentTypes.purchaseInvoice) {
@@ -436,8 +627,6 @@ async function createDocument(req, res) {
       },
       transaction: t
     });
-
-
 
     if (status && documentType === documentTypes.purchaseOrder && indent_number) {
       const indent_numbers = indent_number.split(',');
