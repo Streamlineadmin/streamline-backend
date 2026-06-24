@@ -276,7 +276,7 @@ async function createDocument(req, res) {
         models.DocumentItems.bulkCreate(
           items.map(item => {
             return ({
-              documentNumber: document.documentNumber ,
+              documentNumber: document.documentNumber,
               companyId: companyId,
               itemId: item.itemId,
               itemName: item.itemName,
@@ -313,7 +313,7 @@ async function createDocument(req, res) {
         models.DocumentAdditionalCharges.bulkCreate(
           additionalCharges.map(charge => ({
             companyId: companyId,
-            documentNumber: document.documentNumber ,
+            documentNumber: document.documentNumber,
             chargingFor: charge.chargingFor,
             price: charge.price,
             tax: charge.tax,
@@ -323,7 +323,7 @@ async function createDocument(req, res) {
           })), { transaction: t }
         ),
         models.DocumentBankDetails.create({
-          documentNumber: document.documentNumber ,
+          documentNumber: document.documentNumber,
           companyId: companyId,
           bankName: bankDetails.bankName || null,
           accountName: bankDetails.accountName || null,
@@ -7896,6 +7896,85 @@ async function cancelEInvoice(req, res) {
   }
 }
 
+async function cancelEWayBill(req, res) {
+  const { document, userName, password, gst } = req.body;
+  try {
+    const authResponse = await axios.get(
+      "https://api.perione.in/ewaybillapi/v1.03/authenticate",
+      {
+        params: {
+          email: process.env.EMAIL, "username": userName,
+          "password": password,
+        },
+        headers: {
+          "Content-Type": "application/json",
+          "client_id": process.env.EWAYBILL_CLIENT_ID,
+          "client_secret": process.env.EWAYBILL_CLIENT_SECRET,
+          "gstin": gst,
+
+          "ip_address": "192.68.45.37",
+        },
+      }
+    );
+
+    const response = await axios.post(
+      "https://api.perione.in/ewaybillapi/v1.03/ewayapi/canewb",
+      {
+        ewbNo: Number(document?.ewayBillNumber),
+        cancelRsnCode: 2,
+        cancelRmrk: "Wrong entry"
+      },
+      {
+        params: { email: process.env.EMAIL },
+        headers: {
+          "client_id": process.env.EWAYBILL_CLIENT_ID,
+          "client_secret": process.env.EWAYBILL_CLIENT_SECRET,
+          "gstin": gst,
+          "username": userName,
+          "password": password,
+          "ip_address": "192.68.45.37",
+        },
+      }
+    );
+
+    if (!response?.data) {
+      return res.status(400).json({
+        message: "Cancel E-Way Bill API failed",
+        errors: response?.data
+      });
+    }
+
+    const existingDocument = await models.Documents.findOne({
+      where: {
+        companyId: document.companyId,
+        documentNumber: document.documentNumber,
+      },
+    });
+
+    const cancelDate = response?.data?.data?.CancelDate || response?.data?.data?.cancelDate || new Date();
+
+    if (existingDocument) {
+      await existingDocument.update({
+        ewayBillNumber: null,
+        ewayBillDate: null,
+        ewayBillValidTill: null,
+        ewayBillCreated: false,
+      });
+    }
+
+    res.status(200).json({
+      message: "E-Way Bill Cancelled Successfully.",
+      data: response?.data
+    });
+  } catch (error) {
+    console.error(error.response?.data || error.message);
+    res.status(500).json({
+      message: "Internal Server Error",
+      error: error.response?.data || error.message,
+    });
+  }
+}
+
 async function getChallanDocumentItems(req, res) {
   try {
     const { challan_number } = req.body;
@@ -7961,5 +8040,6 @@ module.exports = {
   emailDocument,
   cancelEInvoice,
   getChallanDocumentItems,
-  createEwayBillFromEInvoice
+  createEwayBillFromEInvoice,
+  cancelEWayBill
 };

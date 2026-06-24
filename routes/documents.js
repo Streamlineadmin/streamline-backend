@@ -21,6 +21,7 @@ router.post('/createEInvoice', documentsController.createEInvoice);
 router.post('/createEWayBill', documentsController.createEWayBill);
 router.post('/emailDocument', upload.single("pdfBase64"), documentsController.emailDocument);
 router.post('/cancelEInvoice', documentsController.cancelEInvoice);
+router.post('/cancelEWayBill', documentsController.cancelEWayBill);
 router.post('/getChallanDocumentItems', documentsController.getChallanDocumentItems);
 router.post('/createEwayBillFromEInvoice', documentsController.createEwayBillFromEInvoice);
 
