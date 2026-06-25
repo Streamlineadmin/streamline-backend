@@ -8,6 +8,7 @@ const axios = require('axios');
 const nodemailer = require('nodemailer');
 const path = require("path");
 const fs = require("fs");
+const crypto = require('crypto');
 
 function buildJsonLikeSearch(columnName, values) {
   const searchValues = (Array.isArray(values) ? values : [values])
