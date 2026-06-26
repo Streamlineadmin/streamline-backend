@@ -54,6 +54,7 @@ module.exports = (sequelize, DataTypes) => {
     store: DataTypes.STRING,
     poNumbers: DataTypes.STRING,
     uniqueId: DataTypes.STRING,
+    packagingData: DataTypes.JSON,
   }, {
     sequelize,
     modelName: 'DocumentItems',

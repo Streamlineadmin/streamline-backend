@@ -308,6 +308,7 @@ async function createDocument(req, res) {
               store: item?.store,
               poNumbers: documentType === 'Invoice' ? item?.poNumbers ? item.poNumbers : null : null,
               uniqueId: item?.uniqueId || crypto.randomUUID(),
+              packagingData: item?.packagingData || null,
             })
           }), { transaction: t }
         ),
@@ -1233,6 +1234,7 @@ async function createDocument(req, res) {
             store: item?.store,
             poNumbers: documentType === 'Invoice' ? item?.poNumbers ? item.poNumbers : null : null,
             uniqueId: item?.uniqueId || crypto.randomUUID(),
+            packagingData: item?.packagingData || null,
           })
         }), { transaction: t }
       ),
@@ -5703,6 +5705,7 @@ async function editDocument(req, res) {
             store: item?.store,
             poNumbers: documentType === 'Invoice' ? item?.poNumbers ? item.poNumbers : null : null,
             uniqueId: item?.uniqueId || crypto.randomUUID(),
+            packagingData: item?.packagingData || null
           })
         })
       ),
