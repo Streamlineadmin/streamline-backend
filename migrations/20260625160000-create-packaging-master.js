@@ -19,19 +19,19 @@ module.exports = {
       },
       length: {
         type: Sequelize.FLOAT,
-        allowNull: false
+        allowNull: true
       },
       width: {
         type: Sequelize.FLOAT,
-        allowNull: false
+        allowNull: true
       },
       height: {
         type: Sequelize.FLOAT,
-        allowNull: false
+        allowNull: true
       },
       tareWeight: {
         type: Sequelize.FLOAT,
-        allowNull: false
+        allowNull: true
       },
       ip_address: {
         type: Sequelize.STRING,
