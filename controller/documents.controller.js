@@ -8,6 +8,7 @@ const axios = require('axios');
 const nodemailer = require('nodemailer');
 const path = require("path");
 const fs = require("fs");
+const crypto = require('crypto');
 
 function buildJsonLikeSearch(columnName, values) {
   const searchValues = (Array.isArray(values) ? values : [values])
@@ -41,6 +42,7 @@ async function createDocument(req, res) {
       buyerDeliveryAddress = null,
       buyerContactNumber = null,
       buyerEmail = null,
+      convertToInr = false,
       supplierName = null,
       supplierBillingAddress = null,
       supplierDeliverAddress = null,
@@ -139,10 +141,217 @@ async function createDocument(req, res) {
       serviceOrderDate = '',
       contactPerson = '',
       storeInItemLevel = false,
-      hideColumns = []
+      hideColumns = [],
+      isMultiCurrency = false,
+      exchangeRate = 1.0,
+      currencyCode = '',
+      portOfLoading = null,
+      portOfDischarge = null,
+      countryOfOrigin = null,
+      countryOfDischarge = null,
+      finalDestination = null,
+      countryOfFinalDestination = null,
+      lcNumber = null,
+      lcIssueBank = null,
+      lutNumber = null,
+      lutValidTill = null,
+      containerNumber = null,
+      endUserCode = null,
+      supplyType = null
     } = req.body;
 
     let message = '';
+
+    if (convertToInr) {
+      const document = await models.Documents.create({
+        documentType,
+        documentNumber: documentNumber + "-converttoinr",
+        buyerName,
+        contactPerson,
+        documentTo,
+        buyerBillingAddress,
+        advancePayment,
+        GSTValue,
+        buyerGSTNumber,
+        supplierGSTNumber,
+        buyerSupplierKYCDetails,
+        is_refered,
+        buyerDeliveryAddress,
+        buyerContactNumber,
+        buyerEmail,
+        supplierName,
+        supplierBillingAddress,
+        supplierDeliverAddress,
+        supplierContactNo,
+        supplierEmail,
+        documentDate,
+        ammendment,
+        deliveryDate,
+        ServiceConfirmationNumber,
+        ServiceConfirmationDate,
+        paymentTerm,
+        store,
+        rejectedStore,
+        enquiryNumber,
+        enquiryDate,
+        logisticDetailsId,
+        additionalDetails,
+        signature,
+        companyId,
+        createdBy,
+        status: requestForApproval ? 29 : status,
+        ip_address,
+        paymentDate,
+        POCName,
+        POCNumber,
+        POCDate,
+        OCNumber,
+        OCDate,
+        transporterName,
+        TGNumber,
+        TDNumber,
+        TDDate,
+        VehicleNumber,
+        replyDate,
+        Attention,
+        invoiceNumber,
+        invoiceDate,
+        billDate,
+        returnRecieveDate,
+        creditNoteNumber,
+        creditNotedate,
+        quotationNumber,
+        quotationDate,
+        orderConfirmationNumber,
+        orderConfirmationDate,
+        purchaseOrderNumber,
+        purchaseOrderDate,
+        grn_number,
+        grn_Date: grn_number ? grn_Date : null,
+        indent_number,
+        indent_date,
+        supplier_invoice_number,
+        supplier_invoice_date,
+        challan_number,
+        challan_date,
+        debit_note_number,
+        debit_note_date,
+        performaInvoiceNumber,
+        salesReturnNumber,
+        salesReturnDate,
+        performaInvoiceDate,
+        pay_to_transporter,
+        inspection_date,
+        BuyerPANNumber,
+        isRounded,
+        tcsData,
+        addStockOn,
+        purpose,
+        requiredDate,
+        requestedBy,
+        department,
+        showUnits,
+        supplyState,
+        customFields,
+        serviceOrderDate,
+        serviceOrderNumber,
+        hideColumns,
+        isMultiCurrency,
+        exchangeRate,
+        currencyCode,
+        portOfLoading,
+        portOfDischarge,
+        countryOfOrigin,
+        countryOfDischarge,
+        finalDestination,
+        countryOfFinalDestination,
+        lcNumber,
+        lcIssueBank,
+        lutNumber,
+        lutValidTill,
+        containerNumber,
+        endUserCode,
+        supplyType
+      }, { transaction: t });
+      await Promise.all([
+        models.DocumentItems.bulkCreate(
+          items.map(item => {
+            return ({
+              documentNumber: document.documentNumber,
+              companyId: companyId,
+              itemId: item.itemId,
+              itemName: item.itemName,
+              HSN: item.HSN,
+              UOM: item.UOM,
+              quantity: item.quantity,
+              price: item.price,
+              discountOne: item.discountOne,
+              discountTwo: item.discountTwo,
+              totalDiscount: item.totalDiscount,
+              taxType: item.taxType,
+              tax: item.tax,
+              totalTax: item.totalTax,
+              totalBeforeTax: item.totalBeforeTax,
+              totalAfterTax: item.totalAfterTax,
+              receivedToday: item.receivedToday || 0,
+              pendingQuantity: documentType === "Sales Order" ? 0 : (item.pendingQuantity || 0),
+              receivedQuantity: documentType === "Sales Order" ? 0 : (item.receivedQuantity || 0),
+              auQuantity: item?.auQuantity,
+              alternateUnit: item?.alternateUnit,
+              conversionFactor: item?.conversionFactor,
+              ServiceID: item?.ServiceID,
+              ServiceName: item?.ServiceName,
+              additionalDetails: item?.additionalDetails,
+              customFields: item?.customFields,
+              imageUrl: item?.imageUrl,
+              category: item?.category,
+              store: item?.store,
+              poNumbers: documentType === 'Invoice' ? item?.poNumbers ? item.poNumbers : null : null,
+              uniqueId: item?.uniqueId || crypto.randomUUID(),
+              packagingData: item?.packagingData || null,
+            })
+          }), { transaction: t }
+        ),
+        models.DocumentAdditionalCharges.bulkCreate(
+          additionalCharges.map(charge => ({
+            companyId: companyId,
+            documentNumber: document.documentNumber,
+            chargingFor: charge.chargingFor,
+            price: charge.price,
+            tax: charge.tax,
+            total: charge.total,
+            status: charge.status,
+            ip_address: charge.ip_address
+          })), { transaction: t }
+        ),
+        models.DocumentBankDetails.create({
+          documentNumber: document.documentNumber,
+          companyId: companyId,
+          bankName: bankDetails.bankName || null,
+          accountName: bankDetails.accountName || null,
+          accountNumber: bankDetails.accountNumber || null,
+          branch: bankDetails.branch || null,
+          IFSCCode: bankDetails.IFSCCode || null,
+          MICRCode: bankDetails.MICRCode || null,
+          address: bankDetails.address || null,
+          SWIFTCode: bankDetails.SWIFTCode || null,
+          status: bankDetails.status || 1,
+          ip_address: bankDetails.ip_address || null,
+        }, { transaction: t }),
+        models.DocumentAttachments.bulkCreate(
+          attachments.map(attachment => ({
+            documentNumber: document.documentNumber,
+            companyId: companyId,
+            attachmentName: attachment
+          })), { transaction: t }
+        ),
+
+      ]);
+      await t.commit();
+      return res.status(201).json({
+        message: "Document Converted to INR successfully!"
+      });
+    }
 
     if (!isDraft) {
       if (documentType != documentTypes.purchaseInvoice) {
@@ -276,7 +485,23 @@ async function createDocument(req, res) {
       customFields,
       serviceOrderDate,
       serviceOrderNumber,
-      hideColumns
+      hideColumns,
+      isMultiCurrency,
+      exchangeRate,
+      currencyCode,
+      portOfLoading,
+      portOfDischarge,
+      countryOfOrigin,
+      countryOfDischarge,
+      finalDestination,
+      countryOfFinalDestination,
+      lcNumber,
+      lcIssueBank,
+      lutNumber,
+      lutValidTill,
+      containerNumber,
+      endUserCode,
+      supplyType
     }, { transaction: t });
 
     else {
@@ -380,7 +605,23 @@ async function createDocument(req, res) {
       customFields,
       serviceOrderDate,
       serviceOrderNumber,
-      hideColumns
+      hideColumns,
+      isMultiCurrency,
+      exchangeRate,
+      currencyCode,
+      portOfLoading,
+      portOfDischarge,
+      countryOfOrigin,
+      countryOfDischarge,
+      finalDestination,
+      countryOfFinalDestination,
+      lcNumber,
+      lcIssueBank,
+      lutNumber,
+      lutValidTill,
+      containerNumber,
+      endUserCode,
+      supplyType
     }, {
       where: {
         companyId,
@@ -388,8 +629,6 @@ async function createDocument(req, res) {
       },
       transaction: t
     });
-
-
 
     if (status && documentType === documentTypes.purchaseOrder && indent_number) {
       const indent_numbers = indent_number.split(',');
@@ -995,6 +1234,7 @@ async function createDocument(req, res) {
             store: item?.store,
             poNumbers: documentType === 'Invoice' ? item?.poNumbers ? item.poNumbers : null : null,
             uniqueId: item?.uniqueId || crypto.randomUUID(),
+            packagingData: item?.packagingData || null,
           })
         }), { transaction: t }
       ),
@@ -4957,7 +5197,23 @@ async function editDocument(req, res) {
       batches = null,
       supplyState = '',
       requestForApproval,
-      customFields
+      customFields,
+      isMultiCurrency = false,
+      exchangeRate = 1.0,
+      currencyCode = '',
+      portOfLoading = null,
+      portOfDischarge = null,
+      countryOfOrigin = null,
+      countryOfDischarge = null,
+      finalDestination = null,
+      countryOfFinalDestination = null,
+      lcNumber = null,
+      lcIssueBank = null,
+      lutNumber = null,
+      lutValidTill = null,
+      containerNumber = null,
+      endUserCode = null,
+      supplyType = null
     } = req.body;
 
     const document = await models.Documents.findOne({
@@ -5340,7 +5596,23 @@ async function editDocument(req, res) {
       department,
       showUnits,
       supplyState,
-      customFields
+      customFields,
+      isMultiCurrency,
+      exchangeRate,
+      currencyCode,
+      portOfLoading,
+      portOfDischarge,
+      countryOfOrigin,
+      countryOfDischarge,
+      finalDestination,
+      countryOfFinalDestination,
+      lcNumber,
+      lcIssueBank,
+      lutNumber,
+      lutValidTill,
+      containerNumber,
+      endUserCode,
+      supplyType
     });
 
     await models.CompanyTermsCondition.destroy({
@@ -5433,6 +5705,7 @@ async function editDocument(req, res) {
             store: item?.store,
             poNumbers: documentType === 'Invoice' ? item?.poNumbers ? item.poNumbers : null : null,
             uniqueId: item?.uniqueId || crypto.randomUUID(),
+            packagingData: item?.packagingData || null
           })
         })
       ),
@@ -7178,7 +7451,8 @@ async function createEInvoice(req, res) {
   } catch (error) {
     console.error(
       "E-Invoice Error:",
-      error.response?.data || error.message
+      error.response?.data || error.message,
+      error
     );
 
     return res.status(500).json({
@@ -7626,6 +7900,85 @@ async function cancelEInvoice(req, res) {
   }
 }
 
+async function cancelEWayBill(req, res) {
+  const { document, userName, password, gst } = req.body;
+  try {
+    const authResponse = await axios.get(
+      "https://api.perione.in/ewaybillapi/v1.03/authenticate",
+      {
+        params: {
+          email: process.env.EMAIL, "username": userName,
+          "password": password,
+        },
+        headers: {
+          "Content-Type": "application/json",
+          "client_id": process.env.EWAYBILL_CLIENT_ID,
+          "client_secret": process.env.EWAYBILL_CLIENT_SECRET,
+          "gstin": gst,
+
+          "ip_address": "192.68.45.37",
+        },
+      }
+    );
+
+    const response = await axios.post(
+      "https://api.perione.in/ewaybillapi/v1.03/ewayapi/canewb",
+      {
+        ewbNo: Number(document?.ewayBillNumber),
+        cancelRsnCode: 2,
+        cancelRmrk: "Wrong entry"
+      },
+      {
+        params: { email: process.env.EMAIL },
+        headers: {
+          "client_id": process.env.EWAYBILL_CLIENT_ID,
+          "client_secret": process.env.EWAYBILL_CLIENT_SECRET,
+          "gstin": gst,
+          "username": userName,
+          "password": password,
+          "ip_address": "192.68.45.37",
+        },
+      }
+    );
+
+    if (!response?.data) {
+      return res.status(400).json({
+        message: "Cancel E-Way Bill API failed",
+        errors: response?.data
+      });
+    }
+
+    const existingDocument = await models.Documents.findOne({
+      where: {
+        companyId: document.companyId,
+        documentNumber: document.documentNumber,
+      },
+    });
+
+    const cancelDate = response?.data?.data?.CancelDate || response?.data?.data?.cancelDate || new Date();
+
+    if (existingDocument) {
+      await existingDocument.update({
+        ewayBillNumber: null,
+        ewayBillDate: null,
+        ewayBillValidTill: null,
+        ewayBillCreated: false,
+      });
+    }
+
+    res.status(200).json({
+      message: "E-Way Bill Cancelled Successfully.",
+      data: response?.data
+    });
+  } catch (error) {
+    console.error(error.response?.data || error.message);
+    res.status(500).json({
+      message: "Internal Server Error",
+      error: error.response?.data || error.message,
+    });
+  }
+}
+
 async function getChallanDocumentItems(req, res) {
   try {
     const { challan_number } = req.body;
@@ -7691,5 +8044,6 @@ module.exports = {
   emailDocument,
   cancelEInvoice,
   getChallanDocumentItems,
-  createEwayBillFromEInvoice
+  createEwayBillFromEInvoice,
+  cancelEWayBill
 };

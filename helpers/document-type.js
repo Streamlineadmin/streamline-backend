@@ -34,7 +34,8 @@ const salesDocuments = [
     "Debit Note",
     "Credit Note",
     "Sales Return",
-    "Stock Transfer Delivery Challan"
+    "Stock Transfer Delivery Challan",
+    "Packaging List",
 ];
 
 const serviceDocuments = [
@@ -110,7 +111,8 @@ const AllDocuments = {
     "Gate Entry": "GE",
     "Production Finished Good Batch": "PFGB",
     "Production Scrap Batch": "PSCRB",
-    "Document Batch": "DOCB"
+    "Document Batch": "DOCB",
+    "Packaging List": "PKL",
 }
 
 module.exports = {
