@@ -243,16 +243,99 @@ async function getApprovalById(req, res) {
 async function acceptRejectApproval(req, res) {
   const tAcceptReject = await models.sequelize.transaction();
   try {
-    const { approvalId, approvedBy, isApproved, items, by, comment } = req.body;
+    let { approvalId, approvedBy, isApproved, items, by, comment } = req.body;
+
+    const approval = await models.InventoryApproval.findByPk(approvalId, {
+      transaction: tAcceptReject
+    });
+
+    if (!items || !Array.isArray(items) || items.length === 0) {
+      const stockTransfers = await models.StockTransfer.findAll({
+        where: { approvalId },
+        transaction: tAcceptReject
+      });
+
+      const storeItems = [];
+      const storeItemMap = {};
+      let inventoryApprovalQuantity = false;
+      if (approval.approvalStatus === "Pending") {
+        if (["Goods Received Note",
+          "Quality Report",
+          "Purchase Invoice",
+          "Purchase Return", "Sales Return",
+          "Invoice", "Delivery Challan",
+          "Service Challan",
+          "Service Grn",
+          "Service Qr",
+          "Service Confirmation Challan",
+          "Service Confirmation Grn",
+          "Service Confirmation Qr"].includes(approval.documentType)) {
+          inventoryApprovalQuantity = true;
+        }
+      }
+
+      if (!approval.documentType?.includes('Production Discarded')) {
+        storeItemMap[false] = {};
+        storeItemMap[true] = {};
+        for (const element of stockTransfers) {
+          const isRejected = !!element.isRejected;
+          element.quantity = Math.abs(element.quantity) || 0;
+          element.quantityForApproval = Math.abs(element.quantityForApproval) || 0;
+          if (!storeItemMap?.[isRejected]?.[element?.itemId]) {
+            storeItems.push(element);
+            if (approval.documentType != 'Finished Good' &&
+              approval.documentType != 'Quality Report' &&
+              approval.documentType != 'Service Qr' &&
+              approval.documentType != 'Service Confirmation Qr'
+            )
+              storeItemMap[isRejected][element.itemId] = element;
+            if (inventoryApprovalQuantity) {
+              element.quantity = element.quantityForApproval;
+            }
+          } else {
+            storeItemMap[isRejected][element.itemId].quantity += inventoryApprovalQuantity ? (element.quantityForApproval || 0) : (element.quantity || 0);
+            if (inventoryApprovalQuantity) {
+              storeItemMap[isRejected][element.itemId].quantityForApproval += Math.abs(element.quantityForApproval) || 0;
+            }
+          }
+        }
+      }
+      else {
+        for (const element of stockTransfers) {
+          element.quantity = Math.abs(element.quantity) || 0;
+          element.quantityForApproval = Math.abs(element.quantityForApproval) || 0;
+          const storeId = element?.toStoreId || element?.fromStoreId;
+          const isRejected = !!element.isRejected;
+          if (!storeItemMap?.[storeId]) {
+            storeItemMap[storeId] = {};
+          }
+          if (!storeItemMap?.[storeId]?.[element.itemId]) {
+            storeItemMap[storeId][element.itemId] = {};
+          }
+          if (!storeItemMap?.[storeId]?.[element.itemId]?.[isRejected]) {
+            storeItemMap[storeId][element.itemId][isRejected] = element;
+            storeItems.push(element);
+          }
+          else {
+            storeItemMap[storeId][element.itemId][isRejected].quantity += (element.quantity || 0);
+          }
+        }
+        storeItems.forEach(item => {
+          item.quantityForApproval = item.quantity;
+        });
+      }
+
+      items = storeItems.map(data => ({
+        itemId: data.itemId,
+        quantity: Math.abs(data.quantityForApproval || data.quantity || 0),
+        isRejected: !!data.isRejected
+      }));
+    }
 
     let itemsMap = items.reduce((acc, curr) => {
       acc[Number(curr.itemId)] = Number(curr.quantity || 0);
       return acc;
     }, {});
-
-    const approval = await models.InventoryApproval.findByPk(approvalId, {
-      transaction: tAcceptReject
-    });
 
     const uoms = await models.UOM.findAll({
       where: {
