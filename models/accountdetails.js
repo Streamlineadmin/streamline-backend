@@ -25,7 +25,9 @@ module.exports = (sequelize, DataTypes) => {
     companyId: DataTypes.INTEGER,
     addedBy: DataTypes.INTEGER,
     status: DataTypes.INTEGER,
-    ip_address: DataTypes.STRING
+    ip_address: DataTypes.STRING,
+    achRoutingNumber: DataTypes.STRING,
+    fedwireRoutingNumber: DataTypes.STRING,
   }, {
     sequelize,
     modelName: 'AccountDetails',
