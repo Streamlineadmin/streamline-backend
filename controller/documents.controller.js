@@ -337,6 +337,8 @@ async function createDocument(req, res) {
           SWIFTCode: bankDetails.SWIFTCode || null,
           status: bankDetails.status || 1,
           ip_address: bankDetails.ip_address || null,
+          achRoutingNumber: bankDetails.achRoutingNumber || null,
+          fedwireRoutingNumber: bankDetails.fedwireRoutingNumber || null,
         }, { transaction: t }),
         models.DocumentAttachments.bulkCreate(
           attachments.map(attachment => ({
@@ -1263,6 +1265,8 @@ async function createDocument(req, res) {
         SWIFTCode: bankDetails.SWIFTCode || null,
         status: bankDetails.status || 1,
         ip_address: bankDetails.ip_address || null,
+        achRoutingNumber: bankDetails.achRoutingNumber || null,
+        fedwireRoutingNumber: bankDetails.fedwireRoutingNumber || null,
       }, { transaction: t }),
       models.DocumentAttachments.bulkCreate(
         attachments.map(attachment => ({
@@ -5734,6 +5738,9 @@ async function editDocument(req, res) {
         SWIFTCode: bankDetails.SWIFTCode || null,
         status: bankDetails.status || 1,
         ip_address: bankDetails.ip_address || null,
+        achRoutingNumber: bankDetails.achRoutingNumber || null,
+        fedwireRoutingNumber: bankDetails.fedwireRoutingNumber || null,
+
       }),
       models.DocumentAttachments.bulkCreate(
         attachments.map(attachment => ({

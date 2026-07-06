@@ -21,7 +21,9 @@ function addAccountDetails(req, res) {
                 companyId: req.body.companyId,
                 addedBy: req.body.userId,
                 ip_address: req.body.ip_address,
-                status: 1
+                status: 1,
+                achRoutingNumber: req.body.achRoutingNumber,
+                fedwireRoutingNumber: req.body.fedwireRoutingNumber
             };
 
             models.AccountDetails.create(team).then(result => {
@@ -60,7 +62,9 @@ function editAccountDetails(req, res) {
         companyId: req.body.companyId,
         addedBy: req.body.userId,
         ip_address: req.body.ip_address,
-        status: req.body.status || 1  // Defaults to 1 if not provided
+        status: req.body.status || 1,
+        achRoutingNumber: req.body.achRoutingNumber,
+        fedwireRoutingNumber: req.body.fedwireRoutingNumber
     };
 
     // Check if the account number  already exists for the given company but exclude the current account details

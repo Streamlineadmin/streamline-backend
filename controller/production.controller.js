@@ -2256,12 +2256,19 @@ async function bomBasedMaterialPlanning(req, res) {
             return acc;
         }, {});
 
-        const bomRawMaterial = await models.BOMRawMaterial.findAll({
+        let bomRawMaterial = await models.BOMRawMaterial.findAll({
             where: {
                 bomId: bomIds
             },
             raw: true
         });
+
+        const parentsIdMap = {};
+        for (const element of bomRawMaterial) {
+            if (element?.parentId) parentsIdMap[element.parentId] = true;
+        }
+
+        bomRawMaterial = bomRawMaterial.filter(element => !parentsIdMap[element.id]);
 
         const items = await models.Items.findAll({
             where: {
