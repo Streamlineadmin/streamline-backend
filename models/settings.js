@@ -47,6 +47,7 @@ module.exports = (sequelize, DataTypes) => {
         topSalesItemsBasis: DataTypes.STRING,
         purchaseBasis: DataTypes.STRING,
         topPurchaseItemsBasis: DataTypes.STRING,
+        showTotalItemsCount: DataTypes.BOOLEAN,
     }, {
         sequelize,
         modelName: 'Settings',

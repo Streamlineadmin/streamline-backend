@@ -5,7 +5,7 @@ const models = require('../models');
 const { Op } = require("sequelize");
 
 async function addItem(req, res) {
-    const { itemId, itemName, itemType, metricsUnit, companyId, useCustomSeries, userId, imageObj } = req.body;
+    const { itemId, itemName, itemType, metricsUnit, companyId, useCustomSeries, userId, imageObj, mrp } = req.body;
     try {
         let imageUrl = null;
         let temp = isValidJSON(imageObj) || [];
@@ -119,7 +119,8 @@ async function addItem(req, res) {
             companyId,
             status: 1,
             customFields: customFields || {},
-            imageUrl
+            imageUrl,
+            mrp: req.body.mrp || null
         };
 
         // ✅ Create item
@@ -209,7 +210,7 @@ async function addItem(req, res) {
 }
 
 async function editItem(req, res) {
-    const { id, itemId, itemName, companyId, imageObj, removeImage } = req.body;
+    const { id, itemId, itemName, companyId, imageObj, removeImage, mrp } = req.body;
     try {
         const alternateUnits = isValidJSON(req.body.alternateUnits);
         let imageUrl = null;
@@ -306,6 +307,7 @@ async function editItem(req, res) {
                     customFields: customFields || {},
                     ...(imageUrl ? { imageUrl } : {}),
                     ...(removeImage ? { imageUrl: "" } : {}),
+                    mrp
                 },
                 { where: { id }, transaction }
             );
