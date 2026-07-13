@@ -1330,63 +1330,113 @@ async function stockReconcilation(req, res) {
                     errorArray.push({ ...item, Error: err });
                     continue;
                 }
-                if (item['Final Stock'] == currentStockMap[itemId?.toString()]) {
-                    const storeItems = await models.StoreItems.findAll({
-                        where: {
-                            itemId: existingItem.id,
-                            quantity: {
-                                [Op.gt]: 0
-                            },
-                            storeId: Number(req.body.storeId?.toString()?.replaceAll('-reject', '')),
-                            isRejected
-                        },
-                        raw: true
-                    });
+                if (item['Final Stock'] == (currentStockMap[itemId?.toString()] || 0)) {
+                    if (settings?.['stockReconcilation'] == 'manual') {
+                        const transferNumber = generateTransferNumber();
 
-                    const transferNumber = generateTransferNumber()
-
-                    bulkStockTransfers.push({
-                        transferNumber,
-                        fromStoreId: null,
-                        itemId: existingItem.id,
-                        quantity: item['Final Stock'],
-                        toStoreId: Number(req.body.storeId?.toString()?.replaceAll('-reject', '')),
-                        transferDate: new Date().toISOString(),
-                        transferredBy: userId,
-                        comment: '',
-                        companyId: Number(req.body.companyId),
-                        price: price,
-                        isRejected,
-                        comment: 'physical-stock-reconciled'
-                    });
-                    for (const element of storeItems) {
                         bulkStockTransfers.push({
                             transferNumber,
                             fromStoreId: Number(req.body.storeId?.toString()?.replaceAll('-reject', '')),
                             itemId: existingItem.id,
-                            quantity: element.quantity * -1,
+                            quantity: null,
                             toStoreId: null,
                             transferDate: new Date().toISOString(),
-                            transferredBy: userId,
-                            comment: '',
-                            companyId: Number(req.body.companyId),
-                            price: element.price,
-                            isRejected: element?.isRejected || false,
+                            transferredBy: Number(userId),
+                            companyId: Number(companyId),
+                            price: price,
+                            isRejected,
+                            approvalId: approval.id,
+                            quantityForApproval: Number(item['Final Stock'] || 0) * -1,
                             comment: 'physical-stock-reconciled'
                         });
-                        bulkStoreItems.push({ ...element, quantity: 0 });
-                    }
 
-                    bulkStoreItems.push({
-                        storeId: Number(req.body.storeId?.toString()?.replaceAll('-reject', '')),
-                        itemId: existingItem.id,
-                        quantity: Number(item['Final Stock'] || 0),
-                        addedBy: Number(req.body.companyId),
-                        status: 1,
-                        addedBy: Number(userId),
-                        price: price,
-                        isRejected
-                    });
+                        bulkStockTransfers.push({
+                            transferNumber,
+                            fromStoreId: null,
+                            itemId: existingItem.id,
+                            quantity: null,
+                            toStoreId: Number(req.body.storeId?.toString()?.replaceAll('-reject', '')),
+                            transferDate: new Date().toISOString(),
+                            transferredBy: Number(userId),
+                            companyId: Number(companyId),
+                            price: price,
+                            isRejected,
+                            approvalId: approval.id,
+                            quantityForApproval: Number(item['Final Stock'] || 0),
+                            comment: 'physical-stock-reconciled'
+                        });
+
+                        bulkStoreItems.push({
+                            storeId: Number(req.body.storeId?.toString()?.replaceAll('-reject', '')),
+                            itemId: existingItem.id,
+                            quantity: 0,
+                            status: 1,
+                            addedBy: Number(userId),
+                            price: price,
+                            isRejected,
+                            approvalId: approval.id,
+                            quantityForApproval: Number(item['Final Stock'] || 0)
+                        });
+                    } else {
+                        const storeItems = await models.StoreItems.findAll({
+                            where: {
+                                itemId: existingItem.id,
+                                quantity: {
+                                    [Op.gt]: 0
+                                },
+                                storeId: Number(req.body.storeId?.toString()?.replaceAll('-reject', '')),
+                                isRejected
+                            },
+                            raw: true
+                        });
+
+                        const transferNumber = generateTransferNumber();
+
+                        bulkStockTransfers.push({
+                            transferNumber,
+                            fromStoreId: null,
+                            itemId: existingItem.id,
+                            quantity: item['Final Stock'],
+                            toStoreId: Number(req.body.storeId?.toString()?.replaceAll('-reject', '')),
+                            transferDate: new Date().toISOString(),
+                            transferredBy: Number(userId),
+                            companyId: Number(companyId),
+                            price: price,
+                            isRejected,
+                            comment: 'physical-stock-reconciled',
+                            quantityForApproval: Number(item['Final Stock'] || 0),
+                            approvalId: approval.id,
+                        });
+                        for (const element of storeItems) {
+                            bulkStockTransfers.push({
+                                transferNumber,
+                                fromStoreId: Number(req.body.storeId?.toString()?.replaceAll('-reject', '')),
+                                itemId: existingItem.id,
+                                quantity: element.quantity * -1,
+                                toStoreId: null,
+                                transferDate: new Date().toISOString(),
+                                transferredBy: Number(userId),
+                                companyId: Number(companyId),
+                                price: element.price,
+                                isRejected: element?.isRejected || false,
+                                comment: 'physical-stock-reconciled',
+                                quantityForApproval: Number(item['Final Stock'] || 0),
+                                approvalId: approval.id,
+                            });
+                            bulkStoreItems.push({ ...element, quantity: 0 });
+                        }
+
+                        bulkStoreItems.push({
+                            storeId: Number(req.body.storeId?.toString()?.replaceAll('-reject', '')),
+                            itemId: existingItem.id,
+                            quantity: Number(item['Final Stock'] || 0),
+                            status: 1,
+                            addedBy: Number(userId),
+                            price: price,
+                            isRejected,
+                            approvalId: approval.id,
+                        });
+                    }
 
                     continue;
                 }
