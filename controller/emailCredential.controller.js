@@ -2,12 +2,13 @@ const models = require("../models");
 
 async function createEmailCredential(req, res) {
     try {
-        const { companyId, email, password, userId } = req.body;
+        const { companyId, email, password, userId, host } = req.body;
         await models.EMailCredential.create({
             companyId,
             email,
             password,
-            userId
+            userId,
+            host
         });
         return res.status(200).json({
             message: 'Credentials Saved Successfully.',
@@ -34,7 +35,7 @@ async function getEmailCredential(req, res) {
 
 async function updateEmailCredential(req, res) {
     try {
-        const { email, password, userId } = req.body;
+        const { email, password, userId, host } = req.body;
 
         const credential = await models.EMailCredential.findOne({
             where: { userId },
@@ -44,7 +45,7 @@ async function updateEmailCredential(req, res) {
             return res.status(404).json({ message: "Credentials not found." });
         }
 
-        await credential.update({ email, password });
+        await credential.update({ email, password, host });
 
         return res.status(200).json({ message: "Credentials updated successfully." });
     } catch (error) {

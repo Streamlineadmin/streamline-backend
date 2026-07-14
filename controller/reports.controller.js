@@ -628,6 +628,19 @@ async function getReports(req, res) {
                 },
                 raw: true
             });
+            const uoms = await models.UOM.findAll({
+                where: {
+                    [Op.or]: [
+                        { companyId: req.body.companyId, status: 1 },
+                        { companyId: null, status: 0 }
+                    ]
+                },
+                raw: true
+            });
+            const uomMap = uoms.reduce((acc, curr) => {
+                acc[curr.id] = curr.name;
+                return acc;
+            }, {});
             const itemsMap = items.reduce((acc, curr) => {
                 acc[curr.id] = curr.itemId;
                 return acc;
@@ -678,6 +691,7 @@ async function getReports(req, res) {
                 if (item.category) item.category = categoryMap[item.category] || '';
                 if (item.subCategory) item.subCategory = categoryMap[item.subCategory] || '';
                 if (item.microCategory) item.microCategory = categoryMap[item.microCategory] || '';
+                if (item.metricsUnit) item.uom = uomMap[item.metricsUnit] || '';
             }
             return res.status(200).json({ data: items, total: items.length });
 

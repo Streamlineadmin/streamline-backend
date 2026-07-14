@@ -7142,18 +7142,23 @@ async function createEInvoice(req, res) {
       return isNaN(num) ? 0 : num;
     };
 
-    const additionalChargeTotals = additionalCharges.reduce(
-      (acc, charge) => {
-        const price = toNumber(charge?.total);
-
-        acc.othChrg += price;
-
-        return acc;
-      },
-      {
-        othChrg: 0,
+    const getSacCode = (chargingFor) => {
+      const name = (chargingFor || "").toLowerCase();
+      if (
+        name.includes("ship") ||
+        name.includes("freight") ||
+        name.includes("delivery") ||
+        name.includes("transport") ||
+        name.includes("courier") ||
+        name.includes("postage")
+      ) {
+        return "996511";
       }
-    );
+      if (name.includes("pack")) {
+        return "998540";
+      }
+      return "999799";
+    };
 
     let AssVal = 0;
     let CgstVal = 0;
@@ -7269,6 +7274,54 @@ async function createEInvoice(req, res) {
         };
       }
     );
+
+    const additionalChargeTotals = {
+      othChrg: 0,
+    };
+
+    additionalCharges.forEach((charge) => {
+      const taxRate = toNumber(charge?.tax);
+      const price = toNumber(charge?.price);
+      const total = toNumber(charge?.total);
+
+      if (taxRate > 0) {
+        const totalBeforeTax = round2(price);
+        const totalTax = round2((totalBeforeTax * taxRate) / 100);
+        const totalAfterTax = round2(totalBeforeTax + totalTax);
+
+        const cgst = isIgst ? 0 : round2(totalTax / 2);
+        const sgst = isIgst ? 0 : round2(totalTax / 2);
+        const igst = isIgst ? totalTax : 0;
+
+        AssVal += totalBeforeTax;
+        CgstVal += cgst;
+        SgstVal += sgst;
+        IgstVal += igst;
+        TotInvVal += totalAfterTax;
+
+        items.push({
+          SlNo: String(items.length + 1),
+          IsServc: "Y",
+          PrdDesc: charge.chargingFor || "Charges",
+          HsnCd: getSacCode(charge.chargingFor),
+          Qty: 1,
+          Unit: "OTH",
+          UnitPrice: totalBeforeTax,
+
+          TotAmt: totalBeforeTax,
+          AssAmt: totalBeforeTax,
+          GstRt: taxRate,
+          SgstAmt: sgst,
+          CgstAmt: cgst,
+          IgstAmt: igst,
+          TotItemVal: totalAfterTax,
+        });
+      } else {
+        additionalChargeTotals.othChrg = round2(
+          additionalChargeTotals.othChrg + (total || price)
+        );
+      }
+    });
 
     TotInvVal += additionalChargeTotals.othChrg;
 
@@ -7775,12 +7828,16 @@ async function emailDocument(req, res) {
     const from = emailCredential?.email || process.env.SMTP_USER;
 
     const transporter = nodemailer.createTransport({
-      host: process.env.SMTP_HOST,
+      host: emailCredential?.host || process.env.SMTP_HOST,
       port: process.env.SMTP_PORT,
       secure: true,
       auth: {
         user: user,
         pass: pass
+      },
+      name: user.includes("@") ? user.split("@")[1] : undefined,
+      tls: {
+        rejectUnauthorized: false
       }
     });
 

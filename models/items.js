@@ -37,7 +37,8 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.JSON,
       defaultValue: []
     },
-    imageUrl: DataTypes.STRING
+    imageUrl: DataTypes.STRING,
+    mrp: DataTypes.FLOAT,
   }, {
     sequelize,
     modelName: 'Items',
