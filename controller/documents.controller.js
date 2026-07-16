@@ -7580,7 +7580,7 @@ async function createEwayBillFromEInvoice(req, res) {
       Irn: irn,
       Distance: 0,
       TransMode: String(transMode || "1"),
-      TransId: gst,
+      ...(transId && { TransId: transId }),
       TransName: transName,
       TransDocDt: transDocDt,
       TransDocNo: transDocNo,
