@@ -471,9 +471,13 @@ async function getItems(req, res) {
         const itemIds = items.map((item) => item.id);
 
         const storeItems = await models.StoreItems.findAll({
-            where: { itemId: itemIds },
-            attributes: ['itemId', 'storeId', 'quantity', 'isRejected'],
+            where: {
+                itemId: itemIds,
+                quantity: { [Op.gt]: 0 }
+            },
+            attributes: ['itemId', 'storeId', 'quantity', 'isRejected', 'price'],
             raw: true,
+            order: [['createdAt', 'ASC']]
         });
 
         // Step 3: Retrieve alternate units
@@ -484,12 +488,23 @@ async function getItems(req, res) {
         });
 
         // Step 4: Structure the response
+        const fifoPrice = {}, averagePrice = {};
         const itemsWithStores = items.map((item) => {
             const relatedStoreItems = storeItems.filter((si) => si.itemId === item.id);
 
             // Group quantities by store and isRejected
             const storeDataMap = {};
-            relatedStoreItems.forEach(({ storeId, quantity, isRejected }) => {
+            relatedStoreItems.forEach(({ storeId, quantity, isRejected, price }) => {
+                if (!isRejected) {
+                    if (!fifoPrice[item.id]) {
+                        fifoPrice[item.id] = price || 0;
+                    }
+                    if (!averagePrice[item.id]) {
+                        averagePrice[item.id] = { total: 0, count: 0 };
+                    }
+                    averagePrice[item.id].total += (price || 0) * quantity;
+                    averagePrice[item.id].count += quantity;
+                }
                 if (!storeDataMap[storeId]) {
                     storeDataMap[storeId] = { quantity: 0, rejectedQuantity: 0 };
                 }
@@ -519,7 +534,8 @@ async function getItems(req, res) {
             return {
                 ...item,
                 stores,
-                // stores: [],
+                fifoPrice: fifoPrice[item.id],
+                averagePrice: averagePrice[item.id]?.count ? averagePrice[item.id].total / averagePrice[item.id].count : (item.price || 0),
                 alternateUnits: itemAlternateUnits,
             };
         });
