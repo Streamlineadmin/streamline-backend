@@ -146,6 +146,7 @@ const amyRoutes = require("./routes/amy");
 const showhidecolumns = require("./models/showhidecolumns");
 const gateEntryRoute = require("./routes/gateEntry");
 const ledgerMappingRoute = require("./routes/ledgerMapping");
+const itemMappingRoute = require("./routes/itemMapping");
 const app = express();
 
 // Apply body-parser middleware to handle JSON request bodies
@@ -547,5 +548,7 @@ app.use("/showHideColumns", ShowHideColumnRoutes);
 app.use("/amy", amyRoutes);
 app.use("/gateEntry", gateEntryRoute);
 app.use("/ledgerMapping", ledgerMappingRoute);
+app.use("/itemMapping", itemMappingRoute);
+app.use("/itemmapping", itemMappingRoute);
 
 module.exports = app;

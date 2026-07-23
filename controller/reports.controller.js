@@ -638,7 +638,7 @@ async function getReports(req, res) {
                 raw: true
             });
             const uomMap = uoms.reduce((acc, curr) => {
-                acc[curr.id] = curr.name;
+                acc[curr.id] = curr.code;
                 return acc;
             }, {});
             const itemsMap = items.reduce((acc, curr) => {
