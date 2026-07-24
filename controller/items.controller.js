@@ -989,6 +989,7 @@ async function addBulkItem(req, res) {
                 microCategory: microCategory?.id || null,
                 HSNCode: item.HSN || null,
                 price: item.Price || 0,
+                mrp: item.MRP !== undefined && item.MRP !== null && item.MRP !== '' ? Number(item.MRP) : (item.mrp !== undefined && item.mrp !== null && item.mrp !== '' ? Number(item.mrp) : null),
                 taxType: item['Tax Type'] ? item['Tax Type'] == 'Inclusive' ? 1 : 2 : 1,
                 tax: Number(item['Tax']) || 0,
                 minStock: item['Min Stock'] || null,
@@ -1136,6 +1137,9 @@ async function bulkEditItems(req, res) {
             if (item["Price"] && Number(item["Price"]) < 0) {
                 err += "Price should be greater than 0. ";
             }
+            if (item["MRP"] && Number(item["MRP"]) < 0) {
+                err += "MRP should be non-negative. ";
+            }
             if (item["Min Stock"] && Number(item["Min Stock"]) < 0) {
                 err += "Min Stock value should be non-negative. ";
             }
@@ -1194,6 +1198,7 @@ async function bulkEditItems(req, res) {
                 ...(subCategory && { subCategory: subCategory.id }),
                 ...(microCategory && { microCategory: microCategory.id }),
                 ...(item.Price && { price: item.Price }),
+                ...(item.MRP !== undefined && item.MRP !== null && item.MRP !== '' && { mrp: Number(item.MRP) }),
                 ...(item["Min Stock"] && { minStock: item["Min Stock"] }),
                 ...(item["Max Stock"] && { maxStock: item["Max Stock"] }),
                 ...(item.Description && { description: item.Description }),
@@ -1219,6 +1224,7 @@ async function bulkEditItems(req, res) {
                         'subCategory',
                         'microCategory',
                         'price',
+                        'mrp',
                         'minStock',
                         'maxStock',
                         'description',
