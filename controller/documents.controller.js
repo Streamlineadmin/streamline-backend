@@ -3013,7 +3013,7 @@ async function createDocument(req, res) {
 
       // Service Order Flow
       if (
-        ["Service Challan", "Service GRN", "Service QR", "Service Debit Note", "Service Credit Note", "Service Invoice", "Service Proforma Invoice"]
+        ["Service Challan", "Service Grn", "Service Qr", "Service Debit Note", "Service Credit Note", "Service Invoice", "Service Proforma Invoice"]
           .includes(documentType) &&
         serviceOrderNumber
       ) {
@@ -3038,7 +3038,7 @@ async function createDocument(req, res) {
 
       // Service Confirmation Flow
       if (
-        ["Service Confirmation Challan", "Service Confirmation GRN", "Service Confirmation QR", "Service Confirmation Debit Note", "Service Confirmation Credit Note", "Service Confirmation Invoice", "Service Confirmation Proforma Invoice"]
+        ["Service Confirmation Challan", "Service Confirmation Grn", "Service Confirmation Qr", "Service Confirmation Debit Note", "Service Confirmation Credit Note", "Service Confirmation Invoice", "Service Confirmation Proforma Invoice"]
           .includes(documentType) &&
         ServiceConfirmationNumber
       ) {
