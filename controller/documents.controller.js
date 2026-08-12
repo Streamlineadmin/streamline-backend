@@ -5265,14 +5265,41 @@ async function editDocument(req, res) {
     else if (documentType == 'Sales Order') {
       const document = await models.Documents.findOne({
         where: {
-          orderConfirmationNumber: documentNumber,
-          companyId: Number(companyId),
-          status: {
-            [Op.ne]: 2,
-          },
-          documentType: 'Proforma Invoice'
+          [Op.and]: [
+            models.sequelize.where(
+              models.sequelize.fn(
+                'FIND_IN_SET',
+                documentNumber,
+                models.sequelize.col('orderConfirmationNumber')
+              ),
+              {
+                [Op.gt]: 0
+              }
+            ),
+            {
+              companyId: Number(companyId),
+              status: {
+                [Op.ne]: 2,
+              },
+              documentType: {
+                [Op.in]: ['Invoice', 'Delivery Challan', 'Proforma Invoice']
+              }
+            }
+          ]
         }
       });
+      // const document = await models.Documents.findOne({
+      //   where: {
+      //     orderConfirmationNumber: documentNumber,
+      //     companyId: Number(companyId),
+      //     status: {
+      //       [Op.ne]: 2,
+      //     },
+      //     documentType: {
+      //       [Op.in]: ['Invoice', 'Delivery Challan', 'Proforma Invoice']
+      //     }
+      //   }
+      // });
       if (document) {
         return res.status(400).json({ message: 'This document reference is available in other document. It is not be Edited.' });
       }

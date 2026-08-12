@@ -48,6 +48,8 @@ module.exports = (sequelize, DataTypes) => {
         purchaseBasis: DataTypes.STRING,
         topPurchaseItemsBasis: DataTypes.STRING,
         showTotalItemsCount: DataTypes.BOOLEAN,
+        soNumberMandatoryOnInvoice: DataTypes.BOOLEAN,
+        soNumberMandatoryOnChallan: DataTypes.BOOLEAN,
     }, {
         sequelize,
         modelName: 'Settings',
