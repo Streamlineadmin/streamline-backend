@@ -1839,17 +1839,28 @@ async function workOrderStatus(req, res) {
 
 async function getSalesDashboardDetails(req, res) {
     try {
-        const { companyId, type, start, end } = req.body;
-        if (!companyId || !type) {
+        const { companyId, types, type, start, end } = req.body;
+
+        let typesArray = [];
+        if (Array.isArray(types) && types.length > 0) {
+            typesArray = types;
+        } else if (Array.isArray(type) && type.length > 0) {
+            typesArray = type;
+        } else if (typeof type === 'string' && type.trim()) {
+            typesArray = [type];
+        }
+
+        if (!companyId || typesArray.length === 0) {
             return res.status(400).json({
-                message: "companyId and type are required"
+                message: "companyId and at least one valid type are required"
             });
         }
 
         const validTypes = ['salesOrder', 'todayDeliveries', 'deliveryChallan', 'invoice', 'pendingDispatch', 'partiallyDeliveredDispatch', 'fullyDeliveredDispatch', 'cancelledDispatch', 'purchaseOrder', 'purchaseInvoice'];
-        if (!validTypes.includes(type)) {
+        const invalidTypes = typesArray.filter(t => !validTypes.includes(t));
+        if (invalidTypes.length > 0) {
             return res.status(400).json({
-                message: "Invalid type. Must be one of: 'salesOrder', 'todayDeliveries', 'deliveryChallan', 'invoice', 'pendingDispatch', 'partiallyDeliveredDispatch', 'fullyDeliveredDispatch', 'cancelledDispatch', 'purchaseOrder', 'purchaseInvoice'"
+                message: `Invalid type(s): ${invalidTypes.join(', ')}. Must be one of: ${validTypes.join(', ')}`
             });
         }
 
@@ -1884,139 +1895,185 @@ async function getSalesDashboardDetails(req, res) {
             return null;
         };
 
-        let data = [];
+        const statusPartially = [10, 19, 20, 33, 37, 41, 42, 45, 46];
+        const statusFully = [11, 21, 22, 34, 38, 43, 44, 47, 48];
 
-        if (type === 'salesOrder') {
-            data = await models.Documents.findAll({
-                where: {
-                    companyId: Number(companyId),
-                    documentType: 'Sales Order',
-                    status: {
-                        [Op.ne]: 0
+        let combinedData = [];
+
+        for (const currentType of typesArray) {
+            let dataForType = [];
+
+            if (currentType === 'salesOrder') {
+                dataForType = await models.Documents.findAll({
+                    where: {
+                        companyId: Number(companyId),
+                        documentType: 'Sales Order',
+                        status: {
+                            [Op.ne]: 0
+                        },
+                        createdAt: {
+                            [Op.between]: [startOfMonth, endOfMonth]
+                        }
                     },
-                    createdAt: {
-                        [Op.between]: [startOfMonth, endOfMonth]
-                    }
-                },
-                order: [['createdAt', 'DESC']],
-                raw: true
-            });
-        } else if (type === 'todayDeliveries') {
-            const salesOrders = await models.Documents.findAll({
-                where: {
-                    companyId: Number(companyId),
-                    documentType: 'Sales Order',
-                    status: {
-                        [Op.ne]: 0
-                    }
-                },
-                order: [['createdAt', 'DESC']],
-                raw: true
-            });
+                    order: [['createdAt', 'DESC']],
+                    raw: true
+                });
+            } else if (currentType === 'todayDeliveries') {
+                const salesOrders = await models.Documents.findAll({
+                    where: {
+                        companyId: Number(companyId),
+                        documentType: 'Sales Order',
+                        status: {
+                            [Op.ne]: 0
+                        }
+                    },
+                    order: [['createdAt', 'DESC']],
+                    raw: true
+                });
 
-            data = salesOrders.filter(doc => {
-                if (!doc.deliveryDate) return false;
-                const d = parseDateString(doc.deliveryDate);
-                if (!d) return false;
-                if (start && end) {
-                    return d >= startOfMonth && d <= endOfMonth;
-                } else {
-                    return d >= startOfToday && d <= endOfToday;
+                dataForType = salesOrders.filter(doc => {
+                    if (!doc.deliveryDate) return false;
+                    const d = parseDateString(doc.deliveryDate);
+                    if (!d) return false;
+                    if (start && end) {
+                        return d >= startOfMonth && d <= endOfMonth;
+                    } else {
+                        return d >= startOfToday && d <= endOfToday;
+                    }
+                });
+            } else if (currentType === 'deliveryChallan') {
+                dataForType = await models.Documents.findAll({
+                    where: {
+                        companyId: Number(companyId),
+                        documentType: 'Delivery Challan',
+                        status: {
+                            [Op.ne]: 0
+                        },
+                        createdAt: {
+                            [Op.between]: [startOfMonth, endOfMonth]
+                        }
+                    },
+                    order: [['createdAt', 'DESC']],
+                    raw: true
+                });
+            } else if (['pendingDispatch', 'partiallyDeliveredDispatch', 'fullyDeliveredDispatch', 'cancelledDispatch'].includes(currentType)) {
+                const salesOrders = await models.Documents.findAll({
+                    where: {
+                        companyId: Number(companyId),
+                        documentType: 'Sales Order',
+                        status: {
+                            [Op.ne]: 0
+                        },
+                        createdAt: {
+                            [Op.between]: [startOfMonth, endOfMonth]
+                        }
+                    },
+                    order: [['createdAt', 'DESC']],
+                    raw: true
+                });
+
+                if (currentType === 'cancelledDispatch') {
+                    dataForType = salesOrders.filter(doc => doc.status === 2);
+                } else if (currentType === 'partiallyDeliveredDispatch') {
+                    dataForType = salesOrders.filter(doc => statusPartially.includes(doc.status));
+                } else if (currentType === 'fullyDeliveredDispatch') {
+                    dataForType = salesOrders.filter(doc => statusFully.includes(doc.status));
+                } else if (currentType === 'pendingDispatch') {
+                    dataForType = salesOrders.filter(doc => doc.status !== 2 && !statusPartially.includes(doc.status) && !statusFully.includes(doc.status));
                 }
-            });
-        } else if (type === 'deliveryChallan') {
-            data = await models.Documents.findAll({
-                where: {
-                    companyId: Number(companyId),
-                    documentType: 'Delivery Challan',
-                    status: {
-                        [Op.ne]: 0
+            } else if (currentType === 'invoice') {
+                dataForType = await models.Documents.findAll({
+                    where: {
+                        companyId: Number(companyId),
+                        documentType: 'Invoice',
+                        status: {
+                            [Op.ne]: 0
+                        },
+                        createdAt: {
+                            [Op.between]: [startOfMonth, endOfMonth]
+                        }
                     },
-                    createdAt: {
-                        [Op.between]: [startOfMonth, endOfMonth]
-                    }
-                },
-                order: [['createdAt', 'DESC']],
-                raw: true
-            });
-        } else if (['pendingDispatch', 'partiallyDeliveredDispatch', 'fullyDeliveredDispatch', 'cancelledDispatch'].includes(type)) {
-            const statusPartially = [10, 19, 20, 33, 37, 41, 42, 45, 46];
-            const statusFully = [11, 21, 22, 34, 38, 43, 44, 47, 48];
-
-            const salesOrders = await models.Documents.findAll({
-                where: {
-                    companyId: Number(companyId),
-                    documentType: 'Sales Order',
-                    status: {
-                        [Op.ne]: 0
+                    order: [['createdAt', 'DESC']],
+                    raw: true
+                });
+            } else if (currentType === 'purchaseOrder') {
+                dataForType = await models.Documents.findAll({
+                    where: {
+                        companyId: Number(companyId),
+                        documentType: 'Purchase Order',
+                        status: {
+                            [Op.ne]: 0
+                        },
+                        createdAt: {
+                            [Op.between]: [startOfMonth, endOfMonth]
+                        }
                     },
-                    createdAt: {
-                        [Op.between]: [startOfMonth, endOfMonth]
-                    }
-                },
-                order: [['createdAt', 'DESC']],
-                raw: true
-            });
-
-            if (type === 'cancelledDispatch') {
-                data = salesOrders.filter(doc => doc.status === 2);
-            } else if (type === 'partiallyDeliveredDispatch') {
-                data = salesOrders.filter(doc => statusPartially.includes(doc.status));
-            } else if (type === 'fullyDeliveredDispatch') {
-                data = salesOrders.filter(doc => statusFully.includes(doc.status));
-            } else if (type === 'pendingDispatch') {
-                data = salesOrders.filter(doc => doc.status !== 2 && !statusPartially.includes(doc.status) && !statusFully.includes(doc.status));
+                    order: [['createdAt', 'DESC']],
+                    raw: true
+                });
+            } else if (currentType === 'purchaseInvoice') {
+                dataForType = await models.Documents.findAll({
+                    where: {
+                        companyId: Number(companyId),
+                        documentType: 'Purchase Invoice',
+                        status: {
+                            [Op.ne]: 0
+                        },
+                        createdAt: {
+                            [Op.between]: [startOfMonth, endOfMonth]
+                        }
+                    },
+                    order: [['createdAt', 'DESC']],
+                    raw: true
+                });
             }
-        } else if (type === 'invoice') {
-            data = await models.Documents.findAll({
+
+            combinedData.push(...dataForType);
+        }
+
+        const seenIds = new Set();
+        const uniqueData = [];
+        for (const item of combinedData) {
+            const key = item.id || item.documentNumber;
+            if (key) {
+                if (!seenIds.has(key)) {
+                    seenIds.add(key);
+                    uniqueData.push(item);
+                }
+            } else {
+                uniqueData.push(item);
+            }
+        }
+
+        uniqueData.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+
+        const documentNumbers = uniqueData.map(doc => doc.documentNumber).filter(Boolean);
+
+        if (documentNumbers.length > 0) {
+            const documentItems = await models.DocumentItems.findAll({
                 where: {
-                    companyId: Number(companyId),
-                    documentType: 'Invoice',
-                    status: {
-                        [Op.ne]: 0
-                    },
-                    createdAt: {
-                        [Op.between]: [startOfMonth, endOfMonth]
-                    }
+                    documentNumber: documentNumbers,
+                    companyId: Number(companyId)
                 },
-                order: [['createdAt', 'DESC']],
-                raw: true
+                raw: true,
             });
-        } else if (type === 'purchaseOrder') {
-            data = await models.Documents.findAll({
-                where: {
-                    companyId: Number(companyId),
-                    documentType: 'Purchase Order',
-                    status: {
-                        [Op.ne]: 0
-                    },
-                    createdAt: {
-                        [Op.between]: [startOfMonth, endOfMonth]
-                    }
-                },
-                order: [['createdAt', 'DESC']],
-                raw: true
-            });
-        } else if (type === 'purchaseInvoice') {
-            data = await models.Documents.findAll({
-                where: {
-                    companyId: Number(companyId),
-                    documentType: 'Purchase Invoice',
-                    status: {
-                        [Op.ne]: 0
-                    },
-                    createdAt: {
-                        [Op.between]: [startOfMonth, endOfMonth]
-                    }
-                },
-                order: [['createdAt', 'DESC']],
-                raw: true
-            });
+
+            const itemsMap = new Map();
+            for (const item of documentItems) {
+                if (!itemsMap.has(item.documentNumber)) {
+                    itemsMap.set(item.documentNumber, []);
+                }
+                itemsMap.get(item.documentNumber).push(item);
+            }
+
+            for (const doc of uniqueData) {
+                doc.items = itemsMap.get(doc.documentNumber) || [];
+            }
         }
 
         return res.status(200).json({
-            message: `${type} records fetched successfully`,
-            data: data
+            message: `Records fetched successfully for types: ${typesArray.join(', ')}`,
+            data: uniqueData
         });
 
     } catch (err) {
