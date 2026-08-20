@@ -1865,20 +1865,22 @@ async function getSalesDashboardDetails(req, res) {
         }
 
         const now = new Date();
-        let startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-        let endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
-
-        if (start && end) {
-            const parsedStart = new Date(start);
-            const parsedEnd = new Date(end);
-            if (!isNaN(parsedStart.getTime()) && !isNaN(parsedEnd.getTime())) {
-                startOfMonth = parsedStart;
-                endOfMonth = parsedEnd;
-            }
-        }
-
         const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
         const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+
+        let hasDateFilter = false;
+        let parsedStart = null;
+        let parsedEnd = null;
+
+        if (start && end) {
+            const s = new Date(start);
+            const e = new Date(end);
+            if (!isNaN(s.getTime()) && !isNaN(e.getTime())) {
+                parsedStart = s;
+                parsedEnd = e;
+                hasDateFilter = true;
+            }
+        }
 
         const parseDateString = (str) => {
             if (!str) return null;
@@ -1898,6 +1900,22 @@ async function getSalesDashboardDetails(req, res) {
         const statusPartially = [10, 19, 20, 33, 37, 41, 42, 45, 46];
         const statusFully = [11, 21, 22, 34, 38, 43, 44, 47, 48];
 
+        const buildWhere = (docType) => {
+            const where = {
+                companyId: Number(companyId),
+                documentType: docType,
+                status: {
+                    [Op.ne]: 0
+                }
+            };
+            if (hasDateFilter) {
+                where.createdAt = {
+                    [Op.between]: [parsedStart, parsedEnd]
+                };
+            }
+            return where;
+        };
+
         let combinedData = [];
 
         for (const currentType of typesArray) {
@@ -1905,16 +1923,7 @@ async function getSalesDashboardDetails(req, res) {
 
             if (currentType === 'salesOrder') {
                 dataForType = await models.Documents.findAll({
-                    where: {
-                        companyId: Number(companyId),
-                        documentType: 'Sales Order',
-                        status: {
-                            [Op.ne]: 0
-                        },
-                        createdAt: {
-                            [Op.between]: [startOfMonth, endOfMonth]
-                        }
-                    },
+                    where: buildWhere('Sales Order'),
                     order: [['createdAt', 'DESC']],
                     raw: true
                 });
@@ -1935,39 +1944,21 @@ async function getSalesDashboardDetails(req, res) {
                     if (!doc.deliveryDate) return false;
                     const d = parseDateString(doc.deliveryDate);
                     if (!d) return false;
-                    if (start && end) {
-                        return d >= startOfMonth && d <= endOfMonth;
+                    if (hasDateFilter) {
+                        return d >= parsedStart && d <= parsedEnd;
                     } else {
                         return d >= startOfToday && d <= endOfToday;
                     }
                 });
             } else if (currentType === 'deliveryChallan') {
                 dataForType = await models.Documents.findAll({
-                    where: {
-                        companyId: Number(companyId),
-                        documentType: 'Delivery Challan',
-                        status: {
-                            [Op.ne]: 0
-                        },
-                        createdAt: {
-                            [Op.between]: [startOfMonth, endOfMonth]
-                        }
-                    },
+                    where: buildWhere('Delivery Challan'),
                     order: [['createdAt', 'DESC']],
                     raw: true
                 });
             } else if (['pendingDispatch', 'partiallyDeliveredDispatch', 'fullyDeliveredDispatch', 'cancelledDispatch'].includes(currentType)) {
                 const salesOrders = await models.Documents.findAll({
-                    where: {
-                        companyId: Number(companyId),
-                        documentType: 'Sales Order',
-                        status: {
-                            [Op.ne]: 0
-                        },
-                        createdAt: {
-                            [Op.between]: [startOfMonth, endOfMonth]
-                        }
-                    },
+                    where: buildWhere('Sales Order'),
                     order: [['createdAt', 'DESC']],
                     raw: true
                 });
@@ -1983,46 +1974,19 @@ async function getSalesDashboardDetails(req, res) {
                 }
             } else if (currentType === 'invoice') {
                 dataForType = await models.Documents.findAll({
-                    where: {
-                        companyId: Number(companyId),
-                        documentType: 'Invoice',
-                        status: {
-                            [Op.ne]: 0
-                        },
-                        createdAt: {
-                            [Op.between]: [startOfMonth, endOfMonth]
-                        }
-                    },
+                    where: buildWhere('Invoice'),
                     order: [['createdAt', 'DESC']],
                     raw: true
                 });
             } else if (currentType === 'purchaseOrder') {
                 dataForType = await models.Documents.findAll({
-                    where: {
-                        companyId: Number(companyId),
-                        documentType: 'Purchase Order',
-                        status: {
-                            [Op.ne]: 0
-                        },
-                        createdAt: {
-                            [Op.between]: [startOfMonth, endOfMonth]
-                        }
-                    },
+                    where: buildWhere('Purchase Order'),
                     order: [['createdAt', 'DESC']],
                     raw: true
                 });
             } else if (currentType === 'purchaseInvoice') {
                 dataForType = await models.Documents.findAll({
-                    where: {
-                        companyId: Number(companyId),
-                        documentType: 'Purchase Invoice',
-                        status: {
-                            [Op.ne]: 0
-                        },
-                        createdAt: {
-                            [Op.between]: [startOfMonth, endOfMonth]
-                        }
-                    },
+                    where: buildWhere('Purchase Invoice'),
                     order: [['createdAt', 'DESC']],
                     raw: true
                 });
