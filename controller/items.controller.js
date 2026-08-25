@@ -620,9 +620,31 @@ async function getPaginatedItems(req, res) {
         }
 
         if (filters && typeof filters === 'object') {
-            if (filters.category) queryOptions.where.category = filters.category;
-            if (filters.subCategory) queryOptions.where.subCategory = filters.subCategory;
-            if (filters.microCategory) queryOptions.where.microCategory = filters.microCategory;
+            if (filters.categorySearch !== undefined && filters.categorySearch !== null && filters.categorySearch !== '') {
+                const orConditions = [];
+                if (filters.categorySearchCategoryIds && filters.categorySearchCategoryIds.length > 0) {
+                    orConditions.push({ category: { [Op.in]: filters.categorySearchCategoryIds } });
+                }
+                if (filters.categorySearchSubCategoryIds && filters.categorySearchSubCategoryIds.length > 0) {
+                    orConditions.push({ subCategory: { [Op.in]: filters.categorySearchSubCategoryIds } });
+                }
+                if (filters.categorySearchMicroCategoryIds && filters.categorySearchMicroCategoryIds.length > 0) {
+                    orConditions.push({ microCategory: { [Op.in]: filters.categorySearchMicroCategoryIds } });
+                }
+                if (orConditions.length > 0) {
+                    if (queryOptions.where[Op.and]) {
+                        queryOptions.where[Op.and].push({ [Op.or]: orConditions });
+                    } else {
+                        queryOptions.where[Op.and] = [{ [Op.or]: orConditions }];
+                    }
+                } else {
+                    queryOptions.where.category = -1;
+                }
+            } else {
+                if (filters.category) queryOptions.where.category = Array.isArray(filters.category) ? { [Op.in]: filters.category } : filters.category;
+                if (filters.subCategory) queryOptions.where.subCategory = Array.isArray(filters.subCategory) ? { [Op.in]: filters.subCategory } : filters.subCategory;
+                if (filters.microCategory) queryOptions.where.microCategory = Array.isArray(filters.microCategory) ? { [Op.in]: filters.microCategory } : filters.microCategory;
+            }
             if (filters.itemType && Array.isArray(filters.itemType) && filters.itemType.length > 0) {
                 queryOptions.where.itemType = { [Op.in]: filters.itemType };
             }
