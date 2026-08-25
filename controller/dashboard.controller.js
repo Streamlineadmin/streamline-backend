@@ -913,16 +913,13 @@ async function getDashboardData(req, res) {
                 }
             });
 
-            // Order dispatch status (Sales Order status mapping)
+            // Order dispatch status (Sales Order status mapping - across all time)
             const dispatchSalesOrders = await models.Documents.findAll({
                 where: {
                     companyId: Number(companyId),
                     documentType: 'Sales Order',
                     status: {
                         [Op.ne]: 0
-                    },
-                    createdAt: {
-                        [Op.between]: [startOfMonth, endOfMonth]
                     }
                 },
                 attributes: ['status'],
