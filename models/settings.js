@@ -33,6 +33,7 @@ module.exports = (sequelize, DataTypes) => {
         printFontSize: DataTypes.INTEGER,
         storeInItemLevel: DataTypes.BOOLEAN,
         orderExactQuantityChallan: DataTypes.BOOLEAN,
+        orderExactQuantityInvoice: DataTypes.BOOLEAN,
         categoryWiseCustomFields: DataTypes.BOOLEAN,
         itemInBarcodeSettings: DataTypes.JSON,
         itemOutBarcodeSettings: DataTypes.JSON,
