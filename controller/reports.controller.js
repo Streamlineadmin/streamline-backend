@@ -2305,7 +2305,7 @@ async function getReports(req, res) {
                         [Op.in]: grn_documents.map(grn => grn.documentNumber)
                     }
                 },
-                attributes: ['documentNumber', 'uniqueId', 'itemId', 'receivedToday','receivedQuantity'],
+                attributes: ['documentNumber', 'uniqueId', 'itemId', 'receivedToday', 'receivedQuantity'],
                 raw: true
             });
 
@@ -3081,6 +3081,13 @@ async function getReports(req, res) {
             }, {});
         }
 
+        const settings = await models.Settings.findOne({
+            where: {
+                companyId: Number(companyId)
+            },
+            raw: true
+        });
+
         const formattedResult = (documents?.rows || documents)?.map(document => {
             let itemToSend = uniqueItems.filter(item => item.documentNumber === document.documentNumber);
             if (documentType === documentTypes.invoice) itemToSend = itemToSend?.map(item => {
@@ -3142,12 +3149,35 @@ async function getReports(req, res) {
                 return ({ ...item, poQuantity });
             });
             if (documentType === documentTypes.salesOrder) {
+                const isReduceStockOnDC = Boolean(
+                    settings?.stockReduceOnDC === 'true' ||
+                    settings?.stockReduceOnDC === true ||
+                    settings?.stockReduceOnDC === 1 ||
+                    settings?.stockReduceOnDC === '1'
+                );
+                const isReduceStockOnIV = Boolean(
+                    settings?.stockReduceOnIV === 'true' ||
+                    settings?.stockReduceOnIV === true ||
+                    settings?.stockReduceOnIV === 1 ||
+                    settings?.stockReduceOnIV === '1'
+                );
                 itemToSend = itemToSend.map(item => {
                     const challanQuantity = (item?.receivedQuantity || 0)?.toFixed(2);
                     const invoiceQuantity = (item?.pendingQuantity || 0)?.toFixed(2);
                     const salesReturnQuantity = (salesReturnItemsMap?.[document.documentNumber]?.[item.uniqueId || item.itemId] || 0)?.toFixed(2);
-                    const pendingQuantity = Math.max(((item.quantity + Number(salesReturnQuantity)) - (Number(challanQuantity) + Number(invoiceQuantity))), 0)?.toFixed(2);
-                    return { ...item, challanQuantity, invoiceQuantity, pendingQuantity, salesReturnQuantity };
+                    let rawPendingQty = 0;
+                    if (isReduceStockOnDC && isReduceStockOnIV) {
+                        rawPendingQty = item.quantity - (Number(challanQuantity) + Number(invoiceQuantity));
+                    } else if (isReduceStockOnDC) {
+                        rawPendingQty = item.quantity - Number(challanQuantity);
+                    } else if (isReduceStockOnIV) {
+                        rawPendingQty = item.quantity - Number(invoiceQuantity);
+                    }
+                    //  else {
+                    //     rawPendingQty = totalOrderQty - (Number(challanQuantity) + Number(invoiceQuantity));
+                    // }
+
+                    const pendingQuantity = Math.max(rawPendingQty, 0)?.toFixed(2); return { ...item, challanQuantity, invoiceQuantity, pendingQuantity, salesReturnQuantity };
                 })
             }
             return ({
