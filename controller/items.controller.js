@@ -531,11 +531,15 @@ async function getItems(req, res) {
                     ip_address,
                 }));
 
+            const validPrices = relatedStoreItems.filter(si => si.price && si.price > 0);
+            const lastUpdatedPrice = validPrices.length ? validPrices[validPrices.length - 1].price : (item.price || 0);
+
             return {
                 ...item,
                 stores,
                 fifoPrice: fifoPrice[item.id],
                 averagePrice: averagePrice[item.id]?.count ? averagePrice[item.id].total / averagePrice[item.id].count : (item.price || 0),
+                lastUpdatedPrice,
                 alternateUnits: itemAlternateUnits,
             };
         });
@@ -1349,7 +1353,8 @@ async function stockReconcilation(req, res) {
             const bulkStockTransfers = [], bulkStoreItems = [], itemIds = [], finalStock = {};
 
             for (const item of items) {
-                const { 'Item ID': itemId, 'Price/Unit': price } = item;
+                const itemId = item['Item ID'] ?? item['* Item ID'];
+                const price = item['Price/Unit'] ?? item['Price'] ?? item['Last Updated Price'] ?? item['Default Price'];
                 if (
                     String(item['Final Stock'] ?? '').trim() === '' ||
                     Number.isNaN(Number(String(item['Final Stock'] ?? '').trim()))
@@ -1888,6 +1893,124 @@ async function bulkStockUpdate(req, res) {
     }
 }
 
+async function getLastUpdatedPrice(req, res) {
+    try {
+        const { companyId, storeId } = req.body;
+        if (!companyId) {
+            return res.status(400).json({ message: "Company ID is required." });
+        }
+
+        const items = await models.Items.findAll({
+            where: { companyId: Number(companyId) },
+            attributes: ['id', 'itemId', 'price'],
+            raw: true
+        });
+
+        if (!items || items.length === 0) {
+            return res.status(200).json({ data: {} });
+        }
+
+        const itemIds = items.map(item => item.id);
+        const itemCodeMap = items.reduce((acc, curr) => {
+            acc[curr.id] = curr.itemId;
+            return acc;
+        }, {});
+
+        // Fetch StoreItems (most recent first)
+        const storeItemWhere = {
+            itemId: itemIds,
+            price: { [Op.gt]: 0 }
+        };
+        if (storeId && storeId !== 'Select Store') {
+            const cleanStoreId = Number(storeId.toString().replaceAll('-reject', ''));
+            if (!isNaN(cleanStoreId)) {
+                storeItemWhere.storeId = cleanStoreId;
+            }
+        }
+
+        const storeItems = await models.StoreItems.findAll({
+            where: storeItemWhere,
+            attributes: ['itemId', 'price', 'createdAt'],
+            order: [['createdAt', 'DESC'], ['id', 'DESC']],
+            raw: true
+        });
+
+        const allCompanyStoreItems = await models.StoreItems.findAll({
+            where: {
+                itemId: itemIds,
+                price: { [Op.gt]: 0 }
+            },
+            attributes: ['itemId', 'price', 'createdAt'],
+            order: [['createdAt', 'DESC'], ['id', 'DESC']],
+            raw: true
+        });
+
+        const stockTransfers = await models.StockTransfer.findAll({
+            where: {
+                companyId: Number(companyId),
+                itemId: itemIds,
+                price: { [Op.gt]: 0 }
+            },
+            attributes: ['itemId', 'price', 'createdAt'],
+            order: [['createdAt', 'DESC'], ['id', 'DESC']],
+            raw: true
+        });
+
+        const latestPriceMap = {};
+
+        // 1. Fallback to default price
+        for (const item of items) {
+            latestPriceMap[item.id] = item.price || 0;
+            latestPriceMap[item.itemId] = item.price || 0;
+        }
+
+        // 2. Apply from StockTransfer
+        for (const st of stockTransfers) {
+            if (st.price && st.price > 0 && !latestPriceMap[`found_st_${st.itemId}`]) {
+                latestPriceMap[st.itemId] = st.price;
+                if (itemCodeMap[st.itemId]) {
+                    latestPriceMap[itemCodeMap[st.itemId]] = st.price;
+                }
+                latestPriceMap[`found_st_${st.itemId}`] = true;
+            }
+        }
+
+        // 3. Apply from general store items
+        for (const si of allCompanyStoreItems) {
+            if (si.price && si.price > 0 && !latestPriceMap[`found_all_${si.itemId}`]) {
+                latestPriceMap[si.itemId] = si.price;
+                if (itemCodeMap[si.itemId]) {
+                    latestPriceMap[itemCodeMap[si.itemId]] = si.price;
+                }
+                latestPriceMap[`found_all_${si.itemId}`] = true;
+            }
+        }
+
+        // 4. Prioritize store-specific store items if found
+        for (const si of storeItems) {
+            if (si.price && si.price > 0 && !latestPriceMap[`found_store_${si.itemId}`]) {
+                latestPriceMap[si.itemId] = si.price;
+                if (itemCodeMap[si.itemId]) {
+                    latestPriceMap[itemCodeMap[si.itemId]] = si.price;
+                }
+                latestPriceMap[`found_store_${si.itemId}`] = true;
+            }
+        }
+
+        const result = {};
+        for (const item of items) {
+            const price = latestPriceMap[item.id] ?? item.price ?? 0;
+            result[item.id] = price;
+            result[item.itemId] = price;
+        }
+
+        return res.status(200).json({ data: result });
+    } catch (error) {
+        console.error('Error fetching last updated price:', error);
+        return res.status(500).json({ message: "Internal server error." });
+    }
+}
+
 
 module.exports = {
     addItem: addItem,
@@ -1900,5 +2023,6 @@ module.exports = {
     stockReconcilation: stockReconcilation,
     bulkUploadAlternateUnit: bulkUploadAlternateUnit,
     bulkStockUpdate: bulkStockUpdate,
-    getPaginatedItems: getPaginatedItems
+    getPaginatedItems: getPaginatedItems,
+    getLastUpdatedPrice: getLastUpdatedPrice
 }
