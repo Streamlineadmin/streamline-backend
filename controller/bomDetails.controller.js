@@ -729,6 +729,9 @@ async function getAllItemsBoms(req, res) {
         companyId,
         id: {
           [Op.in]: bomIds
+        },
+        status: {
+          [Op.ne]: -1
         }
       },
       raw: true
@@ -741,6 +744,9 @@ async function getAllItemsBoms(req, res) {
 
     const bomItems = {};
     for (const finishedGood of finishedGoods) {
+      if (!bomDetailsMap[finishedGood.bomId]) {
+        continue;
+      }
       if (bomItems[finishedGood?.itemId]) {
         bomItems[finishedGood?.itemId].push({ ...bomDetailsMap[finishedGood.bomId], uom: bomMap[finishedGood.bomId]?.uom });
       }
