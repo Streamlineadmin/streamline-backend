@@ -232,27 +232,59 @@ async function updateBOMDetails(req, res) {
   }
 }
 
-function deleteBOMDetails(req, res) {
-  const bomId = req.body.bomId;
+async function deleteBOMDetails(req, res) {
+  const t = await models.sequelize.transaction();
+  try {
+    const bomId = req.body.bomId || req.body.id;
 
-  models.BOMDetails.destroy({ where: { id: bomId } })
-    .then((result) => {
-      if (result) {
-        res.status(200).json({
-          message: "BOM details deleted successfully",
-        });
-      } else {
-        res.status(404).json({
-          message: "BOM details not found",
-        });
-      }
-    })
-    .catch((error) => {
-      res.status(500).json({
-        message: "Something went wrong, please try again later!",
-        error: error,
+    if (!bomId) {
+      await t.rollback();
+      return res.status(400).json({
+        message: "bomId is required",
       });
+    }
+
+    const bomDetail = await models.BOMDetails.findOne({
+      where: {
+        id: bomId,
+        ...(req.body.companyId ? { companyId: req.body.companyId } : {}),
+      },
+      transaction: t,
     });
+
+    if (!bomDetail) {
+      await t.rollback();
+      return res.status(404).json({
+        message: "BOM details not found",
+      });
+    }
+
+    // Delete related BOM approval history data if any exist
+    await models.BOMApproval.destroy({
+      where: {
+        [Op.or]: [
+          { bomDetailId: bomDetail.id },
+          { bomId: bomDetail.bomId },
+        ],
+        ...(req.body.companyId ? { companyId: req.body.companyId } : {}),
+      },
+      transaction: t,
+    });
+
+    await bomDetail.destroy({ transaction: t });
+
+    await t.commit();
+    return res.status(200).json({
+      message: "BOM details deleted successfully",
+    });
+  } catch (error) {
+    await t.rollback();
+    console.error("Delete BOM Error:", error);
+    return res.status(500).json({
+      message: "Something went wrong, please try again later!",
+      error: error.message || error,
+    });
+  }
 }
 
 async function getBOMById(req, res) {
@@ -586,6 +618,15 @@ async function deleteBillOfMaterials(req, res) {
         where: { bomId: id },
         transaction: t,
       }),
+      models.BOMApproval.destroy({
+        where: {
+          [Op.or]: [
+            { bomDetailId: id },
+            { bomId: bomIdString },
+          ],
+        },
+        transaction: t,
+      }),
     ]);
 
     await models.BOMDetails.destroy({ where: { id }, transaction: t });
@@ -688,6 +729,9 @@ async function getAllItemsBoms(req, res) {
         companyId,
         id: {
           [Op.in]: bomIds
+        },
+        status: {
+          [Op.ne]: -1
         }
       },
       raw: true
@@ -700,6 +744,9 @@ async function getAllItemsBoms(req, res) {
 
     const bomItems = {};
     for (const finishedGood of finishedGoods) {
+      if (!bomDetailsMap[finishedGood.bomId]) {
+        continue;
+      }
       if (bomItems[finishedGood?.itemId]) {
         bomItems[finishedGood?.itemId].push({ ...bomDetailsMap[finishedGood.bomId], uom: bomMap[finishedGood.bomId]?.uom });
       }
