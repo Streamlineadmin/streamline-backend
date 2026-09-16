@@ -157,7 +157,9 @@ async function createDocument(req, res) {
       lutValidTill = null,
       containerNumber = null,
       endUserCode = null,
-      supplyType = null
+      supplyType = null,
+      companies = [],
+      submissionDeadline = null,
     } = req.body;
 
     let message = '';
@@ -503,7 +505,11 @@ async function createDocument(req, res) {
       lutValidTill,
       containerNumber,
       endUserCode,
-      supplyType
+      supplyType,
+      submissionDeadline,
+      rfqDetails: {
+        companies: companies || []
+      }
     }, { transaction: t });
 
     else {
@@ -623,7 +629,11 @@ async function createDocument(req, res) {
       lutValidTill,
       containerNumber,
       endUserCode,
-      supplyType
+      supplyType,
+      submissionDeadline,
+      rfqDetails: {
+        companies: companies || []
+      }
     }, {
       where: {
         companyId,

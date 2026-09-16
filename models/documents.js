@@ -209,6 +209,8 @@ module.exports = (sequelize, DataTypes) => {
     containerNumber: DataTypes.STRING,
     endUserCode: DataTypes.STRING,
     supplyType: DataTypes.STRING,
+    submissionDeadline: DataTypes.STRING,
+    rfqDetails: DataTypes.JSON,
   }, {
     sequelize,
     modelName: 'Documents',
