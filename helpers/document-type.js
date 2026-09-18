@@ -63,6 +63,7 @@ const serviceConfirmationDocuments = [
 
 const purchaseDocuments = [
     "Purchase Request",
+    "Request for Quotation",
     "Purchase Order",
     "Goods Received Note",
     "Quality Report",

@@ -9,6 +9,7 @@ const nodemailer = require('nodemailer');
 const path = require("path");
 const fs = require("fs");
 const crypto = require('crypto');
+const { generateRfqPdf, formatDate } = require('../helpers/rfq-pdf.helper');
 
 function buildJsonLikeSearch(columnName, values) {
   const searchValues = (Array.isArray(values) ? values : [values])
@@ -1904,6 +1905,141 @@ async function createDocument(req, res) {
             quantityForApproval: element.quantity * (element?.conversionFactor || 1)
           }, { transaction: t });
         }
+      }
+    }
+
+    // RFQ
+
+    if (status && (documentType === "Request for Quotation" || documentType === "Request For Quotation")) {
+      try {
+        const companyList = Array.isArray(companies) && companies.length > 0
+          ? companies
+          : (Array.isArray(req.body?.rfqCompanies) ? req.body.rfqCompanies : []);
+
+        const targetCompanies = await models.BuyerSupplier.findAll({
+          where: {
+            companyId: document.companyId,
+            [Op.or]: [
+              { companyName: { [Op.in]: companyList } },
+              { id: { [Op.in]: companyList.filter(c => typeof c === 'number' || (!isNaN(Number(c)) && typeof c === 'string')) } }
+            ]
+          },
+          transaction: t
+        });
+
+        if (targetCompanies && targetCompanies.length > 0) {
+          // Fetch issuer company and user details
+          const issuerUser = await models.Users.findOne({
+            where: { id: Number(createdBy) },
+            transaction: t
+          });
+
+          // Fetch sender email credentials
+          const emailCredential = await models.EMailCredential.findOne({
+            where: { userId: Number(createdBy) },
+            transaction: t
+          });
+
+          const user = process.env.SMTP_USER;
+          const pass = process.env.SMTP_PASS;
+          const from = process.env.SMTP_USER;
+
+          let transporter = null;
+          if (user && pass && process.env.SMTP_HOST) {
+            transporter = nodemailer.createTransport({
+              host: process.env.SMTP_HOST,
+              port: parseInt(process.env.SMTP_PORT || 587, 10),
+              secure: process.env.SMTP_PORT == 465,
+              auth: {
+                user: user,
+                pass: pass
+              },
+              name: user.includes("@") ? user.split("@")[1] : undefined,
+              tls: {
+                rejectUnauthorized: false
+              }
+            });
+          }
+
+          const issuer = {
+            companyName: issuerUser?.companyName || document.supplierName || 'Company',
+            pan: issuerUser?.pan,
+            gstNumber: document.supplierGSTNumber || issuerUser?.gstNumber,
+            contactNo: issuerUser?.contactNo || document.supplierContactNo,
+            email: issuerUser?.email || document.supplierEmail || from,
+            billingAddress: document.supplierBillingAddress
+          };
+
+          // Generate RFQ PDF buffer matching previewdocument.tsx & documentslicer.tsx
+          const pdfBuffer = await generateRfqPdf({
+            document,
+            items: items || [],
+            issuer,
+            termsCondition: req.body?.termsCondition || termsCondition || companyTermsCondition?.termsCondition || [],
+            additionalDetails: document.additionalDetails || req.body?.additionalDetails || additionalDetails || ''
+          });
+
+          const docNumber = document.documentNumber || 'RFQ';
+          const deadlineStr = submissionDeadline ? formatDate(submissionDeadline) : '';
+          const issuerName = issuer.companyName;
+
+          for (const company of targetCompanies) {
+            const recipientEmail = company.companyEmail || company.email;
+            if (!recipientEmail) {
+              console.warn(`[RFQ] No email found for company: ${company.companyName}`);
+              continue;
+            }
+
+            if (!transporter) {
+              console.warn(`[RFQ] SMTP transporter not configured. Cannot send email to ${recipientEmail}`);
+              continue;
+            }
+
+            const companyName = company.companyName || company.name || 'Vendor';
+            const subject = `Request for Quotation - ${docNumber}`;
+            const htmlContent = `
+              <p>Dear <strong>${companyName}</strong>,</p>
+              <p>Greetings from <strong>${issuerName}</strong>.</p>
+              <p>Please find attached our Request for Quotation (<strong>${docNumber}</strong>) for your review.</p>
+              <p>Kindly provide your best competitive quotation including item pricing, applicable taxes (GST), delivery schedule, and payment terms${deadlineStr ? ` on or before <strong>${deadlineStr}</strong>` : ''}.</p>
+              <p>If you require any clarification or additional details, please feel free to reach out to us.</p>
+              <br/>
+              <p>Best regards,<br/>
+              <strong>${issuerName}</strong><br/>
+              ${issuer.contactNo ? `Contact: ${issuer.contactNo}<br/>` : ''}
+              ${from ? `Email: ${from}` : ''}
+              </p>
+              <div style="display: flex; align-items: center; margin: 10px 0;">
+                <a href="https://easemargin.com" target="_blank" style="text-decoration:none; color: inherit; display:flex; align-items:center;">
+                  Powered By 
+                  <img src="https://teststaging.easemargin.com/uploads/1750521347467-ease%20logo.png" 
+                       style="width:90px; height:16px; object-fit:contain; margin-left:5px;" />
+                </a>
+              </div>
+            `;
+
+            try {
+              await transporter.sendMail({
+                from: from,
+                to: recipientEmail,
+                subject: subject,
+                html: htmlContent,
+                attachments: [
+                  {
+                    filename: `${docNumber}.pdf`,
+                    content: pdfBuffer,
+                    contentType: 'application/pdf'
+                  }
+                ]
+              });
+              console.log(`[RFQ] Quotation email sent successfully to ${companyName} (${recipientEmail})`);
+            } catch (mailError) {
+              console.error(`[RFQ] Failed to send email to ${recipientEmail}:`, mailError.message);
+            }
+          }
+        }
+      } catch (rfqError) {
+        console.error('[RFQ] Error generating or sending RFQ quotation emails:', rfqError);
       }
     }
 

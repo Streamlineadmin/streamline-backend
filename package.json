@@ -27,6 +27,8 @@
     "nodemailer": "^6.10.0",
     "openai": "^6.9.1",
     "pdf-parse": "^1.1.1",
+    "pdfkit": "^0.20.2",
+    "pdfkit-table": "^0.2.11",
     "sequelize": "^6.37.3",
     "simple-statistics": "^7.8.8",
     "string-similarity": "^4.0.4",
