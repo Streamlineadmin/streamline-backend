@@ -211,6 +211,7 @@ module.exports = (sequelize, DataTypes) => {
     supplyType: DataTypes.STRING,
     submissionDeadline: DataTypes.STRING,
     rfqDetails: DataTypes.JSON,
+    rfqNumber: DataTypes.STRING,
   }, {
     sequelize,
     modelName: 'Documents',
