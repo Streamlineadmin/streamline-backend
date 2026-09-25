@@ -114,6 +114,7 @@ const AllDocuments = {
     "Production Scrap Batch": "PSCRB",
     "Document Batch": "DOCB",
     "Packaging List": "PKL",
+    "Request for Quotation": "RFQ"
 }
 
 module.exports = {

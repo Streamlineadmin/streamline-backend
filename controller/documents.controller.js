@@ -7350,6 +7350,9 @@ async function createEInvoice(req, res) {
       Invoice: "INV",
       "Credit Note": "CRN",
       "Debit Note": "DBN",
+      "Service Confirmation Invoice": "INV",
+      "Service Confirmation Credit Note": "CRN",
+      "Service Confirmation Debit Note": "DBN",
     };
 
     const documentType =
