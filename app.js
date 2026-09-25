@@ -255,6 +255,7 @@ app.post("/deleteCompaniesData", async (req, res) => {
           documentType: {
             [Op.in]: [
               'Purchase Request',
+              'Request for Quotation',
               'Purchase Order', 'Purchase Credit Note',
               'Purchase Debit Note', 'Goods Received Note',
               'Quality Report', 'Purchase Invoice', 'Purchase Return']

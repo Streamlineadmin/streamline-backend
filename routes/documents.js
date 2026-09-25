@@ -24,5 +24,6 @@ router.post('/cancelEInvoice', documentsController.cancelEInvoice);
 router.post('/cancelEWayBill', documentsController.cancelEWayBill);
 router.post('/getChallanDocumentItems', documentsController.getChallanDocumentItems);
 router.post('/createEwayBillFromEInvoice', documentsController.createEwayBillFromEInvoice);
+router.post('/saveRfqQuotation', documentsController.saveRfqQuotation);
 
 module.exports = router;
