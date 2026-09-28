@@ -9,6 +9,7 @@ const nodemailer = require('nodemailer');
 const path = require("path");
 const fs = require("fs");
 const crypto = require('crypto');
+const { generateRfqPdf, formatDate } = require('../helpers/rfq-pdf.helper');
 
 function buildJsonLikeSearch(columnName, values) {
   const searchValues = (Array.isArray(values) ? values : [values])
@@ -157,7 +158,10 @@ async function createDocument(req, res) {
       lutValidTill = null,
       containerNumber = null,
       endUserCode = null,
-      supplyType = null
+      supplyType = null,
+      companies = [],
+      submissionDeadline = null,
+      rfqNumber = null,
     } = req.body;
 
     let message = '';
@@ -271,7 +275,8 @@ async function createDocument(req, res) {
         lutValidTill,
         containerNumber,
         endUserCode,
-        supplyType
+        supplyType,
+        rfqNumber
       }, { transaction: t });
       await Promise.all([
         models.DocumentItems.bulkCreate(
@@ -503,7 +508,12 @@ async function createDocument(req, res) {
       lutValidTill,
       containerNumber,
       endUserCode,
-      supplyType
+      supplyType,
+      submissionDeadline,
+      rfqNumber,
+      rfqDetails: {
+        companies: companies || []
+      }
     }, { transaction: t });
 
     else {
@@ -623,7 +633,12 @@ async function createDocument(req, res) {
       lutValidTill,
       containerNumber,
       endUserCode,
-      supplyType
+      supplyType,
+      submissionDeadline,
+      rfqNumber,
+      rfqDetails: {
+        companies: companies || []
+      }
     }, {
       where: {
         companyId,
@@ -1897,6 +1912,141 @@ async function createDocument(req, res) {
       }
     }
 
+    // RFQ
+
+    if (status && (documentType === "Request for Quotation" || documentType === "Request For Quotation")) {
+      try {
+        const companyList = Array.isArray(companies) && companies.length > 0
+          ? companies
+          : (Array.isArray(req.body?.rfqCompanies) ? req.body.rfqCompanies : []);
+
+        const targetCompanies = await models.BuyerSupplier.findAll({
+          where: {
+            companyId: document.companyId,
+            [Op.or]: [
+              { companyName: { [Op.in]: companyList } },
+              { id: { [Op.in]: companyList.filter(c => typeof c === 'number' || (!isNaN(Number(c)) && typeof c === 'string')) } }
+            ]
+          },
+          transaction: t
+        });
+
+        if (targetCompanies && targetCompanies.length > 0) {
+          // Fetch issuer company and user details
+          const issuerUser = await models.Users.findOne({
+            where: { id: Number(createdBy) },
+            transaction: t
+          });
+
+          // Fetch sender email credentials
+          const emailCredential = await models.EMailCredential.findOne({
+            where: { userId: Number(createdBy) },
+            transaction: t
+          });
+
+          const user = process.env.SMTP_USER;
+          const pass = process.env.SMTP_PASS;
+          const from = process.env.SMTP_USER;
+
+          let transporter = null;
+          if (user && pass && process.env.SMTP_HOST) {
+            transporter = nodemailer.createTransport({
+              host: process.env.SMTP_HOST,
+              port: parseInt(process.env.SMTP_PORT || 587, 10),
+              secure: process.env.SMTP_PORT == 465,
+              auth: {
+                user: user,
+                pass: pass
+              },
+              name: user.includes("@") ? user.split("@")[1] : undefined,
+              tls: {
+                rejectUnauthorized: false
+              }
+            });
+          }
+
+          const issuer = {
+            companyName: issuerUser?.companyName || document.supplierName || 'Company',
+            pan: issuerUser?.pan,
+            gstNumber: document.supplierGSTNumber || issuerUser?.gstNumber,
+            contactNo: issuerUser?.contactNo || document.supplierContactNo,
+            email: issuerUser?.email || document.supplierEmail || from,
+            billingAddress: document.supplierBillingAddress
+          };
+
+          // Generate RFQ PDF buffer matching previewdocument.tsx & documentslicer.tsx
+          const pdfBuffer = await generateRfqPdf({
+            document,
+            items: items || [],
+            issuer,
+            termsCondition: req.body?.termsCondition || termsCondition || companyTermsCondition?.termsCondition || [],
+            additionalDetails: document.additionalDetails || req.body?.additionalDetails || additionalDetails || ''
+          });
+
+          const docNumber = document.documentNumber || 'RFQ';
+          const deadlineStr = submissionDeadline ? formatDate(submissionDeadline) : '';
+          const issuerName = issuer.companyName;
+
+          for (const company of targetCompanies) {
+            const recipientEmail = company.companyEmail || company.email;
+            if (!recipientEmail) {
+              console.warn(`[RFQ] No email found for company: ${company.companyName}`);
+              continue;
+            }
+
+            if (!transporter) {
+              console.warn(`[RFQ] SMTP transporter not configured. Cannot send email to ${recipientEmail}`);
+              continue;
+            }
+
+            const companyName = company.companyName || company.name || 'Vendor';
+            const subject = `Request for Quotation - ${docNumber}`;
+            const htmlContent = `
+              <p>Dear <strong>${companyName}</strong>,</p>
+              <p>Greetings from <strong>${issuerName}</strong>.</p>
+              <p>Please find attached our Request for Quotation (<strong>${docNumber}</strong>) for your review.</p>
+              <p>Kindly provide your best competitive quotation including item pricing, applicable taxes (GST), delivery schedule, and payment terms${deadlineStr ? ` on or before <strong>${deadlineStr}</strong>` : ''}.</p>
+              <p>If you require any clarification or additional details, please feel free to reach out to us.</p>
+              <br/>
+              <p>Best regards,<br/>
+              <strong>${issuerName}</strong><br/>
+              ${issuer.contactNo ? `Contact: ${issuer.contactNo}<br/>` : ''}
+              ${from ? `Email: ${from}` : ''}
+              </p>
+              <div style="display: flex; align-items: center; margin: 10px 0;">
+                <a href="https://easemargin.com" target="_blank" style="text-decoration:none; color: inherit; display:flex; align-items:center;">
+                  Powered By 
+                  <img src="https://teststaging.easemargin.com/uploads/1750521347467-ease%20logo.png" 
+                       style="width:90px; height:16px; object-fit:contain; margin-left:5px;" />
+                </a>
+              </div>
+            `;
+
+            try {
+              await transporter.sendMail({
+                from: from,
+                to: recipientEmail,
+                subject: subject,
+                html: htmlContent,
+                attachments: [
+                  {
+                    filename: `${docNumber}.pdf`,
+                    content: pdfBuffer,
+                    contentType: 'application/pdf'
+                  }
+                ]
+              });
+              console.log(`[RFQ] Quotation email sent successfully to ${companyName} (${recipientEmail})`);
+            } catch (mailError) {
+              console.error(`[RFQ] Failed to send email to ${recipientEmail}:`, mailError.message);
+            }
+          }
+        }
+      } catch (rfqError) {
+        console.error('[RFQ] Error generating or sending RFQ quotation emails:', rfqError);
+      }
+    }
+
     if (status && documentType === documentTypes.salesReturn && orderConfirmationNumber) {
       const orderConfirmationNumbers = orderConfirmationNumber.split(',').map(num => num.trim()).filter(Boolean);
       const salesOrders = await models.Documents.findAll({
@@ -3011,6 +3161,27 @@ async function createDocument(req, res) {
         }
       }
 
+      if (rfqNumber) {
+        const rfqDoc = await models.Documents.findOne({
+          where: {
+            companyId,
+            documentNumber: rfqNumber,
+            documentType: {
+              [Op.in]: ['Request for Quotation', 'Request For Quotation']
+            }
+          },
+          attributes: ['id', 'linkedDocuments'],
+          transaction: t
+        });
+        if (rfqDoc) {
+          const linkedDocuments = isValidJSON(rfqDoc.linkedDocuments) || [];
+          if (!linkedDocuments.includes(documentNumber)) {
+            linkedDocuments.push(documentNumber);
+            await rfqDoc.update({ linkedDocuments }, { transaction: t });
+          }
+        }
+      }
+
       // Service Order Flow
       if (
         ["Service Challan", "Service Grn", "Service Qr", "Service Debit Note", "Service Credit Note", "Service Invoice", "Service Proforma Invoice"]
@@ -3272,7 +3443,7 @@ async function createDocument(req, res) {
 async function getDocuments(req, res) {
   try {
 
-    const { companyId, linkedDocuments, documentNumber, buyerName, field, counts, createdBy, approvedBy, requestedBy, currentPage, labels, pageSize, documentType = '', search = '', dealStatus, docTypeFilter, dateRange } = req.body;
+    const { companyId, linkedDocuments, documentNumber, buyerName, field, counts, createdBy, approvedBy, requestedBy, currentPage, labels, pageSize, documentType = '', search = '', dealStatus, docTypeFilter, dateRange, rfqNumber } = req.body;
 
     const offset = ((currentPage || 1) - 1) * (pageSize || 10);
     let documentstype = [];
@@ -3312,6 +3483,7 @@ async function getDocuments(req, res) {
         where: {
           companyId,
           ...dateFilter,
+          ...(rfqNumber ? { rfqNumber } : {}),
           ...buildJsonLikeSearch('linkedDocuments', linkedDocuments),
           ...(docTypeFilter?.length > 0 ? !createdBy ? {
             documentType: {
@@ -3371,6 +3543,7 @@ async function getDocuments(req, res) {
         where: {
           companyId,
           ...dateFilter,
+          ...(rfqNumber ? { rfqNumber } : {}),
           ...buildJsonLikeSearch('linkedDocuments', linkedDocuments),
           ...(documentstype.length > 0 && {
             documentType: {
@@ -4102,6 +4275,22 @@ async function discardDocument(req, res) {
         }
       }
     }
+    if (['Request for Quotation', 'Request For Quotation'].includes(document.documentType)) {
+      linkedDocument = await models.Documents.findOne({
+        where: {
+          companyId,
+          rfqNumber: document.documentNumber,
+          status: {
+            [Op.ne]: 2,
+          },
+        },
+        transaction: t
+      });
+      if (linkedDocument) {
+        await t.rollback();
+        return res.status(409).json({ message: 'You can not discard this document, It is linked with other documents.' });
+      }
+    }
     if (document.documentType === documentTypes.goodsReceive) {
       const batch = await models.BatchItems.findOne({
         where: {
@@ -4795,6 +4984,28 @@ async function discardDocument(req, res) {
       }
     }
 
+    if (document.rfqNumber) {
+      const rfqDoc = await models.Documents.findOne({
+        where: {
+          companyId,
+          documentNumber: document.rfqNumber,
+          documentType: {
+            [Op.in]: ['Request for Quotation', 'Request For Quotation']
+          }
+        },
+        transaction: t
+      });
+
+      if (rfqDoc && Array.isArray(isValidJSON(rfqDoc.linkedDocuments))) {
+        const updatedLinkedDocuments = isValidJSON(rfqDoc.linkedDocuments)
+          .filter(docNo => docNo !== document.documentNumber);
+
+        if (updatedLinkedDocuments.length !== isValidJSON(rfqDoc.linkedDocuments).length) {
+          await rfqDoc.update({ linkedDocuments: updatedLinkedDocuments }, { transaction: t });
+        }
+      }
+    }
+
     if (
       ["Service Challan", "Service GRN", "Service QR", "Service Debit Note", "Service Credit Note", "Service Invoice", "Service Proforma Invoice"]
         .includes(document.documentType) &&
@@ -5217,7 +5428,10 @@ async function editDocument(req, res) {
       lutValidTill = null,
       containerNumber = null,
       endUserCode = null,
-      supplyType = null
+      supplyType = null,
+      companies = [],
+      submissionDeadline = null,
+      rfqNumber = null
     } = req.body;
 
     const document = await models.Documents.findOne({
@@ -5421,6 +5635,20 @@ async function editDocument(req, res) {
       const document = await models.Documents.findOne({
         where: {
           ServiceConfirmationNumber: documentNumber,
+          companyId: Number(companyId),
+          status: {
+            [Op.ne]: 2,
+          }
+        }
+      });
+      if (document) {
+        return res.status(400).json({ message: 'This document reference is available in other document. It is not be Edited.' });
+      }
+    }
+    else if (['Request for Quotation', 'Request For Quotation'].includes(documentType)) {
+      const document = await models.Documents.findOne({
+        where: {
+          rfqNumber: documentNumber,
           companyId: Number(companyId),
           status: {
             [Op.ne]: 2,
@@ -5643,7 +5871,14 @@ async function editDocument(req, res) {
       lutValidTill,
       containerNumber,
       endUserCode,
-      supplyType
+      supplyType,
+      submissionDeadline,
+      rfqNumber,
+      ...(Array.isArray(companies) && companies.length > 0 ? {
+        rfqDetails: {
+          companies: companies || []
+        }
+      } : {})
     });
 
     await models.CompanyTermsCondition.destroy({
@@ -5942,6 +6177,26 @@ async function approveDocument(req, res) {
           if (!linkedDocs.includes(documentNumber)) {
             linkedDocs.push(documentNumber);
             await purchaseOrder.update({ linkedDocuments: linkedDocs });
+          }
+        }
+      }
+
+      // RFQ linking
+      if (document.rfqNumber) {
+        const rfqDoc = await models.Documents.findOne({
+          where: {
+            companyId,
+            documentNumber: document.rfqNumber,
+            documentType: {
+              [Op.in]: ['Request for Quotation', 'Request For Quotation']
+            }
+          }
+        });
+        if (rfqDoc) {
+          const linkedDocs = isValidJSON(rfqDoc.linkedDocuments) || [];
+          if (!linkedDocs.includes(documentNumber)) {
+            linkedDocs.push(documentNumber);
+            await rfqDoc.update({ linkedDocuments: linkedDocs });
           }
         }
       }
@@ -7095,6 +7350,9 @@ async function createEInvoice(req, res) {
       Invoice: "INV",
       "Credit Note": "CRN",
       "Debit Note": "DBN",
+      "Service Confirmation Invoice": "INV",
+      "Service Confirmation Credit Note": "CRN",
+      "Service Confirmation Debit Note": "DBN",
     };
 
     const documentType =
@@ -7610,8 +7868,7 @@ async function createEwayBillFromEInvoice(req, res) {
       ...(transId && { TransId: transId }),
       TransName: transName,
       TransDocDt: transDocDt,
-      TransDocNo: transDocNo,
-
+      ...(transDocNo && { TransDocNo: transDocNo }),
       ...(String(transMode) == "1" && {
         VehNo: vehNo,
         VehType: vehType || "R",
@@ -8116,7 +8373,75 @@ async function getChallanDocumentItems(req, res) {
   }
 }
 
+
+async function saveRfqQuotation(req, res) {
+  try {
+    const {
+      documentId,
+      documentNumber,
+      companyId,
+      companyName,
+      rfqDetails,
+      quotationData,
+    } = req.body;
+
+    if (!companyId || (!documentId && !documentNumber)) {
+      return res.status(400).json({ message: 'documentId or documentNumber, and companyId are required.' });
+    }
+
+    const whereClause = { companyId };
+    if (documentId) {
+      whereClause.id = documentId;
+    } else if (documentNumber) {
+      whereClause.documentNumber = documentNumber;
+    }
+
+    const doc = await models.Documents.findOne({ where: whereClause });
+
+    if (!doc) {
+      return res.status(404).json({ message: 'Document not found.' });
+    }
+
+    let existingRfqDetails = doc.rfqDetails;
+    if (typeof existingRfqDetails === 'string') {
+      try {
+        existingRfqDetails = JSON.parse(existingRfqDetails);
+      } catch (e) {
+        existingRfqDetails = {};
+      }
+    } else if (!existingRfqDetails || typeof existingRfqDetails !== 'object') {
+      existingRfqDetails = {};
+    }
+
+    let mergedRfqDetails;
+    if (rfqDetails && typeof rfqDetails === 'object') {
+      mergedRfqDetails = {
+        ...existingRfqDetails,
+        ...rfqDetails,
+      };
+    } else if (companyName && quotationData) {
+      mergedRfqDetails = {
+        ...existingRfqDetails,
+        [companyName]: quotationData,
+      };
+    } else {
+      mergedRfqDetails = existingRfqDetails;
+    }
+
+    await doc.update({ rfqDetails: mergedRfqDetails });
+
+    return res.status(200).json({
+      message: 'Quotation details saved successfully.',
+      rfqDetails: mergedRfqDetails,
+    });
+  } catch (error) {
+    console.error('Error in saveRfqQuotation:', error);
+    return res.status(500).json({ message: 'Something went wrong while saving quotation.', error: error.message });
+  }
+}
+
 module.exports = {
+  saveRfqQuotation,
   getDocuments,
   getDocumentById,
   createDocument,

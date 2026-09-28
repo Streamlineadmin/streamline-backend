@@ -63,6 +63,7 @@ const serviceConfirmationDocuments = [
 
 const purchaseDocuments = [
     "Purchase Request",
+    "Request for Quotation",
     "Purchase Order",
     "Goods Received Note",
     "Quality Report",
@@ -113,6 +114,7 @@ const AllDocuments = {
     "Production Scrap Batch": "PSCRB",
     "Document Batch": "DOCB",
     "Packaging List": "PKL",
+    "Request for Quotation": "RFQ"
 }
 
 module.exports = {
