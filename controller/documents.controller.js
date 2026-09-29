@@ -7538,9 +7538,11 @@ async function createEInvoice(req, res) {
 
         return {
           SlNo: String(index + 1),
-          IsServc: "N",
+          IsServc: ["Service Confirmation Invoice",
+            "Service Confirmation Credit Note",
+            "Service Confirmation Debit Note"]?.includes(document?.documentType) ? "Y" : "N",
           PrdDesc:
-            item?.itemName || " ",
+            item?.itemName || item?.ServiceName,
           HsnCd: item?.HSN,
           Qty: qty,
           Unit:
@@ -7863,7 +7865,7 @@ async function createEwayBillFromEInvoice(req, res) {
     // =========================
     const eWayBillPayload = {
       Irn: irn,
-      Distance: 0,
+      Distance: distance || 0,
       TransMode: String(transMode || "1"),
       ...(transId && { TransId: transId }),
       TransName: transName,
