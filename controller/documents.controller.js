@@ -318,7 +318,7 @@ async function createDocument(req, res) {
           }), { transaction: t }
         ),
         models.DocumentAdditionalCharges.bulkCreate(
-          additionalCharges.map(charge => ({
+          additionalCharges?.filter((charge) => charge?.chargingFor)?.map(charge => ({
             companyId: companyId,
             documentNumber: document.documentNumber,
             chargingFor: charge.chargingFor,
@@ -1256,7 +1256,7 @@ async function createDocument(req, res) {
         }), { transaction: t }
       ),
       models.DocumentAdditionalCharges.bulkCreate(
-        additionalCharges.map(charge => ({
+        additionalCharges?.filter((charge) => charge?.chargingFor)?.map(charge => ({
           companyId: companyId,
           documentNumber: document.documentNumber,
           chargingFor: charge.chargingFor,
@@ -5976,7 +5976,7 @@ async function editDocument(req, res) {
         })
       ),
       models.DocumentAdditionalCharges.bulkCreate(
-        additionalCharges.map(charge => ({
+        additionalCharges?.filter((charge) => charge?.chargingFor)?.map(charge => ({
           companyId: companyId,
           documentNumber: document.documentNumber,
           chargingFor: charge.chargingFor,
