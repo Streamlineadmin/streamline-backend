@@ -7566,7 +7566,7 @@ async function createEInvoice(req, res) {
       othChrg: 0,
     };
 
-    additionalCharges.forEach((charge) => {
+    additionalCharges?.filter((charge) => charge?.chargingFor)?.forEach((charge) => {
       const taxRate = toNumber(charge?.tax);
       const price = toNumber(charge?.price);
       const total = toNumber(charge?.total);
