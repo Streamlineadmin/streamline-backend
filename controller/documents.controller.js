@@ -356,7 +356,9 @@ async function createDocument(req, res) {
       ]);
       await t.commit();
       return res.status(201).json({
-        message: "Document Converted to INR successfully!"
+        message: "Document Converted to INR successfully!",
+        documentNumber: document.documentNumber,
+        data: { documentNumber: document.documentNumber }
       });
     }
 
@@ -3431,7 +3433,9 @@ async function createDocument(req, res) {
 
     await t.commit();
     res.status(201).json({
-      message: !status ? "Document Saved as Draft Successfully" : message ? "Document created successfully and Inventory approval requested." : "Document created successfully!"
+      message: !status ? "Document Saved as Draft Successfully" : message ? "Document created successfully and Inventory approval requested." : "Document created successfully!",
+      documentNumber,
+      data: { documentNumber }
     });
   }
   catch (error) {
