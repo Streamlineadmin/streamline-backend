@@ -6345,7 +6345,7 @@ async function approveDocument(req, res) {
         for (const element of items) {
           const storeId = await models.Store.findOne({
             where: {
-              name: document.store,
+              name: element.store || document.store,
               companyId
             }
           });
@@ -6964,7 +6964,7 @@ async function approveDocument(req, res) {
         for (const element of items) {
           const storeId = await models.Store.findOne({
             where: {
-              name: document.store,
+              name: element?.store || document.store,
               companyId
             }
           });
