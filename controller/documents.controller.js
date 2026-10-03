@@ -318,7 +318,7 @@ async function createDocument(req, res) {
           }), { transaction: t }
         ),
         models.DocumentAdditionalCharges.bulkCreate(
-          additionalCharges.map(charge => ({
+          additionalCharges?.filter((charge) => charge?.chargingFor)?.map(charge => ({
             companyId: companyId,
             documentNumber: document.documentNumber,
             chargingFor: charge.chargingFor,
@@ -356,7 +356,9 @@ async function createDocument(req, res) {
       ]);
       await t.commit();
       return res.status(201).json({
-        message: "Document Converted to INR successfully!"
+        message: "Document Converted to INR successfully!",
+        documentNumber: document.documentNumber,
+        data: { documentNumber: document.documentNumber }
       });
     }
 
@@ -1256,7 +1258,7 @@ async function createDocument(req, res) {
         }), { transaction: t }
       ),
       models.DocumentAdditionalCharges.bulkCreate(
-        additionalCharges.map(charge => ({
+        additionalCharges?.filter((charge) => charge?.chargingFor)?.map(charge => ({
           companyId: companyId,
           documentNumber: document.documentNumber,
           chargingFor: charge.chargingFor,
@@ -3431,7 +3433,9 @@ async function createDocument(req, res) {
 
     await t.commit();
     res.status(201).json({
-      message: !status ? "Document Saved as Draft Successfully" : message ? "Document created successfully and Inventory approval requested." : "Document created successfully!"
+      message: !status ? "Document Saved as Draft Successfully" : message ? "Document created successfully and Inventory approval requested." : "Document created successfully!",
+      documentNumber,
+      data: { documentNumber }
     });
   }
   catch (error) {
@@ -5976,7 +5980,7 @@ async function editDocument(req, res) {
         })
       ),
       models.DocumentAdditionalCharges.bulkCreate(
-        additionalCharges.map(charge => ({
+        additionalCharges?.filter((charge) => charge?.chargingFor)?.map(charge => ({
           companyId: companyId,
           documentNumber: document.documentNumber,
           chargingFor: charge.chargingFor,
@@ -7538,9 +7542,11 @@ async function createEInvoice(req, res) {
 
         return {
           SlNo: String(index + 1),
-          IsServc: "N",
+          IsServc: ["Service Confirmation Invoice",
+            "Service Confirmation Credit Note",
+            "Service Confirmation Debit Note"]?.includes(document?.documentType) ? "Y" : "N",
           PrdDesc:
-            item?.itemName || " ",
+            item?.itemName || item?.ServiceName,
           HsnCd: item?.HSN,
           Qty: qty,
           Unit:
@@ -7564,7 +7570,7 @@ async function createEInvoice(req, res) {
       othChrg: 0,
     };
 
-    additionalCharges.forEach((charge) => {
+    additionalCharges?.filter((charge) => charge?.chargingFor)?.forEach((charge) => {
       const taxRate = toNumber(charge?.tax);
       const price = toNumber(charge?.price);
       const total = toNumber(charge?.total);
@@ -7863,7 +7869,7 @@ async function createEwayBillFromEInvoice(req, res) {
     // =========================
     const eWayBillPayload = {
       Irn: irn,
-      Distance: 0,
+      Distance: distance || 0,
       TransMode: String(transMode || "1"),
       ...(transId && { TransId: transId }),
       TransName: transName,
