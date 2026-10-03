@@ -363,7 +363,7 @@ async function createDocument(req, res) {
     }
 
     if (!isDraft) {
-      if (documentType != documentTypes.purchaseInvoice) {
+      if (documentType != documentTypes.purchaseInvoice && documentType != "Service Invoice") {
         if (seriesId) {
           const documentSeriesTarget = await models.DocumentSeries.findOne({
             where: { id: seriesId },
