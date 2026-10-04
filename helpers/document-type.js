@@ -21,6 +21,7 @@ documentTypes = {
     serviceChallan: 'Service Challan',
     serviceGrn: 'Service Grn',
     serviceQr: 'Service Qr',
+    serviceInvoice: 'Service Invoice',
     salesOrder: 'Sales Order',
 };
 

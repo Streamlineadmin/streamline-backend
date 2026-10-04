@@ -363,7 +363,7 @@ async function createDocument(req, res) {
     }
 
     if (!isDraft) {
-      if (documentType != documentTypes.purchaseInvoice) {
+      if (documentType != documentTypes.purchaseInvoice && documentType != "Service Invoice") {
         if (seriesId) {
           const documentSeriesTarget = await models.DocumentSeries.findOne({
             where: { id: seriesId },
@@ -6073,6 +6073,7 @@ async function getServiceChallanItems(req, res) {
 }
 
 async function approveDocument(req, res) {
+  const transaction = await models.sequelize.transaction();
   try {
     const { isApproved, documentNumber, companyId, userId, reduceStockOnIV, reduceStockOnDC, approvedBy } = req.body;
     if (!isApproved) {
@@ -6080,17 +6081,24 @@ async function approveDocument(req, res) {
         where: {
           companyId: Number(companyId),
           documentNumber
-        }
-      })
+        },
+        transaction
+      });
+      await transaction.commit();
+      return res.status(200).json({
+        message: 'Document Status Updated.'
+      });
     } else {
       const document = await models.Documents.findOne({
         where: {
           companyId: Number(companyId),
           documentNumber
-        }
+        },
+        transaction
       });
 
       if (!document) {
+        await transaction.rollback();
         return res.status(404).json({ message: 'Document not found' });
       }
 
@@ -6098,7 +6106,8 @@ async function approveDocument(req, res) {
         where: {
           companyId,
           documentNumber
-        }
+        },
+        transaction
       });
 
       // --- Handle Parent Document Linking (linkedDocuments JSON field) ---
@@ -6107,13 +6116,14 @@ async function approveDocument(req, res) {
       // 1. Sales Lead linking
       if (["Sales Quotation"].includes(docType) && document.enquiryNumber) {
         const salesLead = await models.Documents.findOne({
-          where: { companyId, documentNumber: document.enquiryNumber, documentType: 'Sales Lead' }
+          where: { companyId, documentNumber: document.enquiryNumber, documentType: 'Sales Lead' },
+          transaction
         });
         if (salesLead) {
           const linkedDocs = isValidJSON(salesLead.linkedDocuments) || [];
           if (!linkedDocs.includes(documentNumber)) {
             linkedDocs.push(documentNumber);
-            await salesLead.update({ linkedDocuments: linkedDocs });
+            await salesLead.update({ linkedDocuments: linkedDocs }, { transaction });
           }
         }
       }
@@ -6121,13 +6131,14 @@ async function approveDocument(req, res) {
       // 2. Sales Quotation linking
       if (["Sales Order"].includes(docType) && document.quotationNumber) {
         const salesQuotation = await models.Documents.findOne({
-          where: { companyId, documentNumber: document.quotationNumber, documentType: 'Sales Quotation' }
+          where: { companyId, documentNumber: document.quotationNumber, documentType: 'Sales Quotation' },
+          transaction
         });
         if (salesQuotation) {
           const linkedDocs = isValidJSON(salesQuotation.linkedDocuments) || [];
           if (!linkedDocs.includes(documentNumber)) {
             linkedDocs.push(documentNumber);
-            await salesQuotation.update({ linkedDocs });
+            await salesQuotation.update({ linkedDocuments: linkedDocs }, { transaction });
           }
         }
       }
@@ -6139,13 +6150,14 @@ async function approveDocument(req, res) {
         document.orderConfirmationNumber
       ) {
         const salesOrder = await models.Documents.findOne({
-          where: { companyId, documentNumber: document.orderConfirmationNumber, documentType: 'Sales Order' }
+          where: { companyId, documentNumber: document.orderConfirmationNumber, documentType: 'Sales Order' },
+          transaction
         });
         if (salesOrder) {
           const linkedDocs = isValidJSON(salesOrder.linkedDocuments) || [];
           if (!linkedDocs.includes(documentNumber)) {
             linkedDocs.push(documentNumber);
-            await salesOrder.update({ linkedDocuments: linkedDocs });
+            await salesOrder.update({ linkedDocuments: linkedDocs }, { transaction });
           }
         }
       }
@@ -6155,13 +6167,14 @@ async function approveDocument(req, res) {
         const indent_numbers = document.indent_number.split(',');
         for (const ind_number of indent_numbers) {
           const purchaseRequest = await models.Documents.findOne({
-            where: { companyId, documentNumber: ind_number, documentType: 'Purchase Request' }
+            where: { companyId, documentNumber: ind_number, documentType: 'Purchase Request' },
+            transaction
           });
           if (purchaseRequest) {
             const linkedDocs = isValidJSON(purchaseRequest.linkedDocuments) || [];
             if (!linkedDocs.includes(documentNumber)) {
               linkedDocs.push(documentNumber);
-              await purchaseRequest.update({ linkedDocuments: linkedDocs });
+              await purchaseRequest.update({ linkedDocuments: linkedDocs }, { transaction });
             }
           }
         }
@@ -6174,13 +6187,14 @@ async function approveDocument(req, res) {
         document.purchaseOrderNumber
       ) {
         const purchaseOrder = await models.Documents.findOne({
-          where: { companyId, documentNumber: document.purchaseOrderNumber, documentType: 'Purchase Order' }
+          where: { companyId, documentNumber: document.purchaseOrderNumber, documentType: 'Purchase Order' },
+          transaction
         });
         if (purchaseOrder) {
           const linkedDocs = isValidJSON(purchaseOrder.linkedDocuments) || [];
           if (!linkedDocs.includes(documentNumber)) {
             linkedDocs.push(documentNumber);
-            await purchaseOrder.update({ linkedDocuments: linkedDocs });
+            await purchaseOrder.update({ linkedDocuments: linkedDocs }, { transaction });
           }
         }
       }
@@ -6194,13 +6208,14 @@ async function approveDocument(req, res) {
             documentType: {
               [Op.in]: ['Request for Quotation', 'Request For Quotation']
             }
-          }
+          },
+          transaction
         });
         if (rfqDoc) {
           const linkedDocs = isValidJSON(rfqDoc.linkedDocuments) || [];
           if (!linkedDocs.includes(documentNumber)) {
             linkedDocs.push(documentNumber);
-            await rfqDoc.update({ linkedDocuments: linkedDocs });
+            await rfqDoc.update({ linkedDocuments: linkedDocs }, { transaction });
           }
         }
       }
@@ -6212,13 +6227,14 @@ async function approveDocument(req, res) {
         document.serviceOrderNumber
       ) {
         const serviceOrder = await models.Documents.findOne({
-          where: { companyId, documentNumber: document.serviceOrderNumber, documentType: 'Service Order' }
+          where: { companyId, documentNumber: document.serviceOrderNumber, documentType: 'Service Order' },
+          transaction
         });
         if (serviceOrder) {
           const linkedDocs = isValidJSON(serviceOrder.linkedDocuments) || [];
           if (!linkedDocs.includes(documentNumber)) {
             linkedDocs.push(documentNumber);
-            await serviceOrder.update({ linkedDocuments: linkedDocs });
+            await serviceOrder.update({ linkedDocuments: linkedDocs }, { transaction });
           }
         }
       }
@@ -6230,13 +6246,14 @@ async function approveDocument(req, res) {
         document.ServiceConfirmationNumber
       ) {
         const serviceConfirmation = await models.Documents.findOne({
-          where: { companyId, documentNumber: document.ServiceConfirmationNumber, documentType: 'Service Confirmation' }
+          where: { companyId, documentNumber: document.ServiceConfirmationNumber, documentType: 'Service Confirmation' },
+          transaction
         });
         if (serviceConfirmation) {
           const linkedDocs = isValidJSON(serviceConfirmation.linkedDocuments) || [];
           if (!linkedDocs.includes(documentNumber)) {
             linkedDocs.push(documentNumber);
-            await serviceConfirmation.update({ linkedDocuments: linkedDocs });
+            await serviceConfirmation.update({ linkedDocuments: linkedDocs }, { transaction });
           }
         }
       }
@@ -6248,7 +6265,8 @@ async function approveDocument(req, res) {
             companyId: Number(companyId),
             serviceOrderNumber: documentNumber
           },
-          raw: true
+          raw: true,
+          transaction
         });
         if (production) {
           let cost = items?.reduce((acc, curr) => {
@@ -6256,7 +6274,8 @@ async function approveDocument(req, res) {
             return acc;
           }, 0);
           const additionalCharges = await models.DocumentAdditionalCharges.findAll({
-            where: { companyId, documentNumber }
+            where: { companyId, documentNumber },
+            transaction
           });
           if (Array.isArray(additionalCharges)) {
             for (const element of additionalCharges) {
@@ -6264,10 +6283,11 @@ async function approveDocument(req, res) {
             }
           }
           const productionFG = await models.ProductionFinishedGoods.findOne({
-            where: { productionId: production.id }
+            where: { productionId: production.id },
+            transaction
           });
           if (productionFG) {
-            await productionFG.update({ cost: ((productionFG.cost || 0) + cost) });
+            await productionFG.update({ cost: ((productionFG.cost || 0) + cost) }, { transaction });
           }
         }
       }
@@ -6279,7 +6299,8 @@ async function approveDocument(req, res) {
               companyId: Number(companyId),
               serviceOrderNumber: document.serviceOrderNumber
             },
-            raw: true
+            raw: true,
+            transaction
           });
           if (production) {
             const itemsMap = items?.reduce((acc, curr) => {
@@ -6294,7 +6315,8 @@ async function approveDocument(req, res) {
             }, {});
 
             const additionalCharges = await models.DocumentAdditionalCharges.findAll({
-              where: { companyId, documentNumber }
+              where: { companyId, documentNumber },
+              transaction
             });
             if (Array.isArray(additionalCharges)) {
               for (const element of additionalCharges) {
@@ -6303,21 +6325,23 @@ async function approveDocument(req, res) {
             }
 
             const productionRawMaterial = await models.ProductionRawMaterials.findAll({
-              where: { productionId: production.id }
+              where: { productionId: production.id },
+              transaction
             });
             for (const element of productionRawMaterial) {
               if (itemsMap[element.itemId]) {
                 await element.update({
                   consumedQuantity: (element.consumedQuantity || 0) + Number(itemsMap[element.itemId]),
                   averagePrice: (element?.averagePrice || 0) + (Number(itemsMap[element.itemId]) * itemsPriceMap[element.itemId])
-                });
+                }, { transaction });
               }
             }
             const productionFG = await models.ProductionFinishedGoods.findOne({
-              where: { productionId: production.id }
+              where: { productionId: production.id },
+              transaction
             });
             if (productionFG) {
-              await productionFG.update({ cost: ((productionFG.cost || 0) + cost) });
+              await productionFG.update({ cost: ((productionFG.cost || 0) + cost) }, { transaction });
             }
           }
         }
@@ -6326,10 +6350,12 @@ async function approveDocument(req, res) {
       if (document.documentType === "Service Challan" || document.documentType === "Service Confirmation Challan") {
         const settings = await models.Settings.findOne({
           where: { companyId: Number(companyId) },
-          raw: true
+          raw: true,
+          transaction
         });
         const approvalCount = await models.InventoryApproval.count({
-          where: { companyId }
+          where: { companyId },
+          transaction
         });
         const approval = await models.InventoryApproval.create({
           approvalId: `INA${approvalCount + 1}`,
@@ -6340,24 +6366,27 @@ async function approveDocument(req, res) {
           companyId: companyId,
           status: 1,
           approvedBy: null
-        });
+        }, { transaction });
 
         for (const element of items) {
           const storeId = await models.Store.findOne({
             where: {
-              name: document.store,
+              name: element.store || document.store,
               companyId
-            }
+            },
+            transaction
           });
           let remainingQuantity = (element.quantity * (element?.conversionFactor || 1));
 
           if (settings?.['serviceDocument'] != 'manual') {
             const item = await models.Items.findOne({
-              where: { itemId: element.itemId, companyId }
+              where: { itemId: element.itemId, companyId },
+              transaction
             });
             const existingStock = await models.StoreItems.findAll({
               where: { storeId: storeId?.id, itemId: item?.id },
-              order: [['createdAt', 'ASC']]
+              order: [['createdAt', 'ASC']],
+              transaction
             });
             for (const stock of existingStock) {
               if (remainingQuantity <= 0) break;
@@ -6367,11 +6396,11 @@ async function approveDocument(req, res) {
 
               await models.StoreItems.update(
                 { quantity: (stock.quantity - deductQty) },
-                { where: { id: stock.id } }
+                { where: { id: stock.id }, transaction }
               );
               await models.StockTransfer.create({
                 transferNumber: element.transferNumber || generateTransferNumber(),
-                fromStoreId: storeId.id || null,
+                fromStoreId: storeId?.id || null,
                 itemId: item.id,
                 quantity: deductQty * -1,
                 toStoreId: null,
@@ -6385,11 +6414,12 @@ async function approveDocument(req, res) {
                 actualPrice: stock.price,
                 approvalId: approval.id,
                 quantityForApproval: (element.quantity * (element?.conversionFactor || 1))
-              });
+              }, { transaction });
             }
           } else {
             const item = await models.Items.findOne({
-              where: { itemId: element.itemId, companyId }
+              where: { itemId: element.itemId, companyId },
+              transaction
             });
             await models.StockTransfer.create({
               transferNumber: element.transferNumber || generateTransferNumber(),
@@ -6407,7 +6437,7 @@ async function approveDocument(req, res) {
               actualPrice: element.price / (element.conversionFactor || 1),
               approvalId: approval.id,
               quantityForApproval: element.quantity * (element?.conversionFactor || 1)
-            });
+            }, { transaction });
           }
         }
       }
@@ -6418,7 +6448,8 @@ async function approveDocument(req, res) {
             companyId,
             documentNumber: document.challan_number,
             documentType: documentTypes.serviceChallan
-          }
+          },
+          transaction
         });
 
         if (serviceChallan && (serviceChallan.addStockOn === 'GRN' || document.documentType === documentTypes.serviceQr)) {
@@ -6428,27 +6459,32 @@ async function approveDocument(req, res) {
               where: {
                 serviceOrderNumber: document.serviceOrderNumber,
                 companyId: Number(companyId)
-              }
+              },
+              transaction
             });
             if (production) {
               finishedGoodRec = await models.ProductionFinishedGoods.findOne({
-                where: { productionId: production.id }
+                where: { productionId: production.id },
+                transaction
               });
             }
           }
 
           if (document.documentType === 'Service Grn') {
             await models.Documents.update({ addStockOn: 'GRN' }, {
-              where: { documentNumber, companyId }
+              where: { documentNumber, companyId },
+              transaction
             });
           }
 
           const settings = await models.Settings.findOne({
             where: { companyId: Number(companyId) },
-            raw: true
+            raw: true,
+            transaction
           });
           const approvalCount = await models.InventoryApproval.count({
-            where: { companyId }
+            where: { companyId },
+            transaction
           });
           const approval = await models.InventoryApproval.create({
             approvalId: `INA${approvalCount + 1}`,
@@ -6459,10 +6495,10 @@ async function approveDocument(req, res) {
             companyId: companyId,
             status: 1,
             approvedBy: null
-          });
+          }, { transaction });
 
-          const existingItems = await models.Items.findAll({ where: { companyId: Number(companyId) } });
-          const stores = await models.Store.findAll({ where: { companyId: Number(companyId) } });
+          const existingItems = await models.Items.findAll({ where: { companyId: Number(companyId) }, transaction });
+          const stores = await models.Store.findAll({ where: { companyId: Number(companyId) }, transaction });
           const itemsMap = new Map(existingItems.map(existingItem => [existingItem.itemId, existingItem.id]));
           const storesMap = new Map(stores.map(store => [store.name, store.id]));
 
@@ -6483,7 +6519,7 @@ async function approveDocument(req, res) {
                   documentNumber,
                   approvalId: approval.id,
                   quantityForApproval
-                });
+                }, { transaction });
 
                 await models.StockTransfer.create({
                   transferNumber: element.transferNumber || generateTransferNumber(),
@@ -6500,7 +6536,7 @@ async function approveDocument(req, res) {
                   documentType: document.documentType,
                   approvalId: approval.id,
                   quantityForApproval
-                });
+                }, { transaction });
               } else {
                 await models.StoreItems.create({
                   storeId,
@@ -6512,7 +6548,7 @@ async function approveDocument(req, res) {
                   documentNumber,
                   approvalId: approval.id,
                   quantityForApproval
-                });
+                }, { transaction });
 
                 await models.StockTransfer.create({
                   transferNumber: element.transferNumber || generateTransferNumber(),
@@ -6529,7 +6565,7 @@ async function approveDocument(req, res) {
                   documentType: document.documentType,
                   approvalId: approval.id,
                   quantityForApproval
-                });
+                }, { transaction });
               }
             }
           }
@@ -6553,7 +6589,7 @@ async function approveDocument(req, res) {
                     documentNumber,
                     approvalId: approval.id,
                     quantityForApproval
-                  });
+                  }, { transaction });
 
                   await models.StockTransfer.create({
                     transferNumber: generateTransferNumber(),
@@ -6571,7 +6607,7 @@ async function approveDocument(req, res) {
                     isRejected: true,
                     approvalId: approval.id,
                     quantityForApproval
-                  });
+                  }, { transaction });
                 } else {
                   await models.StoreItems.create({
                     storeId,
@@ -6584,7 +6620,7 @@ async function approveDocument(req, res) {
                     documentNumber,
                     approvalId: approval.id,
                     quantityForApproval
-                  });
+                  }, { transaction });
 
                   await models.StockTransfer.create({
                     transferNumber: generateTransferNumber(),
@@ -6602,7 +6638,7 @@ async function approveDocument(req, res) {
                     isRejected: true,
                     approvalId: approval.id,
                     quantityForApproval
-                  });
+                  }, { transaction });
                 }
               }
             }
@@ -6614,26 +6650,28 @@ async function approveDocument(req, res) {
             where: {
               companyId: Number(companyId),
               serviceOrderNumber: document.serviceOrderNumber
-            }
+            },
+            transaction
           });
           if (production) {
             const finishedGoods = await models.ProductionFinishedGoods.findAll({
-              where: { productionId: production.id }
+              where: { productionId: production.id },
+              transaction
             });
             for (const fg of finishedGoods) {
               if (document.documentType === 'Service Grn') {
                 await fg.update({
                   producedQuantity: (fg.producedQuantity || 0) + (items[0]?.receivedToday || 0),
                   passedQuantity: (fg.passedQuantity || 0) + Number(serviceChallan.addStockOn === 'GRN' ? (items[0]?.receivedToday || 0) : 0),
-                });
+                }, { transaction });
               } else {
                 await fg.update({
                   passedQuantity: (fg?.passedQuantity || 0) + Number(items[0]?.receivedToday || 0),
                   rejectQuantity: (fg?.rejectQuantity || 0) + Number(items[0]?.pendingQuantity || 0)
-                });
+                }, { transaction });
               }
               if (fg.passedQuantity >= fg.quantity) {
-                await production.update({ status: 4 });
+                await production.update({ status: 4 }, { transaction });
               }
             }
           }
@@ -6644,10 +6682,12 @@ async function approveDocument(req, res) {
         if (document.addStockOn === 'GRN' || document.documentType === 'Service Confirmation Qr') {
           const settings = await models.Settings.findOne({
             where: { companyId: Number(companyId) },
-            raw: true
+            raw: true,
+            transaction
           });
           const approvalCount = await models.InventoryApproval.count({
-            where: { companyId }
+            where: { companyId },
+            transaction
           });
           const approval = await models.InventoryApproval.create({
             approvalId: `INA${approvalCount + 1}`,
@@ -6658,10 +6698,10 @@ async function approveDocument(req, res) {
             companyId: companyId,
             status: 1,
             approvedBy: null
-          });
+          }, { transaction });
 
-          const existingItems = await models.Items.findAll({ where: { companyId: Number(companyId) } });
-          const stores = await models.Store.findAll({ where: { companyId: Number(companyId) } });
+          const existingItems = await models.Items.findAll({ where: { companyId: Number(companyId) }, transaction });
+          const stores = await models.Store.findAll({ where: { companyId: Number(companyId) }, transaction });
           const itemsMap = new Map(existingItems.map(existingItem => [existingItem.itemId, existingItem.id]));
           const storesMap = new Map(stores.map(store => [store.name, store.id]));
 
@@ -6682,7 +6722,7 @@ async function approveDocument(req, res) {
                   documentNumber,
                   approvalId: approval.id,
                   quantityForApproval
-                });
+                }, { transaction });
 
                 await models.StockTransfer.create({
                   transferNumber: element.transferNumber || generateTransferNumber(),
@@ -6699,7 +6739,7 @@ async function approveDocument(req, res) {
                   documentType: document.documentType,
                   approvalId: approval.id,
                   quantityForApproval
-                });
+                }, { transaction });
               } else {
                 await models.StoreItems.create({
                   storeId,
@@ -6711,7 +6751,7 @@ async function approveDocument(req, res) {
                   documentNumber,
                   approvalId: approval.id,
                   quantityForApproval
-                });
+                }, { transaction });
 
                 await models.StockTransfer.create({
                   transferNumber: element.transferNumber || generateTransferNumber(),
@@ -6728,7 +6768,7 @@ async function approveDocument(req, res) {
                   documentType: document.documentType,
                   approvalId: approval.id,
                   quantityForApproval
-                });
+                }, { transaction });
               }
             }
           }
@@ -6752,7 +6792,7 @@ async function approveDocument(req, res) {
                     documentNumber,
                     approvalId: approval.id,
                     quantityForApproval
-                  });
+                  }, { transaction });
 
                   await models.StockTransfer.create({
                     transferNumber: generateTransferNumber(),
@@ -6770,7 +6810,7 @@ async function approveDocument(req, res) {
                     isRejected: true,
                     approvalId: approval.id,
                     quantityForApproval
-                  });
+                  }, { transaction });
                 } else {
                   await models.StoreItems.create({
                     storeId,
@@ -6783,7 +6823,7 @@ async function approveDocument(req, res) {
                     documentNumber,
                     approvalId: approval.id,
                     quantityForApproval
-                  });
+                  }, { transaction });
 
                   await models.StockTransfer.create({
                     transferNumber: generateTransferNumber(),
@@ -6801,7 +6841,7 @@ async function approveDocument(req, res) {
                     isRejected: true,
                     approvalId: approval.id,
                     quantityForApproval
-                  });
+                  }, { transaction });
                 }
               }
             }
@@ -6814,6 +6854,7 @@ async function approveDocument(req, res) {
       if (document?.documentType === documentTypes.salesQuotation && document?.enquiryNumber) {
         const existingDocument = await models.Documents.findOne({
           where: { documentNumber: document?.enquiryNumber, companyId },
+          transaction
         });
 
         if (existingDocument) {
@@ -6821,7 +6862,7 @@ async function approveDocument(req, res) {
             quotationNumber: documentNumber,
             is_refered: true,
             status: 8
-          });
+          }, { transaction });
         }
       }
 
@@ -6829,6 +6870,7 @@ async function approveDocument(req, res) {
       if (document?.documentType === documentTypes.orderConfirmation && document?.quotationNumber) {
         const existingDocument = await models.Documents.findOne({
           where: { documentNumber: document?.quotationNumber, companyId },
+          transaction
         });
 
         if (existingDocument) {
@@ -6836,7 +6878,7 @@ async function approveDocument(req, res) {
             orderConfirmationNumber: documentNumber,
             is_refered: true,
             status: 9
-          });
+          }, { transaction });
         }
       }
 
@@ -6844,6 +6886,7 @@ async function approveDocument(req, res) {
       if (document?.documentType === documentTypes.invoice && document?.orderConfirmationNumber) {
         const existingDocument = await models.Documents.findOne({
           where: { documentNumber: document?.orderConfirmationNumber, companyId },
+          transaction
         });
         if (existingDocument) {
           // Find all Document Items against orderConfirmationNumber 
@@ -6851,7 +6894,8 @@ async function approveDocument(req, res) {
             where: {
               companyId,
               documentNumber: document?.orderConfirmationNumber
-            }
+            },
+            transaction
           });
 
           // Create a map of documentsItems with Items id as key and quantity as value
@@ -6869,7 +6913,8 @@ async function approveDocument(req, res) {
               status: {
                 [Op.notIn]: [0, 2, 29, 30]
               }
-            }
+            },
+            transaction
           });
 
           const documentNumbers = deliveryChallan.map(doc => doc.documentNumber);
@@ -6879,7 +6924,8 @@ async function approveDocument(req, res) {
             where: {
               documentNumber: documentNumbers,
               companyId
-            }
+            },
+            transaction
           });
 
           // Create deliverychallan or invoice items map where item id is key and quantity as value
@@ -6935,7 +6981,7 @@ async function approveDocument(req, res) {
           // update the status accordingly
           await existingDocument.update({
             status: handleStatus
-          });
+          }, { transaction });
         }
       }
 
@@ -6945,10 +6991,12 @@ async function approveDocument(req, res) {
       ) {
         const settings = await models.Settings.findOne({
           where: { companyId: Number(companyId) },
-          raw: true
+          raw: true,
+          transaction
         });
         const approvalCount = await models.InventoryApproval.count({
-          where: { companyId }
+          where: { companyId },
+          transaction
         });
         const approval = await models.InventoryApproval.create({
           approvalId: `INA${approvalCount + 1}`,
@@ -6959,24 +7007,27 @@ async function approveDocument(req, res) {
           companyId: companyId,
           status: 1,
           approvedBy: null
-        });
+        }, { transaction });
 
         for (const element of items) {
           const storeId = await models.Store.findOne({
             where: {
-              name: document.store,
+              name: element?.store || document.store,
               companyId
-            }
+            },
+            transaction
           });
           if (settings?.['salesDocument'] != 'manual') {
             let price = 0;
             let remainingQuantity = (element.quantity * (element?.conversionFactor || 1));
             const item = await models.Items.findOne({
-              where: { itemId: element.itemId, companyId }
+              where: { itemId: element.itemId, companyId },
+              transaction
             });
             const existingStock = await models.StoreItems.findAll({
-              where: { storeId: storeId.id, itemId: item.id },
-              order: [['createdAt', 'ASC']]
+              where: { storeId: storeId?.id, itemId: item?.id },
+              order: [['createdAt', 'ASC']],
+              transaction
             });
             for (const stock of existingStock) {
               if (remainingQuantity <= 0) break;
@@ -6986,12 +7037,12 @@ async function approveDocument(req, res) {
 
               await models.StoreItems.update(
                 { quantity: (stock.quantity - deductQty) },
-                { where: { id: stock.id } }
+                { where: { id: stock.id }, transaction }
               );
               await models.StockTransfer.create({
                 transferNumber: element.transferNumber || generateTransferNumber(),
-                fromStoreId: storeId.id || null,
-                itemId: item.id,
+                fromStoreId: storeId?.id || null,
+                itemId: item?.id || null,
                 quantity: deductQty * -1,
                 toStoreId: null,
                 transferDate: new Date().toISOString(),
@@ -7004,17 +7055,18 @@ async function approveDocument(req, res) {
                 actualPrice: stock.price,
                 approvalId: approval.id,
                 quantityForApproval: element.quantity
-              });
+              }, { transaction });
               price += (stock.price * deductQty);
             }
           } else {
             const item = await models.Items.findOne({
-              where: { itemId: element.itemId, companyId }
+              where: { itemId: element.itemId, companyId },
+              transaction
             });
             await models.StockTransfer.create({
               transferNumber: element.transferNumber || generateTransferNumber(),
-              fromStoreId: storeId.id || null,
-              itemId: item.id,
+              fromStoreId: storeId?.id || null,
+              itemId: item?.id || null,
               quantity: null,
               toStoreId: null,
               transferDate: new Date().toISOString(),
@@ -7027,7 +7079,7 @@ async function approveDocument(req, res) {
               actualPrice: element.price / (element.conversionFactor || 1),
               approvalId: approval.id,
               quantityForApproval: element.quantity * (element?.conversionFactor || 1)
-            });
+            }, { transaction });
           }
         }
       }
@@ -7043,14 +7095,16 @@ async function approveDocument(req, res) {
             where: {
               companyId,
               documentNumber: ind_number
-            }
+            },
+            transaction
           });
           if (purchaseRequest) {
             const purchaseRequestItems = await models.DocumentItems.findAll({
               where: {
                 companyId,
                 documentNumber: ind_number
-              }
+              },
+              transaction
             });
             const purchaseRequestItemsMap = {};
             const consumeItemsMap = {};
@@ -7071,7 +7125,7 @@ async function approveDocument(req, res) {
                 }
               }
 
-              itemsMap[current.itemId] && await current.update({ receivedToday: quantity });
+              itemsMap[current.itemId] && await current.update({ receivedToday: quantity }, { transaction });
               itemsMap[current.itemId] = remaining;
               if (purchaseRequestItemsMap[current.itemId]) {
                 purchaseRequestItemsMap[current.itemId] += current.quantity;
@@ -7096,7 +7150,7 @@ async function approveDocument(req, res) {
               }
               else if (status == 15) status = 17;
             }
-            await purchaseRequest.update({ status });
+            await purchaseRequest.update({ status }, { transaction });
           }
         }
       }
@@ -7105,12 +7159,14 @@ async function approveDocument(req, res) {
       if ((document?.documentType === documentTypes.purchaseInvoice) && document?.purchaseOrderNumber) {
         const existingDocument = await models.Documents.findOne({
           where: { documentNumber: document?.purchaseOrderNumber, companyId },
+          transaction
         });
         const documentItems = await models.DocumentItems.findAll({
           where: {
             companyId,
             documentNumber: document.purchaseOrderNumber
-          }
+          },
+          transaction
         });
         const documentsItemMap = documentItems?.reduce((acc, current) => {
           acc[current.itemId] = current.quantity;
@@ -7127,7 +7183,8 @@ async function approveDocument(req, res) {
             status: {
               [Op.notIn]: [0, 2, 29, 30]
             }
-          }
+          },
+          transaction
         });
 
         const documentNumbers = purchaseDoc.map(doc => doc.documentNumber);
@@ -7136,7 +7193,8 @@ async function approveDocument(req, res) {
           where: {
             documentNumber: documentNumbers,
             companyId
-          }
+          },
+          transaction
         });
 
         const purchaseDocItemsMap = purchaseDocItems?.reduce((acc, current) => {
@@ -7212,18 +7270,20 @@ async function approveDocument(req, res) {
         }
         await existingDocument.update({
           status: handleStatus
-        });
+        }, { transaction });
 
       }
 
       if (document.documentType === documentTypes.purchaseInvoice) {
         const settings = await models.Settings.findOne({
           where: { companyId: Number(companyId) },
-          raw: true
+          raw: true,
+          transaction
         });
         if (settings?.addStockOnPurchaseInvoice == 'true') {
           const approvalCount = await models.InventoryApproval.count({
-            where: { companyId }
+            where: { companyId },
+            transaction
           });
           const approval = await models.InventoryApproval.create({
             approvalId: `INA${approvalCount + 1}`,
@@ -7234,14 +7294,15 @@ async function approveDocument(req, res) {
             companyId: companyId,
             status: 1,
             approvedBy: null
-          });
+          }, { transaction });
 
           const existingItems = await models.Items.findAll({
             where: {
               companyId: Number(companyId),
               itemId: { [Op.in]: items.map(item => item.itemId) }
             },
-            raw: true
+            raw: true,
+            transaction
           });
           const itemsMap = existingItems.reduce((acc, curr) => {
             acc[curr.itemId] = curr.id;
@@ -7249,7 +7310,8 @@ async function approveDocument(req, res) {
           }, {});
 
           const stores = await models.Store.findAll({
-            where: { companyId: Number(companyId) }
+            where: { companyId: Number(companyId) },
+            transaction
           });
           const storesMap = stores.reduce((acc, curr) => {
             acc[curr.name] = curr.id;
@@ -7273,7 +7335,7 @@ async function approveDocument(req, res) {
                   documentNumber: document.documentNumber,
                   approvalId: approval.id,
                   quantityForApproval: qty
-                });
+                }, { transaction });
 
                 await models.StockTransfer.create({
                   transferNumber: item.transferNumber || generateTransferNumber(),
@@ -7290,7 +7352,7 @@ async function approveDocument(req, res) {
                   documentType: document.documentType,
                   approvalId: approval.id,
                   quantityForApproval: qty
-                });
+                }, { transaction });
               } else {
                 await models.StoreItems.create({
                   storeId,
@@ -7302,7 +7364,7 @@ async function approveDocument(req, res) {
                   documentNumber: document.documentNumber,
                   approvalId: approval.id,
                   quantityForApproval: qty
-                });
+                }, { transaction });
 
                 await models.StockTransfer.create({
                   transferNumber: item.transferNumber || generateTransferNumber(),
@@ -7319,7 +7381,7 @@ async function approveDocument(req, res) {
                   documentType: document.documentType,
                   approvalId: approval.id,
                   quantityForApproval: qty
-                });
+                }, { transaction });
               }
             }
           }
@@ -7330,15 +7392,24 @@ async function approveDocument(req, res) {
         where: {
           companyId: Number(companyId),
           documentNumber
-        }
-      })
+        },
+        transaction
+      });
 
     }
+    await transaction.commit();
     res.status(200).json({
       message: 'Document Status Updated.'
     });
   } catch (error) {
-    console.log(error)
+    if (transaction) {
+      try {
+        await transaction.rollback();
+      } catch (rollbackErr) {
+        console.error('Transaction rollback failed:', rollbackErr);
+      }
+    }
+    console.log(error);
     res.status(500).json({
       message: 'Something went wrong',
       error
