@@ -8731,7 +8731,51 @@ async function saveRfqQuotation(req, res) {
   }
 }
 
+
+async function updateSyncToTally(req, res) {
+  try {
+    const { documentNumber, companyId, id, documentId, syncToTally = true } = req.body;
+
+    let whereClause = {};
+    if (documentNumber && companyId) {
+      whereClause = { documentNumber, companyId };
+    } else if (documentNumber) {
+      whereClause = { documentNumber };
+    } else if ((id || documentId) && companyId) {
+      whereClause = { id: id || documentId, companyId };
+    } else if (id || documentId) {
+      whereClause = { id: id || documentId };
+    } else {
+      return res.status(400).json({ message: 'documentNumber and companyId are required.' });
+    }
+
+    const document = await models.Documents.findOne({ where: whereClause });
+    if (!document) {
+      return res.status(404).json({ message: 'Document not found.' });
+    }
+
+    await document.update({ syncToTally: Boolean(syncToTally) });
+
+    return res.status(200).json({
+      message: 'Document syncToTally status updated successfully.',
+      data: {
+        id: document.id,
+        documentNumber: document.documentNumber,
+        companyId: document.companyId,
+        syncToTally: document.syncToTally,
+      },
+    });
+  } catch (error) {
+    console.error('Error in updateSyncToTally:', error);
+    return res.status(500).json({
+      message: 'Something went wrong while updating syncToTally.',
+      error: error.message,
+    });
+  }
+}
+
 module.exports = {
+  updateSyncToTally,
   saveRfqQuotation,
   getDocuments,
   getDocumentById,
