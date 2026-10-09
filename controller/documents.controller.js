@@ -4404,7 +4404,10 @@ async function discardDocument(req, res) {
         transaction: t
       });
     }
-    if (document.documentType === documentTypes.purchaseInvoice) {
+    if (
+      document.documentType === documentTypes.purchaseInvoice ||
+      document.documentType === 'Purchase Invoice'
+    ) {
       linkedDocument = await models.Documents.findOne({
         where: {
           companyId,
@@ -4467,6 +4470,94 @@ async function discardDocument(req, res) {
       }
       await models.StockTransfer.bulkCreate(stockHistory, { transaction: t });
     }
+    // if (
+    //   document.documentType === "Service Invoice" ||
+    //   document.documentType === documentTypes.serviceInvoice
+    // ) {
+    //   linkedDocument = await models.Documents.findOne({
+    //     where: {
+    //       companyId,
+    //       invoiceNumber: document.documentNumber,
+    //       status: {
+    //         [Op.ne]: 2,
+    //       },
+    //     },
+    //     transaction: t
+    //   });
+    //   if (linkedDocument) {
+    //     await t.rollback();
+    //     return res.status(409).json({ message: 'You can not discard this document, It is linked with other documents.' });
+    //   }
+
+    //   if (document.serviceOrderNumber) {
+    //     const remainingInvoices = await models.Documents.findAll({
+    //       where: {
+    //         companyId,
+    //         documentType: 'Service Invoice',
+    //         serviceOrderNumber: document.serviceOrderNumber,
+    //         id: { [Op.ne]: document.id },
+    //         status: { [Op.ne]: 2 }
+    //       },
+    //       attributes: ['documentNumber'],
+    //       raw: true,
+    //       transaction: t
+    //     });
+
+    //     if (remainingInvoices.length === 0) {
+    //       await models.Documents.update({ status: 1 }, {
+    //         where: {
+    //           companyId,
+    //           documentNumber: document.serviceOrderNumber,
+    //           documentType: 'Service Order',
+    //           status: { [Op.in]: [49, 50] }
+    //         },
+    //         transaction: t
+    //       });
+    //     } else {
+    //       const soItems = await models.DocumentItems.findAll({
+    //         where: {
+    //           companyId,
+    //           documentNumber: document.serviceOrderNumber
+    //         },
+    //         attributes: ['serviceId', 'quantity'],
+    //         transaction: t
+    //       });
+    //       const soItemsMap = soItems.reduce((acc, curr) => {
+    //         acc[curr.serviceId] = curr.quantity;
+    //         return acc;
+    //       }, {});
+
+    //       const remainingInvItems = await models.DocumentItems.findAll({
+    //         where: {
+    //           companyId,
+    //           documentNumber: { [Op.in]: remainingInvoices.map(doc => doc.documentNumber) }
+    //         },
+    //         attributes: ['serviceId', 'quantity'],
+    //         transaction: t
+    //       });
+    //       const invItemsMap = remainingInvItems.reduce((acc, curr) => {
+    //         acc[curr.serviceId] = (acc[curr.serviceId] || 0) + Number(curr.quantity);
+    //         return acc;
+    //       }, {});
+
+    //       let partial = false;
+    //       for (const key in soItemsMap) {
+    //         if (!invItemsMap[key] || invItemsMap[key] < soItemsMap[key]) {
+    //           partial = true;
+    //           break;
+    //         }
+    //       }
+    //       await models.Documents.update({ status: partial ? 49 : 50 }, {
+    //         where: {
+    //           companyId,
+    //           documentNumber: document.serviceOrderNumber,
+    //           documentType: 'Service Order'
+    //         },
+    //         transaction: t
+    //       });
+    //     }
+    //   }
+    // }
     if (document.documentType === documentTypes.qualityReport) {
       const batch = await models.BatchItems.findOne({
         where: {
@@ -5058,9 +5149,74 @@ async function discardDocument(req, res) {
       }
     }
 
-    await document.update({ status: 2 }, { transaction: t });
-    await t.commit();
-    res.status(200).json({ message: 'Document Discarded Successfully.' });
+    const isPermanentDelete = [
+      documentTypes.purchaseInvoice,
+      'Purchase Invoice',
+      documentTypes.serviceInvoice,
+      'Service Invoice'
+    ].includes(document.documentType) ||
+    (document.documentType && ['purchase invoice', 'service invoice'].includes(document.documentType.toLowerCase()));
+
+    if (isPermanentDelete) {
+      await Promise.all([
+        models.DocumentItems.destroy({
+          where: {
+            companyId,
+            documentNumber: document.documentNumber
+          },
+          transaction: t
+        }),
+        models.DocumentAdditionalCharges.destroy({
+          where: {
+            companyId,
+            documentNumber: document.documentNumber
+          },
+          transaction: t
+        }),
+        models.DocumentBankDetails.destroy({
+          where: {
+            companyId,
+            documentNumber: document.documentNumber
+          },
+          transaction: t
+        }),
+        models.DocumentAttachments.destroy({
+          where: {
+            companyId,
+            documentNumber: document.documentNumber
+          },
+          transaction: t
+        }),
+        models.DocumentComments.destroy({
+          where: {
+            documentId: document.id
+          },
+          transaction: t
+        }),
+        
+        models.InventoryApproval ? models.InventoryApproval.destroy({
+          where: {
+            companyId,
+            documentNumber: document.documentNumber
+          },
+          transaction: t
+        }) : Promise.resolve(),
+        models.Documents.destroy({
+          where: {
+            id: document.id,
+            companyId
+          },
+          transaction: t
+        })
+      ]);
+
+      await t.commit();
+      return res.status(200).json({ message: 'Document Deleted Successfully.' });
+    } else {
+      await document.update({ status: 2 }, { transaction: t });
+      await t.commit();
+      return res.status(200).json({ message: 'Document Discarded Successfully.' });
+    }
   } catch (error) {
     if (t) await t.rollback();
     console.log(error, 'error in discard docs');
@@ -5068,7 +5224,7 @@ async function discardDocument(req, res) {
   }
 }
 
-function deleteDocument(req, res) {
+async function deleteDocument(req, res) {
   const { documentId } = req.body;
 
   // Check if documentId is provided
@@ -5078,28 +5234,86 @@ function deleteDocument(req, res) {
     });
   }
 
-  // Attempt to delete the document
-  models.Documents.destroy({ where: { id: documentId } })
-    .then((result) => {
-      if (result) {
-        // Document was successfully deleted
-        res.status(200).json({
-          message: "Document deleted successfully",
-        });
-      } else {
-        // No document was found with the given ID
-        res.status(404).json({
-          message: "Document not found",
-        });
-      }
-    })
-    .catch((error) => {
-      // Handle errors
-      res.status(500).json({
-        message: "Something went wrong, please try again later!",
-        error: error.message || error,
+  try {
+    const document = await models.Documents.findByPk(documentId);
+    if (!document) {
+      return res.status(404).json({
+        message: "Document not found",
       });
+    }
+
+    await Promise.all([
+      models.DocumentItems.destroy({
+        where: {
+          companyId: document.companyId,
+          documentNumber: document.documentNumber
+        }
+      }),
+      models.DocumentAdditionalCharges.destroy({
+        where: {
+          companyId: document.companyId,
+          documentNumber: document.documentNumber
+        }
+      }),
+      models.DocumentBankDetails.destroy({
+        where: {
+          companyId: document.companyId,
+          documentNumber: document.documentNumber
+        }
+      }),
+      models.DocumentAttachments.destroy({
+        where: {
+          companyId: document.companyId,
+          documentNumber: document.documentNumber
+        }
+      }),
+      models.DocumentComments.destroy({
+        where: {
+          documentId: document.id
+        }
+      }),
+      models.StoreItems.destroy({
+        where: {
+          companyId: document.companyId,
+          documentNumber: document.documentNumber
+        }
+      }),
+      models.StockTransfer.destroy({
+        where: {
+          companyId: document.companyId,
+          documentNumber: document.documentNumber
+        }
+      }),
+      models.LogPayment ? models.LogPayment.destroy({
+        where: {
+          companyId: document.companyId,
+          documentNumber: document.documentNumber
+        }
+      }) : Promise.resolve(),
+      models.logTDS ? models.logTDS.destroy({
+        where: {
+          companyId: document.companyId,
+          documentNumber: document.documentNumber
+        }
+      }) : Promise.resolve(),
+      models.InventoryApproval ? models.InventoryApproval.destroy({
+        where: {
+          companyId: document.companyId,
+          documentNumber: document.documentNumber
+        }
+      }) : Promise.resolve(),
+      models.Documents.destroy({ where: { id: documentId } })
+    ]);
+
+    res.status(200).json({
+      message: "Document deleted successfully",
     });
+  } catch (error) {
+    res.status(500).json({
+      message: "Something went wrong, please try again later!",
+      error: error.message || error,
+    });
+  }
 }
 
 function getPreviewDocuments(req, res) {

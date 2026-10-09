@@ -212,6 +212,7 @@ module.exports = (sequelize, DataTypes) => {
     submissionDeadline: DataTypes.STRING,
     rfqDetails: DataTypes.JSON,
     rfqNumber: DataTypes.STRING,
+    syncToTally: DataTypes.BOOLEAN,
   }, {
     sequelize,
     modelName: 'Documents',
