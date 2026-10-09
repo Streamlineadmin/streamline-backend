@@ -3447,7 +3447,7 @@ async function createDocument(req, res) {
 async function getDocuments(req, res) {
   try {
 
-    const { companyId, linkedDocuments, documentNumber, buyerName, field, counts, createdBy, approvedBy, requestedBy, currentPage, labels, pageSize, documentType = '', search = '', dealStatus, docTypeFilter, dateRange, rfqNumber } = req.body;
+    const { companyId, linkedDocuments, documentNumber, buyerName, field, counts, createdBy, approvedBy, requestedBy, currentPage, labels, pageSize, documentType = '', search = '', dealStatus, docTypeFilter, dateRange, rfqNumber, syncToTally, fromExtension, isExtension } = req.body;
 
     const offset = ((currentPage || 1) - 1) * (pageSize || 10);
     let documentstype = [];
@@ -3481,12 +3481,27 @@ async function getDocuments(req, res) {
       };
     }
 
+    let syncToTallyFilter = {};
+    if (typeof syncToTally === 'boolean' || syncToTally === 'true' || syncToTally === 'false') {
+      if (syncToTally === true || syncToTally === 'true') {
+        syncToTallyFilter = { syncToTally: true };
+      } else {
+        syncToTallyFilter = {
+          [Op.or]: [
+            { syncToTally: false },
+            { syncToTally: null },
+          ]
+        };
+      }
+    }
+
     let documents = [];
     if (!currentPage || !pageSize) {
       documents = await models.Documents.findAll({
         where: {
           companyId,
           ...dateFilter,
+          ...syncToTallyFilter,
           ...(rfqNumber ? { rfqNumber } : {}),
           ...buildJsonLikeSearch('linkedDocuments', linkedDocuments),
           ...(docTypeFilter?.length > 0 ? !createdBy ? {
@@ -3547,6 +3562,7 @@ async function getDocuments(req, res) {
         where: {
           companyId,
           ...dateFilter,
+          ...syncToTallyFilter,
           ...(rfqNumber ? { rfqNumber } : {}),
           ...buildJsonLikeSearch('linkedDocuments', linkedDocuments),
           ...(documentstype.length > 0 && {
@@ -3729,6 +3745,29 @@ async function getDocuments(req, res) {
       attachments: attachments.filter(att => att.documentNumber === document.documentNumber),
       documentComments: documentComments.filter(comment => comment.documentId === document.id),
     }));
+
+    if (fromExtension || isExtension) {
+      const baseCountWhere = {
+        companyId: Number(companyId),
+        ...(docTypeFilter?.length > 0 ? { documentType: { [Op.in]: docTypeFilter } } : { documentType: 'Invoice' }),
+      };
+
+      const [totalCount, syncedCount, pendingCount] = await Promise.all([
+        models.Documents.count({ where: baseCountWhere }),
+        models.Documents.count({ where: { ...baseCountWhere, syncToTally: true } }),
+        models.Documents.count({ where: { ...baseCountWhere, [Op.or]: [{ syncToTally: false }, { syncToTally: null }] } }),
+      ]);
+
+      return res.status(200).json({
+        total: documents.count !== undefined ? documents.count : (Array.isArray(documents) ? documents.length : 0),
+        currentPage: Number(currentPage) || 1,
+        pageSize: Number(pageSize) || 10,
+        data: formattedResult,
+        totalCount,
+        syncedCount,
+        pendingCount,
+      });
+    }
 
     if ((!currentPage || !pageSize) || (pageSize == 5000)) {
       return res.status(200).json(formattedResult)
