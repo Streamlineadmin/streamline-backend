@@ -4286,6 +4286,16 @@ async function discardDocument(req, res) {
         where: {
           companyId,
           purchaseOrderNumber: document.documentNumber,
+          documentType: {
+            [Op.in]: [
+              'Goods Received Note',
+              'Quality Report',
+              'Purchase Invoice',
+              'Purchase Return',
+              'Purchase Credit Note',
+              'Purchase Debit Note',
+            ],
+          },
           status: {
             [Op.ne]: 2,
           },
@@ -5194,7 +5204,7 @@ async function discardDocument(req, res) {
       documentTypes.serviceInvoice,
       'Service Invoice'
     ].includes(document.documentType) ||
-    (document.documentType && ['purchase invoice', 'service invoice'].includes(document.documentType.toLowerCase()));
+      (document.documentType && ['purchase invoice', 'service invoice'].includes(document.documentType.toLowerCase()));
 
     if (isPermanentDelete) {
       await Promise.all([
@@ -5232,7 +5242,7 @@ async function discardDocument(req, res) {
           },
           transaction: t
         }),
-        
+
         models.InventoryApproval ? models.InventoryApproval.destroy({
           where: {
             companyId,
