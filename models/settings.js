@@ -51,6 +51,8 @@ module.exports = (sequelize, DataTypes) => {
         showTotalItemsCount: DataTypes.BOOLEAN,
         soNumberMandatoryOnInvoice: DataTypes.BOOLEAN,
         soNumberMandatoryOnChallan: DataTypes.BOOLEAN,
+        dispatchStatusBasedOnChallan: DataTypes.BOOLEAN,
+        uniqueGstNumber: DataTypes.BOOLEAN,
     }, {
         sequelize,
         modelName: 'Settings',

@@ -26,4 +26,7 @@ router.post('/getChallanDocumentItems', documentsController.getChallanDocumentIt
 router.post('/createEwayBillFromEInvoice', documentsController.createEwayBillFromEInvoice);
 router.post('/saveRfqQuotation', documentsController.saveRfqQuotation);
 
+router.post('/syncToTally', documentsController.updateSyncToTally);
+router.post('/updateSyncToTally', documentsController.updateSyncToTally);
+
 module.exports = router;

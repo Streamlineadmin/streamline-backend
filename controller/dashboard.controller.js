@@ -496,7 +496,7 @@ function convertStatus(statusCode) {
 
 async function getDashboardData(req, res) {
     try {
-        const { companyId, dataFor, start, end, assignedTo, salesOrderNumber, salesBasis, topSellingBasis, salesYear, purchaseBasis, topPurchaseBasis, purchaseYear } = req.body;
+        const { companyId, dataFor, start, end, assignedTo, salesOrderNumber, salesBasis, topSellingBasis, salesYear, purchaseBasis, topPurchaseBasis, purchaseYear, dispatchStatusBasedOnChallan } = req.body;
         if (dataFor === 'Production') {
             const items = await models.Items.findAll({
                 where: {
@@ -914,6 +914,20 @@ async function getDashboardData(req, res) {
             });
 
             // Order dispatch status (Sales Order status mapping - across all time)
+            let isDispatchBasedOnChallan = true;
+            if (dispatchStatusBasedOnChallan !== undefined && dispatchStatusBasedOnChallan !== null) {
+                isDispatchBasedOnChallan = dispatchStatusBasedOnChallan === true || dispatchStatusBasedOnChallan === 'true';
+            } else {
+                const companySettings = await models.Settings.findOne({
+                    where: { companyId: Number(companyId) },
+                    attributes: ['dispatchStatusBasedOnChallan'],
+                    raw: true
+                });
+                if (companySettings && companySettings.dispatchStatusBasedOnChallan !== null && companySettings.dispatchStatusBasedOnChallan !== undefined) {
+                    isDispatchBasedOnChallan = Boolean(companySettings.dispatchStatusBasedOnChallan);
+                }
+            }
+
             const dispatchSalesOrders = await models.Documents.findAll({
                 where: {
                     companyId: Number(companyId),
@@ -931,8 +945,12 @@ async function getDashboardData(req, res) {
             let fullyDeliveredCount = 0;
             let cancelledCount = 0;
 
-            const statusPartially = [10, 19, 20, 33, 37, 41, 42, 45, 46];
-            const statusFully = [11, 21, 22, 34, 38, 43, 44, 47, 48];
+            const statusPartially = isDispatchBasedOnChallan
+                ? [10, 19, 20, 33, 37, 41, 42, 45, 46]
+                : [12, 19, 21, 35, 39, 41, 43, 45, 47];
+            const statusFully = isDispatchBasedOnChallan
+                ? [11, 21, 22, 34, 38, 43, 44, 47, 48]
+                : [13, 20, 22, 36, 40, 42, 44, 46, 48];
 
             dispatchSalesOrders.forEach(order => {
                 const status = order.status;
@@ -1836,7 +1854,7 @@ async function workOrderStatus(req, res) {
 
 async function getSalesDashboardDetails(req, res) {
     try {
-        const { companyId, types, type, start, end } = req.body;
+        const { companyId, types, type, start, end, dispatchStatusBasedOnChallan } = req.body;
 
         let typesArray = [];
         if (Array.isArray(types) && types.length > 0) {
@@ -1894,8 +1912,26 @@ async function getSalesDashboardDetails(req, res) {
             return null;
         };
 
-        const statusPartially = [10, 19, 20, 33, 37, 41, 42, 45, 46];
-        const statusFully = [11, 21, 22, 34, 38, 43, 44, 47, 48];
+        let isDispatchBasedOnChallan = true;
+        if (dispatchStatusBasedOnChallan !== undefined && dispatchStatusBasedOnChallan !== null) {
+            isDispatchBasedOnChallan = dispatchStatusBasedOnChallan === true || dispatchStatusBasedOnChallan === 'true';
+        } else {
+            const companySettings = await models.Settings.findOne({
+                where: { companyId: Number(companyId) },
+                attributes: ['dispatchStatusBasedOnChallan'],
+                raw: true
+            });
+            if (companySettings && companySettings.dispatchStatusBasedOnChallan !== null && companySettings.dispatchStatusBasedOnChallan !== undefined) {
+                isDispatchBasedOnChallan = Boolean(companySettings.dispatchStatusBasedOnChallan);
+            }
+        }
+
+        const statusPartially = isDispatchBasedOnChallan
+            ? [10, 19, 20, 33, 37, 41, 42, 45, 46]
+            : [12, 19, 21, 35, 39, 41, 43, 45, 47];
+        const statusFully = isDispatchBasedOnChallan
+            ? [11, 21, 22, 34, 38, 43, 44, 47, 48]
+            : [13, 20, 22, 36, 40, 42, 44, 46, 48];
 
         const buildWhere = (docType) => {
             const where = {
