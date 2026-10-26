@@ -1219,7 +1219,12 @@ async function bulkEditItems(req, res) {
                 id: existingItem.id,
                 companyId,
                 itemId,
-                ...(itemName?.toString?.()?.trim?.() && { itemName }),
+                itemName:
+                    itemName !== undefined &&
+                        itemName !== null &&
+                        String(itemName).trim() !== ''
+                        ? String(itemName).trim()
+                        : existingItem.itemName,
                 ...(category && { category: category.id }),
                 ...(subCategory && { subCategory: subCategory.id }),
                 ...(microCategory && { microCategory: microCategory.id }),

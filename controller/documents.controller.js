@@ -1000,156 +1000,122 @@ async function createDocument(req, res) {
       }
     }
 
-    if (status && ((documentType === documentTypes.goodsReceive) || documentType === documentTypes.purchaseInvoice) && purchaseOrderNumber) {
+    if (status && (documentType === documentTypes.goodsReceive || documentType === documentTypes.purchaseInvoice) && purchaseOrderNumber) {
       const existingDocument = await models.Documents.findOne({
         where: { documentNumber: purchaseOrderNumber, companyId },
         transaction: t
       });
-      const documentItems = await models.DocumentItems.findAll({
-        where: {
-          companyId,
-          documentNumber: purchaseOrderNumber
-        }
-      });
-      const documentsItemMap = documentItems?.reduce((acc, current) => {
-        const key = current?.uniqueId || current.itemId;
-        acc[key] = current.quantity;
-        return acc;
-      }, {});
 
-      const purchaseDoc = await models.Documents.findAll({
-        where: {
-          purchaseOrderNumber,
-          documentType,
-          companyId,
-          status: {
-            [Op.notIn]: [0, 2]
+      if (existingDocument) {
+        const documentItems = await models.DocumentItems.findAll({
+          where: {
+            companyId,
+            documentNumber: purchaseOrderNumber
           }
-        },
-        transaction: t
-      });
+        });
+        const documentsItemMap = documentItems?.reduce((acc, current) => {
+          const key = current?.uniqueId || current.itemId;
+          acc[key] = Number(current.quantity) || 0;
+          return acc;
+        }, {}) || {};
 
-      const documentNumbers = purchaseDoc.map(doc => doc.documentNumber);
+        const purchaseDoc = await models.Documents.findAll({
+          where: {
+            purchaseOrderNumber,
+            documentType,
+            companyId,
+            documentNumber: { [Op.ne]: documentNumber },
+            status: {
+              [Op.notIn]: [0, 2]
+            }
+          },
+          transaction: t
+        });
 
-      const purchaseDocItems = await models.DocumentItems.findAll({
-        where: {
-          documentNumber: documentNumbers,
-          companyId
+        const documentNumbers = purchaseDoc.map(doc => doc.documentNumber);
+
+        const purchaseDocItems = await models.DocumentItems.findAll({
+          where: {
+            documentNumber: documentNumbers,
+            companyId
+          }
+        });
+
+        const purchaseDocItemsMap = purchaseDocItems?.reduce((acc, current) => {
+          const key = current?.uniqueId || current?.itemId;
+          acc[key] = (acc[key] || 0) + Number(current.receivedToday || current.quantity || 0);
+          return acc;
+        }, {}) || {};
+
+        // Add quantity of existing items in purchase documents items map
+        for (const item of items) {
+          const key = item?.uniqueId || item.itemId;
+          purchaseDocItemsMap[key] = (purchaseDocItemsMap[key] || 0) + Number(item.receivedToday || item.quantity || 0);
         }
-      });
 
-      const purchaseDocItemsMap = purchaseDocItems?.reduce((acc, current) => {
-        const key = current?.uniqueId || current?.itemId;
-        !acc[key] ? acc[key] = (current.receivedToday || current.quantity) : acc[key] += (current.receivedToday || current.quantity);
-        return acc;
-      }, {});
-      // Add quantity of existing items in purchase documents items map
-      for (const item of items) {
-        const key = item?.uniqueId || item.itemId;
-        if (purchaseDocItemsMap[key]) purchaseDocItemsMap[key] += Number(item.receivedToday || item.quantity);
-        else purchaseDocItemsMap[key] = Number(item.receivedToday || item.quantity);
-      }
+        console.log('objectdata', purchaseDocItemsMap, documentsItemMap);
+        let statusCode = 0;
 
-      console.log('objectdata', purchaseDocItemsMap, documentsItemMap)
-      let statusCode = 0, handleStatus = existingDocument.status;
-
-      // comapare documentsItem map and delivery challam items map 
-      for (const elem of Object.keys(documentsItemMap)) {
-        if (documentsItemMap[elem] > purchaseDocItemsMap[elem]) {
-          statusCode = 1;
-          break;
-        }
-      }
-
-      if (!statusCode) {
+        // compare documentsItem map and purchaseDoc items map
         for (const elem of Object.keys(documentsItemMap)) {
-          if (documentsItemMap[elem] < purchaseDocItemsMap[elem]) {
-            statusCode = 2;
+          const processedQty = purchaseDocItemsMap[elem] || 0;
+          if (documentsItemMap[elem] > processedQty) {
+            statusCode = 1;
             break;
           }
         }
-      }
 
-      if (statusCode == 1) {
-        if (documentType === documentTypes.goodsReceive) {
-          if (existingDocument.status === 1 || existingDocument.status === 4) {
-            handleStatus = 4;
-          }
-          if (existingDocument.status === 12) {
-            handleStatus = 23;
-          }
-          if (existingDocument.status === 13) {
-            handleStatus = 26;
-          }
-        } else {
-          if (existingDocument.status === 1 || existingDocument.status === 12) {
-            handleStatus = 12;
-          }
-          if (existingDocument.status === 4) {
-            handleStatus = 23;
-          }
-          if (existingDocument.status === 5) {
-            handleStatus = 24;
-          }
-          if (existingDocument.status === 6) {
-            handleStatus = 25;
+        if (!statusCode) {
+          for (const elem of Object.keys(documentsItemMap)) {
+            const processedQty = purchaseDocItemsMap[elem] || 0;
+            if (documentsItemMap[elem] < processedQty) {
+              statusCode = 2;
+              break;
+            }
           }
         }
-      } else if (statusCode == 0) {
-        if (documentType === documentTypes.goodsReceive) {
-          if (existingDocument.status === 1 || existingDocument.status === 4) {
-            handleStatus = 5;
-          }
-          if (existingDocument.status === 12) {
-            handleStatus = 24;
-          }
-          if (existingDocument.status === 13) {
-            handleStatus = 27;
-          }
-        } else {
-          if (existingDocument.status === 1 || existingDocument.status === 12) {
-            handleStatus = 12;
-          }
-          if (existingDocument.status === 4 || existingDocument.status === 23) {
-            handleStatus = 26;
-          }
-          if (existingDocument.status === 5 || existingDocument.status === 24) {
-            handleStatus = 27;
-          }
-          if (existingDocument.status === 6 || existingDocument.status === 25) {
-            handleStatus = 28;
-          }
-        }
-      } else {
-        if (documentType === documentTypes.goodsReceive) {
-          if (existingDocument.status === 1 || existingDocument.status === 4 || existingDocument.status === 5) {
-            handleStatus = 6;
-          }
-          if (existingDocument.status === 12) {
-            handleStatus = 25;
-          }
-          if (existingDocument.status === 13) {
-            handleStatus = 28;
-          }
-        } else {
-          if (existingDocument.status === 1 || existingDocument.status === 12) {
-            handleStatus = 12;
-          }
-          if (existingDocument.status === 4 || existingDocument.status === 23) {
-            handleStatus = 26;
-          }
-          if (existingDocument.status === 5 || existingDocument.status === 24) {
-            handleStatus = 27;
-          }
-          if (existingDocument.status === 6 || existingDocument.status === 25) {
-            handleStatus = 28;
-          }
-        }
-      }
-      await existingDocument.update({
-        status: handleStatus
-      }, { transaction: t });
 
+        const currStatus = existingDocument.status;
+
+        // Current Receiving Dimension: None, PR (Partially Received), FR (Fully Received), ER (Excess Received)
+        let recState = 'None';
+        if ([4, 23, 26].includes(currStatus)) recState = 'PR';
+        else if ([5, 24, 27].includes(currStatus)) recState = 'FR';
+        else if ([6, 25, 28].includes(currStatus)) recState = 'ER';
+
+        // Current Billing Dimension: None, PB (Partially Billed), CB (Completely Billed)
+        let billState = 'None';
+        if ([12, 23, 24, 25].includes(currStatus)) billState = 'PB';
+        else if ([13, 26, 27, 28].includes(currStatus)) billState = 'CB';
+
+        // Update the dimension corresponding to current documentType
+        if (documentType === documentTypes.goodsReceive) {
+          recState = statusCode === 1 ? 'PR' : (statusCode === 2 ? 'ER' : 'FR');
+        } else if (documentType === documentTypes.purchaseInvoice) {
+          billState = statusCode === 1 ? 'PB' : 'CB';
+        }
+
+        const statusMatrix = {
+          'None_None': 1,
+          'None_PB': 12,
+          'None_CB': 13,
+          'PR_None': 4,
+          'PR_PB': 23,
+          'PR_CB': 26,
+          'FR_None': 5,
+          'FR_PB': 24,
+          'FR_CB': 27,
+          'ER_None': 6,
+          'ER_PB': 25,
+          'ER_CB': 28
+        };
+
+        const handleStatus = statusMatrix[`${recState}_${billState}`] || currStatus;
+
+        await existingDocument.update({
+          status: handleStatus
+        }, { transaction: t });
+      }
     }
 
     if (isDraft) {
@@ -7424,117 +7390,112 @@ async function approveDocument(req, res) {
           where: { documentNumber: document?.purchaseOrderNumber, companyId },
           transaction
         });
-        const documentItems = await models.DocumentItems.findAll({
-          where: {
-            companyId,
-            documentNumber: document.purchaseOrderNumber
-          },
-          transaction
-        });
-        const documentsItemMap = documentItems?.reduce((acc, current) => {
-          acc[current.itemId] = current.quantity;
-          return acc;
-        }, {});
 
-        console.log('documentmap', documentsItemMap);
+        if (existingDocument) {
+          const documentItems = await models.DocumentItems.findAll({
+            where: {
+              companyId,
+              documentNumber: document.purchaseOrderNumber
+            },
+            transaction
+          });
+          const documentsItemMap = documentItems?.reduce((acc, current) => {
+            const key = current?.uniqueId || current.itemId;
+            acc[key] = Number(current.quantity) || 0;
+            return acc;
+          }, {}) || {};
 
-        const purchaseDoc = await models.Documents.findAll({
-          where: {
-            purchaseOrderNumber: document.purchaseOrderNumber,
-            documentType: 'Purchase Invoice',
-            companyId,
-            status: {
-              [Op.notIn]: [0, 2, 29, 30]
-            }
-          },
-          transaction
-        });
+          console.log('documentmap', documentsItemMap);
 
-        const documentNumbers = purchaseDoc.map(doc => doc.documentNumber);
+          const purchaseDoc = await models.Documents.findAll({
+            where: {
+              purchaseOrderNumber: document.purchaseOrderNumber,
+              documentType: 'Purchase Invoice',
+              companyId,
+              documentNumber: { [Op.ne]: document.documentNumber },
+              status: {
+                [Op.notIn]: [0, 2, 29, 30]
+              }
+            },
+            transaction
+          });
 
-        const purchaseDocItems = await models.DocumentItems.findAll({
-          where: {
-            documentNumber: documentNumbers,
-            companyId
-          },
-          transaction
-        });
+          const documentNumbers = purchaseDoc.map(doc => doc.documentNumber);
 
-        const purchaseDocItemsMap = purchaseDocItems?.reduce((acc, current) => {
-          !acc[current?.itemId] ? acc[current?.itemId] = (current.receivedToday || current.quantity) : acc[current?.itemId] += (current.receivedToday || current.quantity);
-          return acc;
-        }, {});
-        console.log(purchaseDocItemsMap);
-        // Add quantity of existing items in purchase documents items map
-        for (const item of items) {
-          if (purchaseDocItemsMap[item.itemId]) purchaseDocItemsMap[item.itemId] += Number(item.receivedToday || item.quantity);
-          else purchaseDocItemsMap[item.itemId] = Number(item.receivedToday || item.quantity);
-        }
+          const purchaseDocItems = await models.DocumentItems.findAll({
+            where: {
+              documentNumber: documentNumbers,
+              companyId
+            },
+            transaction
+          });
 
-        console.log('objectdata', purchaseDocItemsMap, documentsItemMap)
-        let statusCode = 0, handleStatus = existingDocument.status;
+          const purchaseDocItemsMap = purchaseDocItems?.reduce((acc, current) => {
+            const key = current?.uniqueId || current?.itemId;
+            acc[key] = (acc[key] || 0) + Number(current.receivedToday || current.quantity || 0);
+            return acc;
+          }, {}) || {};
 
-        // comapare documentsItem map and delivery challam items map 
-        for (const elem of Object.keys(documentsItemMap)) {
-          if (documentsItemMap[elem] > purchaseDocItemsMap[elem]) {
-            statusCode = 1;
-            break;
+          // Add quantity of current items in purchase documents items map
+          for (const item of items) {
+            const key = item?.uniqueId || item.itemId;
+            purchaseDocItemsMap[key] = (purchaseDocItemsMap[key] || 0) + Number(item.receivedToday || item.quantity || 0);
           }
-        }
 
-        if (!statusCode) {
+          console.log('objectdata', purchaseDocItemsMap, documentsItemMap);
+          let statusCode = 0;
+
+          // compare documentsItem map and purchaseDoc items map
           for (const elem of Object.keys(documentsItemMap)) {
-            if (documentsItemMap[elem] < purchaseDocItemsMap[elem]) {
-              statusCode = 2;
+            const processedQty = purchaseDocItemsMap[elem] || 0;
+            if (documentsItemMap[elem] > processedQty) {
+              statusCode = 1;
               break;
             }
           }
-        }
 
-        if (statusCode == 1) {
-          if (existingDocument.status === 1 || existingDocument.status === 12) {
-            handleStatus = 12;
+          if (!statusCode) {
+            for (const elem of Object.keys(documentsItemMap)) {
+              const processedQty = purchaseDocItemsMap[elem] || 0;
+              if (documentsItemMap[elem] < processedQty) {
+                statusCode = 2;
+                break;
+              }
+            }
           }
-          if (existingDocument.status === 4) {
-            handleStatus = 23;
-          }
-          if (existingDocument.status === 5) {
-            handleStatus = 24;
-          }
-          if (existingDocument.status === 6) {
-            handleStatus = 25;
-          }
-        } else if (statusCode == 0) {
-          if (existingDocument.status === 1 || existingDocument.status === 12) {
-            handleStatus = 12;
-          }
-          if (existingDocument.status === 4 || existingDocument.status === 23) {
-            handleStatus = 26;
-          }
-          if (existingDocument.status === 5 || existingDocument.status === 24) {
-            handleStatus = 27;
-          }
-          if (existingDocument.status === 6 || existingDocument.status === 25) {
-            handleStatus = 28;
-          }
-        } else {
-          if (existingDocument.status === 1 || existingDocument.status === 12) {
-            handleStatus = 12;
-          }
-          if (existingDocument.status === 4 || existingDocument.status === 23) {
-            handleStatus = 26;
-          }
-          if (existingDocument.status === 5 || existingDocument.status === 24) {
-            handleStatus = 27;
-          }
-          if (existingDocument.status === 6 || existingDocument.status === 25) {
-            handleStatus = 28;
-          }
-        }
-        await existingDocument.update({
-          status: handleStatus
-        }, { transaction });
 
+          const currStatus = existingDocument.status;
+
+          // Current Receiving Dimension: None, PR (Partially Received), FR (Fully Received), ER (Excess Received)
+          let recState = 'None';
+          if ([4, 23, 26].includes(currStatus)) recState = 'PR';
+          else if ([5, 24, 27].includes(currStatus)) recState = 'FR';
+          else if ([6, 25, 28].includes(currStatus)) recState = 'ER';
+
+          // Current Billing Dimension: None, PB (Partially Billed), CB (Completely Billed)
+          const billState = statusCode === 1 ? 'PB' : 'CB';
+
+          const statusMatrix = {
+            'None_None': 1,
+            'None_PB': 12,
+            'None_CB': 13,
+            'PR_None': 4,
+            'PR_PB': 23,
+            'PR_CB': 26,
+            'FR_None': 5,
+            'FR_PB': 24,
+            'FR_CB': 27,
+            'ER_None': 6,
+            'ER_PB': 25,
+            'ER_CB': 28
+          };
+
+          const handleStatus = statusMatrix[`${recState}_${billState}`] || currStatus;
+
+          await existingDocument.update({
+            status: handleStatus
+          }, { transaction });
+        }
       }
 
       if (document.documentType === documentTypes.purchaseInvoice) {
