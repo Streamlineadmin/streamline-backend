@@ -5842,7 +5842,17 @@ async function editDocument(req, res) {
           companyId: Number(companyId),
           status: {
             [Op.ne]: 2,
-          }
+          },
+          documentType: {
+            [Op.in]: [
+              'Goods Received Note',
+              'Quality Report',
+              'Purchase Invoice',
+              'Purchase Return',
+              'Purchase Credit Note',
+              'Purchase Debit Note',
+            ],
+          },
         }
       });
       if (document) {
