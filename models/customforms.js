@@ -22,7 +22,12 @@ module.exports = (sequelize, DataTypes) => {
     fields: {
       type: DataTypes.JSON,
       defaultValue: []
-    }
+    },
+    visibleOn: {
+      type: DataTypes.JSON,
+      defaultValue: []
+    },
+    level: DataTypes.STRING,
   }, {
     sequelize,
     modelName: 'CustomForms',

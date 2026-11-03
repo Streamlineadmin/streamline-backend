@@ -7,5 +7,6 @@ router.post("/addCustomForm", customformController.addCustomform);
 router.post("/getCustomForms", customformController.getCustomforms);
 router.post("/deleteCustomForm", customformController.deleteCustomform);
 router.post("/editCustomForm", customformController.editCustomform);
+router.post("/editPermissions", customformController.editPermissions);
 
 module.exports = router;
