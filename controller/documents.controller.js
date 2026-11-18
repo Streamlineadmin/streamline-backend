@@ -8293,6 +8293,29 @@ const createEWayBill = async (req, res) => {
       return Number(parseFloat(num || 0).toFixed(2));
     };
 
+    const toNumber = (val) => {
+      const num = Number(val);
+      return isNaN(num) ? 0 : num;
+    };
+
+    const getSacCode = (chargingFor) => {
+      const name = (chargingFor || "").toLowerCase();
+      if (
+        name.includes("ship") ||
+        name.includes("freight") ||
+        name.includes("delivery") ||
+        name.includes("transport") ||
+        name.includes("courier") ||
+        name.includes("postage")
+      ) {
+        return "996511";
+      }
+      if (name.includes("pack")) {
+        return "998540";
+      }
+      return "999799";
+    };
+
     const supplierAddress =
       typeof document?.supplierBillingAddress === "object"
         ? document?.supplierBillingAddress
@@ -8307,6 +8330,10 @@ const createEWayBill = async (req, res) => {
       document?.supplyState?.toLowerCase?.() !==
       supplierAddress?.state?.toLowerCase?.();
 
+    const additionalCharges = Array.isArray(document?.additionalCharges)
+      ? document.additionalCharges
+      : [];
+
     // Compute totals from items
     let AssVal = 0,
       CgstVal = 0,
@@ -8314,16 +8341,38 @@ const createEWayBill = async (req, res) => {
       IgstVal = 0,
       TotInvVal = 0;
 
-    const items = document.items?.map((item, index) => {
+    const items = (document?.items || []).map((item, index) => {
       const qty = Number(item?.quantity || 1);
-      const price = Number(item?.price || 100);
+      const originalPrice = Number(item?.price || 0);
+      const discountPercent = Number(item?.discountOne || 0);
+      const safeDiscount = isNaN(discountPercent) ? 0 : discountPercent;
+
+      const discountedPrice = originalPrice * (1 - safeDiscount / 100);
       const taxRate = Number(item?.tax || 0);
-      const totalBeforeTax = qty * price;
-      const totalTax = (totalBeforeTax * taxRate) / 100;
-      const cgst = isIgst ? 0 : totalTax / 2;
-      const sgst = isIgst ? 0 : totalTax / 2;
+      const isInclusive = item?.taxType === "Inclusive";
+
+      let totalBeforeTax = 0;
+      let totalTax = 0;
+      let totalAfterTax = 0;
+
+      if (isInclusive) {
+        // final amount already includes tax
+        totalAfterTax = qty * discountedPrice;
+        totalBeforeTax = totalAfterTax / (1 + taxRate / 100);
+        totalTax = totalAfterTax - totalBeforeTax;
+      } else {
+        totalBeforeTax = qty * discountedPrice;
+        totalTax = (totalBeforeTax * taxRate) / 100;
+        totalAfterTax = totalBeforeTax + totalTax;
+      }
+
+      totalBeforeTax = round2(totalBeforeTax);
+      totalTax = round2(totalTax);
+      totalAfterTax = round2(totalAfterTax);
+
+      const cgst = isIgst ? 0 : round2(totalTax / 2);
+      const sgst = isIgst ? 0 : round2(totalTax / 2);
       const igst = isIgst ? totalTax : 0;
-      const totalAfterTax = totalBeforeTax + totalTax;
 
       AssVal += totalBeforeTax;
       CgstVal += cgst;
@@ -8332,18 +8381,90 @@ const createEWayBill = async (req, res) => {
       TotInvVal += totalAfterTax;
 
       return {
-        productName: item?.itemName || "Item",
-        productDesc: item?.itemName || "Item",
+        productName: item?.itemName || item?.ServiceName || "Item",
         hsnCode: Number(item?.HSN || item?.hsn || item?.hsnCode) || 0,
         quantity: qty,
         qtyUnit: uomMap[item?.UOM] || item?.UOM || "OTH",
-        taxableAmount: round2(totalBeforeTax),
+        taxableAmount: totalBeforeTax,
         sgstRate: isIgst ? 0 : round2(taxRate / 2),
         cgstRate: isIgst ? 0 : round2(taxRate / 2),
         igstRate: isIgst ? round2(taxRate) : 0,
-        cessRate: 0,
       };
     });
+
+    const additionalChargeTotals = {
+      othChrg: 0,
+    };
+
+    additionalCharges?.filter((charge) => charge?.chargingFor)?.forEach((charge) => {
+      const taxRate = toNumber(charge?.tax);
+      const price = toNumber(charge?.price);
+      const total = toNumber(charge?.total);
+
+      if (taxRate > 0) {
+        const totalBeforeTax = round2(price);
+        const totalTax = round2((totalBeforeTax * taxRate) / 100);
+        const totalAfterTax = round2(totalBeforeTax + totalTax);
+
+        const cgst = isIgst ? 0 : round2(totalTax / 2);
+        const sgst = isIgst ? 0 : round2(totalTax / 2);
+        const igst = isIgst ? totalTax : 0;
+
+        AssVal += totalBeforeTax;
+        CgstVal += cgst;
+        SgstVal += sgst;
+        IgstVal += igst;
+        TotInvVal += totalAfterTax;
+
+        items.push({
+          productName: charge.chargingFor || "Charges",
+          hsnCode: Number(getSacCode(charge.chargingFor)),
+          quantity: 1,
+          qtyUnit: "OTH",
+          taxableAmount: totalBeforeTax,
+          sgstRate: isIgst ? 0 : round2(taxRate / 2),
+          cgstRate: isIgst ? 0 : round2(taxRate / 2),
+          igstRate: isIgst ? round2(taxRate) : 0,
+        });
+      } else {
+        additionalChargeTotals.othChrg = round2(
+          additionalChargeTotals.othChrg + (total || price)
+        );
+      }
+    });
+
+    TotInvVal += additionalChargeTotals.othChrg;
+
+    let tcsPercent = 0;
+    let tcsApply = "beforeTax";
+    if (document?.tcsData) {
+      const parsedTcs = isValidJSON(document.tcsData);
+      if (parsedTcs) {
+        const keys = Object.keys(parsedTcs).filter((k) => k !== "tcsApply");
+        if (keys.length > 0 && keys[0].trim().toLowerCase() === "tcs") {
+          tcsPercent = parseFloat(parsedTcs[keys[0]]) || 0;
+        }
+        if (parsedTcs.tcsApply) {
+          tcsApply = parsedTcs.tcsApply;
+        }
+      }
+    }
+
+    const TcsVal = round2(
+      tcsPercent > 0
+        ? (tcsApply === "afterTax"
+          ? TotInvVal
+          : AssVal + additionalChargeTotals.othChrg) *
+          (tcsPercent / 100)
+        : 0
+    );
+
+    additionalChargeTotals.othChrg = round2(additionalChargeTotals.othChrg + TcsVal);
+    TotInvVal = round2(TotInvVal + TcsVal);
+
+    if (document?.isRounded) {
+      TotInvVal = Math.round(TotInvVal);
+    }
 
     const fromStateCode =
       Number(gstStateCodes[supplierAddress?.state?.toLowerCase?.()]) ||
@@ -8358,14 +8479,14 @@ const createEWayBill = async (req, res) => {
     const eWayBillPayload = {
       supplyType: formData?.supplyType || "O",
       subSupplyType: formData?.subSupplyType || "1",
-      subSupplyDesc: formData?.subSupplyDesc || " ",
+      ...(formData?.subSupplyDesc && { subSupplyDesc: formData.subSupplyDesc }),
       docType: formData?.docType || (document?.documentType?.toLowerCase()?.includes("challan") ? "CHL" : "CHL"),
       docNo: document.documentNumber,
       docDate: getTodayDateInIST(),
       fromGstin: gst,
       fromTrdName: document?.supplierName || " ",
       fromAddr1: supplierAddress?.addressLineOne || " ",
-      fromAddr2: supplierAddress?.addressLineTwo || supplierAddress?.city || " ",
+      ...(supplierAddress?.addressLineTwo && { fromAddr2: supplierAddress.addressLineTwo }),
       fromPlace: supplierAddress?.city || supplierAddress?.state || " ",
       actFromStateCode: fromStateCode,
       fromPincode: Number(supplierAddress?.pincode),
@@ -8373,30 +8494,32 @@ const createEWayBill = async (req, res) => {
       toGstin: document?.buyerGSTNumber || "URP",
       toTrdName: document?.buyerName || " ",
       toAddr1: buyerAddress?.addressLineOne || " ",
-      toAddr2: buyerAddress?.addressLineTwo || buyerAddress?.city || " ",
+      ...(buyerAddress?.addressLineTwo && { toAddr2: buyerAddress.addressLineTwo }),
       toPlace: buyerAddress?.city || buyerAddress?.state || " ",
       toPincode: Number(buyerAddress?.pincode),
       actToStateCode: toStateCode,
       toStateCode: toStateCode,
       transactionType: Number(formData?.transactionType) || 1,
-      dispatchFromGSTIN: gst,
-      dispatchFromTradeName: document?.supplierName || " ",
-      shipToGSTIN: document?.buyerGSTNumber || "URP",
-      shipToTradeName: document?.buyerName || " ",
+      ...(formData?.dispatchFromGSTIN && { dispatchFromGSTIN: formData.dispatchFromGSTIN }),
+      ...(formData?.dispatchFromTradeName && { dispatchFromTradeName: formData.dispatchFromTradeName }),
+      ...(formData?.shipToGSTIN && { shipToGSTIN: formData.shipToGSTIN }),
+      ...(formData?.shipToTradeName && { shipToTradeName: formData.shipToTradeName }),
       totalValue: round2(AssVal),
       cgstValue: round2(CgstVal),
       sgstValue: round2(SgstVal),
       igstValue: round2(IgstVal),
       totInvValue: round2(TotInvVal),
-      cessValue: 0,
+      ...(additionalChargeTotals.othChrg > 0 && { otherValue: round2(additionalChargeTotals.othChrg) }),
       transMode: String(formData?.transportMode || "1"),
       transDistance: Number(formData?.distance || formData?.transDistance || 0),
-      transporterName: formData?.transporterName || "",
-      transporterId: formData?.transporterId || "",
-      transDocNo: formData?.transportDocNo || "",
-      transDocDate: formData?.transporterDocDate || "",
-      vehicleNo: formData?.vehicleNo || "",
-      vehicleType: formData?.vehicleType || "R",
+      ...(formData?.transporterId && { transporterId: formData.transporterId }),
+      ...(formData?.transporterName && { transporterName: formData.transporterName }),
+      ...(formData?.transportDocNo && { transDocNo: formData.transportDocNo }),
+      ...(formData?.transporterDocDate && { transDocDate: formData.transporterDocDate }),
+      ...(formData?.vehicleNo && {
+        vehicleNo: formData.vehicleNo,
+        vehicleType: formData?.vehicleType || "R",
+      }),
       itemList: items,
     };
 
