@@ -3,11 +3,15 @@ const models = require("../models");
 
 async function addCustomform(req, res) {
   try {
-    const { formName, description, companyId, userId, fields } = req.body;
+    const { formName, description, companyId, userId, fields, visibleOn, permissions, level } = req.body;
 
     if (!formName || !companyId) {
       return res.status(400).json({ message: "Form name and companyId are required" });
     }
+
+    const resolvedVisibleOn = visibleOn !== undefined
+      ? (isValidJSON(visibleOn) || visibleOn)
+      : (permissions !== undefined ? (isValidJSON(permissions) || permissions) : []);
 
     const newForm = await models.CustomForms.create({
       formName,
@@ -15,7 +19,9 @@ async function addCustomform(req, res) {
       companyId: Number(companyId),
       userId: Number(userId),
       status: 1,
-      fields: isValidJSON(fields) || fields || []
+      fields: isValidJSON(fields) || fields || [],
+      visibleOn: resolvedVisibleOn,
+      level: level || 'Document Level'
     });
 
     return res.status(201).json({
@@ -74,18 +80,30 @@ async function deleteCustomform(req, res) {
 
 async function editCustomform(req, res) {
   try {
-    const { id, formName, description, fields } = req.body;
+    const { id, formName, description, fields, visibleOn, permissions, level } = req.body;
 
     const customForm = await models.CustomForms.findByPk(id);
     if (!customForm) {
       return res.status(404).json({ message: 'Custom Form not found.' });
     }
 
-    await customForm.update({
+    const updateData = {
       formName: formName !== undefined ? formName : customForm.formName,
       description: description !== undefined ? description : customForm.description,
       fields: fields !== undefined ? (isValidJSON(fields) || fields) : customForm.fields
-    });
+    };
+
+    if (level !== undefined) {
+      updateData.level = level;
+    }
+
+    if (visibleOn !== undefined) {
+      updateData.visibleOn = isValidJSON(visibleOn) || visibleOn;
+    } else if (permissions !== undefined) {
+      updateData.visibleOn = isValidJSON(permissions) || permissions;
+    }
+
+    await customForm.update(updateData);
 
     return res.status(200).json({
       message: "Custom Form updated successfully.",
@@ -97,9 +115,35 @@ async function editCustomform(req, res) {
   }
 }
 
+async function editPermissions(req, res) {
+  try {
+    const { id, permissions, visibleOn } = req.body;
+    const resolvedPermissions = permissions !== undefined ? permissions : visibleOn;
+
+    if (!id || !Array.isArray(resolvedPermissions)) {
+      return res.status(400).json({ message: "Invalid input. 'id' and 'permissions' array are required." });
+    }
+
+    const customForm = await models.CustomForms.findByPk(id);
+    if (!customForm) {
+      return res.status(404).json({ message: 'Custom Form not found.' });
+    }
+
+    await customForm.update({ visibleOn: resolvedPermissions });
+
+    return res.status(200).json({
+      message: "Permissions updated successfully."
+    });
+  } catch (error) {
+    console.error("Error in editing permissions:", error);
+    return res.status(500).json({ message: "Server error" });
+  }
+}
+
 module.exports = {
   addCustomform,
   getCustomforms,
   deleteCustomform,
-  editCustomform
+  editCustomform,
+  editPermissions
 };

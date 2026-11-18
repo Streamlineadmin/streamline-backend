@@ -213,6 +213,7 @@ module.exports = (sequelize, DataTypes) => {
     rfqDetails: DataTypes.JSON,
     rfqNumber: DataTypes.STRING,
     syncToTally: DataTypes.BOOLEAN,
+    customForms: DataTypes.JSON,
   }, {
     sequelize,
     modelName: 'Documents',

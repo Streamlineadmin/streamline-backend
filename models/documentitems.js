@@ -55,6 +55,7 @@ module.exports = (sequelize, DataTypes) => {
     poNumbers: DataTypes.STRING,
     uniqueId: DataTypes.STRING,
     packagingData: DataTypes.JSON,
+    customForms: DataTypes.JSON,
   }, {
     sequelize,
     modelName: 'DocumentItems',
