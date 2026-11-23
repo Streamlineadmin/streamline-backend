@@ -133,6 +133,7 @@ async function createDocument(req, res) {
       batches = null,
       supplyState = '',
       customFields = {},
+      customForms = {},
       productionId = null,
       requestForApproval = false,
       seriesId = null,
@@ -257,6 +258,8 @@ async function createDocument(req, res) {
         showUnits,
         supplyState,
         customFields,
+        customForms,
+
         serviceOrderDate,
         serviceOrderNumber,
         hideColumns,
@@ -308,6 +311,8 @@ async function createDocument(req, res) {
               ServiceName: item?.ServiceName,
               additionalDetails: item?.additionalDetails,
               customFields: item?.customFields,
+              customForms: item?.customForms,
+
               imageUrl: item?.imageUrl,
               category: item?.category,
               store: item?.store,
@@ -492,6 +497,7 @@ async function createDocument(req, res) {
       showUnits,
       supplyState,
       customFields,
+      customForms,
       serviceOrderDate,
       serviceOrderNumber,
       hideColumns,
@@ -617,6 +623,7 @@ async function createDocument(req, res) {
       showUnits,
       supplyState,
       customFields,
+      customForms,
       serviceOrderDate,
       serviceOrderNumber,
       hideColumns,
@@ -1214,6 +1221,7 @@ async function createDocument(req, res) {
             ServiceName: item?.ServiceName,
             additionalDetails: item?.additionalDetails,
             customFields: item?.customFields,
+            customForms: item?.customForms,
             imageUrl: item?.imageUrl,
             category: item?.category,
             store: item?.store,
@@ -5646,6 +5654,7 @@ async function editDocument(req, res) {
       supplyState = '',
       requestForApproval,
       customFields,
+      customForms,
       isMultiCurrency = false,
       exchangeRate = 1.0,
       currencyCode = '',
@@ -6099,6 +6108,7 @@ async function editDocument(req, res) {
       showUnits,
       supplyState,
       customFields,
+      customForms,
       isMultiCurrency,
       exchangeRate,
       currencyCode,
@@ -6209,6 +6219,7 @@ async function editDocument(req, res) {
             ServiceName: item?.ServiceName,
             additionalDetails: item?.additionalDetails,
             customFields: item?.customFields,
+            customForms: item?.customForms,
             imageUrl: item?.imageUrl,
             category: item?.category,
             store: item?.store,
@@ -8260,8 +8271,11 @@ async function createEwayBillFromEInvoice(req, res) {
 }
 
 const createEWayBill = async (req, res) => {
-  const { document, formData } = req.body;
+  let { document, formData, gst } = req.body;
   try {
+
+    gst = document?.supplierGSTNumber
+
     const uoms = await models.UOM.findAll({
       where: {
         [Op.or]: [
@@ -8274,9 +8288,51 @@ const createEWayBill = async (req, res) => {
       acc[curr.name] = curr.code;
       return acc;
     }, {});
-    const supplierAddress = isValidJSON(document?.supplierBillingAddress);
-    const buyerAddress = isValidJSON(document?.buyerDeliveryAddress);
-    const isIgst = document?.supplyState !== supplierAddress?.state;
+
+    const round2 = (num) => {
+      return Number(parseFloat(num || 0).toFixed(2));
+    };
+
+    const toNumber = (val) => {
+      const num = Number(val);
+      return isNaN(num) ? 0 : num;
+    };
+
+    const getSacCode = (chargingFor) => {
+      const name = (chargingFor || "").toLowerCase();
+      if (
+        name.includes("ship") ||
+        name.includes("freight") ||
+        name.includes("delivery") ||
+        name.includes("transport") ||
+        name.includes("courier") ||
+        name.includes("postage")
+      ) {
+        return "996511";
+      }
+      if (name.includes("pack")) {
+        return "998540";
+      }
+      return "999799";
+    };
+
+    const supplierAddress =
+      typeof document?.supplierBillingAddress === "object"
+        ? document?.supplierBillingAddress
+        : isValidJSON(document?.supplierBillingAddress) || {};
+
+    const buyerAddress =
+      typeof document?.buyerDeliveryAddress === "object"
+        ? document?.buyerDeliveryAddress
+        : isValidJSON(document?.buyerDeliveryAddress) || {};
+
+    const isIgst =
+      document?.supplyState?.toLowerCase?.() !==
+      supplierAddress?.state?.toLowerCase?.();
+
+    const additionalCharges = Array.isArray(document?.additionalCharges)
+      ? document.additionalCharges
+      : [];
 
     // Compute totals from items
     let AssVal = 0,
@@ -8285,16 +8341,38 @@ const createEWayBill = async (req, res) => {
       IgstVal = 0,
       TotInvVal = 0;
 
-    const items = document.items?.map((item, index) => {
+    const items = (document?.items || []).map((item, index) => {
       const qty = Number(item?.quantity || 1);
-      const price = Number(item?.price || 100);
+      const originalPrice = Number(item?.price || 0);
+      const discountPercent = Number(item?.discountOne || 0);
+      const safeDiscount = isNaN(discountPercent) ? 0 : discountPercent;
+
+      const discountedPrice = originalPrice * (1 - safeDiscount / 100);
       const taxRate = Number(item?.tax || 0);
-      const totalBeforeTax = qty * price;
-      const totalTax = (totalBeforeTax * taxRate) / 100;
-      const cgst = isIgst ? 0 : totalTax / 2;
-      const sgst = isIgst ? 0 : totalTax / 2;
+      const isInclusive = item?.taxType === "Inclusive";
+
+      let totalBeforeTax = 0;
+      let totalTax = 0;
+      let totalAfterTax = 0;
+
+      if (isInclusive) {
+        // final amount already includes tax
+        totalAfterTax = qty * discountedPrice;
+        totalBeforeTax = totalAfterTax / (1 + taxRate / 100);
+        totalTax = totalAfterTax - totalBeforeTax;
+      } else {
+        totalBeforeTax = qty * discountedPrice;
+        totalTax = (totalBeforeTax * taxRate) / 100;
+        totalAfterTax = totalBeforeTax + totalTax;
+      }
+
+      totalBeforeTax = round2(totalBeforeTax);
+      totalTax = round2(totalTax);
+      totalAfterTax = round2(totalAfterTax);
+
+      const cgst = isIgst ? 0 : round2(totalTax / 2);
+      const sgst = isIgst ? 0 : round2(totalTax / 2);
       const igst = isIgst ? totalTax : 0;
-      const totalAfterTax = totalBeforeTax + totalTax;
 
       AssVal += totalBeforeTax;
       CgstVal += cgst;
@@ -8303,81 +8381,183 @@ const createEWayBill = async (req, res) => {
       TotInvVal += totalAfterTax;
 
       return {
-        productName: item?.itemName,
-        productDesc: item?.itemName,
-        hsnCode: item?.HSN,
-        quantity: item?.quantity,
-        qtyUnit: uomMap[item?.UOM],
+        productName: item?.itemName || item?.ServiceName || "Item",
+        hsnCode: Number(item?.HSN || item?.hsn || item?.hsnCode) || 0,
+        quantity: qty,
+        qtyUnit: uomMap[item?.UOM] || item?.UOM || "OTH",
         taxableAmount: totalBeforeTax,
-        sgstRate: isIgst ? 0 : taxRate / 2,
-        cgstRate: isIgst ? 0 : taxRate / 2,
-        igstRate: isIgst ? taxRate : 0
+        sgstRate: isIgst ? 0 : round2(taxRate / 2),
+        cgstRate: isIgst ? 0 : round2(taxRate / 2),
+        igstRate: isIgst ? round2(taxRate) : 0,
+      };
+    });
+
+    const additionalChargeTotals = {
+      othChrg: 0,
+    };
+
+    additionalCharges?.filter((charge) => charge?.chargingFor)?.forEach((charge) => {
+      const taxRate = toNumber(charge?.tax);
+      const price = toNumber(charge?.price);
+      const total = toNumber(charge?.total);
+
+      if (taxRate > 0) {
+        const totalBeforeTax = round2(price);
+        const totalTax = round2((totalBeforeTax * taxRate) / 100);
+        const totalAfterTax = round2(totalBeforeTax + totalTax);
+
+        const cgst = isIgst ? 0 : round2(totalTax / 2);
+        const sgst = isIgst ? 0 : round2(totalTax / 2);
+        const igst = isIgst ? totalTax : 0;
+
+        AssVal += totalBeforeTax;
+        CgstVal += cgst;
+        SgstVal += sgst;
+        IgstVal += igst;
+        TotInvVal += totalAfterTax;
+
+        items.push({
+          productName: charge.chargingFor || "Charges",
+          hsnCode: Number(getSacCode(charge.chargingFor)),
+          quantity: 1,
+          qtyUnit: "OTH",
+          taxableAmount: totalBeforeTax,
+          sgstRate: isIgst ? 0 : round2(taxRate / 2),
+          cgstRate: isIgst ? 0 : round2(taxRate / 2),
+          igstRate: isIgst ? round2(taxRate) : 0,
+        });
+      } else {
+        additionalChargeTotals.othChrg = round2(
+          additionalChargeTotals.othChrg + (total || price)
+        );
       }
     });
+
+    TotInvVal += additionalChargeTotals.othChrg;
+
+    let tcsPercent = 0;
+    let tcsApply = "beforeTax";
+    if (document?.tcsData) {
+      const parsedTcs = isValidJSON(document.tcsData);
+      if (parsedTcs) {
+        const keys = Object.keys(parsedTcs).filter((k) => k !== "tcsApply");
+        if (keys.length > 0 && keys[0].trim().toLowerCase() === "tcs") {
+          tcsPercent = parseFloat(parsedTcs[keys[0]]) || 0;
+        }
+        if (parsedTcs.tcsApply) {
+          tcsApply = parsedTcs.tcsApply;
+        }
+      }
+    }
+
+    const TcsVal = round2(
+      tcsPercent > 0
+        ? (tcsApply === "afterTax"
+          ? TotInvVal
+          : AssVal + additionalChargeTotals.othChrg) *
+          (tcsPercent / 100)
+        : 0
+    );
+
+    additionalChargeTotals.othChrg = round2(additionalChargeTotals.othChrg + TcsVal);
+    TotInvVal = round2(TotInvVal + TcsVal);
+
+    if (document?.isRounded) {
+      TotInvVal = Math.round(TotInvVal);
+    }
+
+    const fromStateCode =
+      Number(gstStateCodes[supplierAddress?.state?.toLowerCase?.()]) ||
+      Number(gst?.slice(0, 2)) ||
+      null;
+
+    const toStateCode =
+      Number(gstStateCodes[buyerAddress?.state?.toLowerCase?.()]) ||
+      Number(document?.buyerGSTNumber?.slice(0, 2)) ||
+      null;
+
     const eWayBillPayload = {
-      supplyType: formData?.supplyType,
-      subSupplyType: formData?.subSupplyType,
-      subSupplyDesc: " ",
-      docType: "CHL",
+      supplyType: formData?.supplyType || "O",
+      subSupplyType: formData?.subSupplyType || "1",
+      ...(formData?.subSupplyDesc && { subSupplyDesc: formData.subSupplyDesc }),
+      docType: formData?.docType || (document?.documentType?.toLowerCase()?.includes("challan") ? "CHL" : "CHL"),
       docNo: document.documentNumber,
       docDate: getTodayDateInIST(),
-      fromGstin: document?.supplierGSTNumber,
-      fromTrdName: document?.supplierName,
-      fromAddr1: supplierAddress?.addressLineOne || ' ',
-      fromAddr2: supplierAddress?.city || ' ',
-      actFromStateCode: Number(gstStateCodes[supplierAddress?.state]),
+      fromGstin: gst,
+      fromTrdName: document?.supplierName || " ",
+      fromAddr1: supplierAddress?.addressLineOne || " ",
+      ...(supplierAddress?.addressLineTwo && { fromAddr2: supplierAddress.addressLineTwo }),
+      fromPlace: supplierAddress?.city || supplierAddress?.state || " ",
+      actFromStateCode: fromStateCode,
       fromPincode: Number(supplierAddress?.pincode),
-      fromStateCode: Number(gstStateCodes[supplierAddress?.state]),
-      toGstin: document?.buyerGSTNumber,
-      toTrdName: document?.buyerName,
-      toAddr1: buyerAddress?.addressLineOne,
-      toAddr2: buyerAddress?.city,
-      toPlace: buyerAddress?.state,
+      fromStateCode: fromStateCode,
+      toGstin: document?.buyerGSTNumber || "URP",
+      toTrdName: document?.buyerName || " ",
+      toAddr1: buyerAddress?.addressLineOne || " ",
+      ...(buyerAddress?.addressLineTwo && { toAddr2: buyerAddress.addressLineTwo }),
+      toPlace: buyerAddress?.city || buyerAddress?.state || " ",
       toPincode: Number(buyerAddress?.pincode),
-      actToStateCode: Number(gstStateCodes[buyerAddress?.state]),
-      toStateCode: Number(gstStateCodes[buyerAddress?.state]),
-      transactionType: formData?.transactionType,
-      dispatchFromGSTIN: document?.supplierGSTNumber,
-      dispatchFromTradeName: document?.supplierName,
-      shipToGSTIN: document?.buyerGSTNumber,
-      shipToTradeName: document?.buyerName,
-      totalValue: AssVal,
-      cgstValue: CgstVal,
-      sgstValue: SgstVal,
-      igstValue: IgstVal,
-      totInvValue: TotInvVal,
-      transMode: formData?.transportMode,
-      transDistance: "67",
-      transporterName: formData?.transporterName,
-      transporterId: formData?.transporterId,
-      transDocNo: formData?.transportDocNo,
-      transDocDate: formData?.transporterDocDate,
-      vehicleNo: formData?.vehicleNo,
-      vehicleType: formData?.vehicleType,
+      actToStateCode: toStateCode,
+      toStateCode: toStateCode,
+      transactionType: Number(formData?.transactionType) || 1,
+      ...(formData?.dispatchFromGSTIN && { dispatchFromGSTIN: formData.dispatchFromGSTIN }),
+      ...(formData?.dispatchFromTradeName && { dispatchFromTradeName: formData.dispatchFromTradeName }),
+      ...(formData?.shipToGSTIN && { shipToGSTIN: formData.shipToGSTIN }),
+      ...(formData?.shipToTradeName && { shipToTradeName: formData.shipToTradeName }),
+      totalValue: round2(AssVal),
+      cgstValue: round2(CgstVal),
+      sgstValue: round2(SgstVal),
+      igstValue: round2(IgstVal),
+      totInvValue: round2(TotInvVal),
+      ...(additionalChargeTotals.othChrg > 0 && { otherValue: round2(additionalChargeTotals.othChrg) }),
+      transMode: String(formData?.transportMode || "1"),
+      transDistance: Number(formData?.distance || formData?.transDistance || 0),
+      ...(formData?.transporterId && { transporterId: formData.transporterId }),
+      ...(formData?.transporterName && { transporterName: formData.transporterName }),
+      ...(formData?.transportDocNo && { transDocNo: formData.transportDocNo }),
+      ...(formData?.transporterDocDate && { transDocDate: formData.transporterDocDate }),
+      ...(formData?.vehicleNo && {
+        vehicleNo: formData.vehicleNo,
+        vehicleType: formData?.vehicleType || "R",
+      }),
       itemList: items,
+    };
+
+    const headers = {
+      "Content-Type": "application/json",
+      client_id: process.env.EWAYBILL_CLIENT_ID,
+      client_secret: process.env.EWAYBILL_CLIENT_SECRET,
+      gstin: gst,
+      ip_address: "192.68.45.37",
     };
 
 
     const response = await axios.post(
-      "https://staging.mastergst.com/ewaybillapi/v1.03/ewayapi/genewaybill",
+      "https://api.perione.in/ewaybillapi/v1.03/ewayapi/genewaybill",
       eWayBillPayload,
       {
-        headers: {
-          "Content-Type": "application/json",
-          "client_id": process.env.LOCAL_CLIENT_ID,
-          "client_secret": process.env.LOCAL_CLIENT_SECRET,
-          "gstin": document?.supplierGSTNumber,
-          "ip_address": "192.68.45.45"
-        },
+        headers,
         params: {
           email: process.env.EMAIL,
         },
       }
     );
 
-    if (response.data?.status_cd == '0') {
-      return res.status(400).send({
-        message: "E-Invoice generation failed.",
+    if (response?.data?.status_cd === "0" || response?.data?.status === 0) {
+      return res.status(400).json({
+        message: "E-Way Bill generation failed.",
+        errors: response?.data?.error || response?.data?.data || response?.data?.error_codes || response?.data,
+      });
+    }
+
+    const ewayData = response?.data?.data || response?.data;
+    const ewbNo = ewayData?.ewbNo || ewayData?.EwbNo || ewayData?.ewayBillNo || null;
+    const ewbDt = ewayData?.ewbDate || ewayData?.EwbDt || ewayData?.ewayBillDate || null;
+    const ewbValidTill = ewayData?.validUpto || ewayData?.EwbValidTill || ewayData?.validUptoDate || null;
+
+    if (!ewbNo) {
+      return res.status(400).json({
+        message: "E-Way Bill generation failed.",
         errors: response?.data?.data || response?.data,
       });
     }
@@ -8390,16 +8570,24 @@ const createEWayBill = async (req, res) => {
     });
 
     if (existingDocument) {
-      await existingDocument.update({ ewayBillCreated: true });
+      await existingDocument.update({
+        ewayBillNumber: ewbNo,
+        ewayBillDate: ewbDt,
+        ewayBillValidTill: ewbValidTill,
+        ewayBillCreated: true,
+      });
     }
 
     return res.status(200).json({
       message: "E-Way Bill Created Successfully.",
+      data: ewayData,
     });
 
   } catch (error) {
-    console.log(error);
-    console.error(error.response?.data || error.message);
+    console.error(
+      "E-Way Bill Error:",
+      error.response?.data || error.message
+    );
     return res.status(500).json({
       message: "Internal Server Error",
       error: error.response?.data || error.message,
