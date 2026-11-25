@@ -7728,8 +7728,32 @@ async function createEInvoice(req, res) {
       document?.supplierBillingAddress
     );
 
-    const buyerAddress = isValidJSON(
-      document?.buyerDeliveryAddress
+    const buyerBillingAddress = isValidJSON(document?.buyerBillingAddress);
+    const buyerDeliveryAddress = isValidJSON(document?.buyerDeliveryAddress);
+    const buyerAddress = buyerBillingAddress || buyerDeliveryAddress;
+
+    const normalizeStr = (val) => (val || "").toString().trim().toLowerCase();
+    const isDifferentParty = Boolean(
+      buyerDeliveryAddress &&
+      (
+        (normalizeStr(buyerDeliveryAddress?.companyName) &&
+          normalizeStr(buyerDeliveryAddress?.companyName) !== normalizeStr(document?.buyerName)) ||
+        (normalizeStr(buyerDeliveryAddress?.gstNumber) &&
+          normalizeStr(buyerDeliveryAddress?.gstNumber) !== normalizeStr(document?.buyerGSTNumber))
+      )
+    );
+    const isDifferentAddress = Boolean(
+      buyerDeliveryAddress &&
+      buyerBillingAddress &&
+      (
+        normalizeStr(buyerDeliveryAddress?.addressLineOne) !== normalizeStr(buyerBillingAddress?.addressLineOne) ||
+        normalizeStr(buyerDeliveryAddress?.city) !== normalizeStr(buyerBillingAddress?.city) ||
+        normalizeStr(buyerDeliveryAddress?.state) !== normalizeStr(buyerBillingAddress?.state) ||
+        normalizeStr(buyerDeliveryAddress?.pincode) !== normalizeStr(buyerBillingAddress?.pincode)
+      )
+    );
+    const shouldIncludeShipDtls = Boolean(
+      buyerDeliveryAddress && (isDifferentParty || isDifferentAddress)
     );
 
     const isIgst =
@@ -8013,6 +8037,27 @@ async function createEInvoice(req, res) {
         Stcd:
           document?.buyerGSTNumber?.slice(0, 2),
       },
+
+      ...(shouldIncludeShipDtls && {
+        ShipDtls: {
+          ...(buyerDeliveryAddress?.gstNumber?.trim?.() &&
+          buyerDeliveryAddress.gstNumber.trim().toUpperCase() !==
+            document?.buyerGSTNumber?.trim?.()?.toUpperCase?.()
+            ? { Gstin: buyerDeliveryAddress.gstNumber.trim() }
+            : {}),
+          LglNm: buyerDeliveryAddress?.companyName || document?.buyerName,
+          TrdNm: buyerDeliveryAddress?.companyName || document?.buyerName,
+          Addr1:
+            buyerDeliveryAddress?.addressLineOne?.slice?.(0, 100) || "Test",
+          Addr2: buyerDeliveryAddress?.city || " ",
+          Loc: buyerDeliveryAddress?.state || " ",
+          Pin: String(buyerDeliveryAddress?.pincode?.trim?.() || ""),
+          Stcd:
+            buyerDeliveryAddress?.gstNumber?.trim?.()?.slice?.(0, 2) ||
+            gstStateCodes?.[buyerDeliveryAddress?.state?.toLowerCase?.()] ||
+            document?.buyerGSTNumber?.slice(0, 2),
+        },
+      }),
 
       ...(isCreditNote && {
         PrecDocDtls: [
